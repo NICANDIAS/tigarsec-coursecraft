@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}{{ spec.label }} - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/spec-library">&larr; Spec library</a></p>
+<h1>{{ spec.label }}</h1>
+
+<div class="card" id="status-card"
+     data-spec-id="{{ spec.id }}"
+     data-initial-status="{{ spec.parse_status }}">
+  <div id="status-display">
+    {% if spec.parse_status == "parsed" %}
+      <p><span class="badge badge-released">Parsed</span> — <span id="unit-count">{{ spec.structured_json.units|length }}</span> unit(s) found.</p>
+      {% if spec.parse_progress and ("skipped" in spec.parse_progress or "safety limit" in spec.parse_progress) %}
+        <div class="error-box" style="border-color:var(--warning);color:var(--warning);">{{ spec.parse_progress }}</div>
+      {% endif %}
+    {% elif spec.parse_status == "parsing" %}
+      <p><span class="badge badge-needs_review">Parsing…</span> <span id="progress-text">{{ spec.parse_progress or "Starting…" }}</span></p>
+      <p class="muted">Last updated: <span id="last-updated">just now</span> — if this stops moving for
+      several minutes, something's actually stuck (not just slow) - cancel and try again, or switch
+      <code>SPEC_PARSING_LLM_PROVIDER</code> to Anthropic in <code>.env</code> for faster parsing.</p>
+      <form method="post" action="/spec-library/{{ spec.id }}/cancel-parse" style="margin-top:10px;">
+        <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">
+          Cancel parsing
+        </button>
+      </form>
+    {% elif spec.parse_status == "cancelled" %}
+      <p><span class="badge badge-failed">Cancelled</span> {{ spec.parse_progress }}</p>
+    {% elif spec.parse_status == "failed" %}
+      <div class="error-box">Parsing failed: {{ spec.parse_error }}</div>
+    {% else %}
+      <p><span class="badge badge-uploaded">Not parsed</span></p>
+    {% endif %}
+  </div>
+
+  {% if can_upload and spec.parse_status != "parsing" %}
+    <form method="post" action="/spec-library/{{ spec.id }}/reparse" style="display:inline-block;margin-right:8px;">
+      <button class="btn btn-secondary" type="submit">
+        {% if spec.parse_status == "parsed" %}Re-parse with AI{% else %}Parse with AI{% endif %}
+      </button>
+    </form>
+    <form method="post" action="/spec-library/{{ spec.id }}/delete" style="display:inline-block;"
+          onsubmit="return confirm('Delete this spec permanently? This can\'t be undone.');">
+      <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">
+        Delete spec
+      </button>
+    </form>
+  {% endif %}
+</div>
+
+{% if delete_error %}
+  <div class="error-box">{{ delete_error }}</div>
+{% endif %}
+
+{% if spec.structured_json %}
+  <div class="card">
+    <h2>Content areas</h2>
+    <p class="muted">Quick overview — jump to a section, or scroll down for full criteria.</p>
+    <ul>
+      {% for unit in spec.structured_json.units %}
+        <li>
+          <a href="#unit-{{ loop.index }}">{{ unit.name }}</a>
+          <span class="muted">— {{ unit.learning_outcomes|length }} learning outcome(s): {{ unit.learning_outcomes|map(attribute='code')|join(", ") }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div id="units-display">
+    {% for unit in spec.structured_json.units %}
+      <div class="card" id="unit-{{ loop.index }}">
+        <h2>{{ unit.name }}</h2>
+        {% for lo in unit.learning_outcomes %}
+          <p><strong>{{ lo.code }}</strong> — {{ lo.title }}</p>
+          <table>
+            <tr><th style="width:80px;">Code</th><th>Description</th></tr>
+            {% for c in lo.criteria %}
+              <tr><td>{{ c.code }}</td><td>{{ c.description }}</td></tr>
+            {% endfor %}
+          </table>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <details style="margin-top:16px;">
+    <summary class="muted">Raw uploaded text (preview)</summary>
+    <pre style="white-space:pre-wrap;font-size:0.85rem;">{{ spec.raw_text[:3000] }}</pre>
+  </details>
+{% endif %}
+
+<script>
+(function () {
+  const card = document.getElementById("status-card");
+  const specId = card.dataset.specId;
+  let status = card.dataset.initialStatus;
+
+  if (status !== "parsing") return;
+
+  let lastUpdatedAt = Date.now();
+
+  function refreshLastUpdatedText() {
+    const el = document.getElementById("last-updated");
+    if (!el) return;
+    const seconds = Math.round((Date.now() - lastUpdatedAt) / 1000);
+    if (seconds < 5) el.textContent = "just now";
+    else if (seconds < 60) el.textContent = `${seconds}s ago`;
+    else el.textContent = `${Math.round(seconds / 60)}m ago`;
+  }
+  setInterval(refreshLastUpdatedText, 1000);
+
+  const poll = setInterval(async function () {
+    try {
+      const res = await fetch(`/spec-library/${specId}/status`);
+      const data = await res.json();
+      if (data.status !== "parsing") {
+        clearInterval(poll);
+        location.reload();  // final reload shows the full parsed structure, cancellation, or the error
+        return;
+      }
+      const progressEl = document.getElementById("progress-text");
+      if (progressEl && data.progress) progressEl.textContent = data.progress;
+      if (data.updated_at) lastUpdatedAt = new Date(data.updated_at + "Z").getTime();
+    } catch (e) {
+      // network hiccup - just try again next interval
+    }
+  }, 3000);
+})();
+</script>
+{% endblock %}

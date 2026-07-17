@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Admin - Users - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>User management</h1>
+<p class="muted">Only visible to admins. The account marked "primary admin" is protected — its role and
+active status can't be changed, by anyone, including other admins.</p>
+
+<div class="card">
+  <h2>All accounts</h2>
+  {% for user in users %}
+    <div class="list-item" style="flex-wrap:wrap;">
+      <div>
+        <strong>{{ user.name }}</strong> — {{ user.email }}
+        {% if user.is_primary_admin %}<span class="badge badge-released">Primary admin</span>{% endif %}
+        {% if not user.is_active %}<span class="badge badge-failed">Deactivated</span>{% endif %}
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;">
+        {% if user.is_primary_admin %}
+          <span class="muted">{{ user.role }} (protected)</span>
+        {% else %}
+          <form method="post" action="/admin/users/{{ user.id }}/role" style="display:flex;gap:6px;">
+            <select name="role" style="margin:0;">
+              {% for r in roles %}
+                <option value="{{ r }}" {% if user.role == r %}selected{% endif %}>{{ r }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-secondary" type="submit">Save role</button>
+          </form>
+
+          <form method="post" action="/admin/users/{{ user.id }}/toggle-active">
+            <button class="btn btn-secondary" type="submit">
+              {% if user.is_active %}Deactivate{% else %}Reactivate{% endif %}
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if not user.is_primary_admin %}
+      <details style="margin:6px 0 14px 0;">
+        <summary class="muted">Reset this user's password</summary>
+        <form method="post" action="/admin/users/{{ user.id }}/reset-password" style="margin-top:8px;max-width:320px;">
+          <label>New password</label>
+          <input type="password" name="new_password" required minlength="8">
+          <button class="btn btn-secondary" type="submit">Set new password</button>
+        </form>
+      </details>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Create a new account directly</h2>
+  <p class="muted">Use this to set someone up without them self-registering — give them the
+  password you set here and have them change it in Settings afterwards.</p>
+  <form method="post" action="/admin/users/create">
+    <label>Name</label>
+    <input type="text" name="name" required>
+    <label>Email</label>
+    <input type="email" name="email" required>
+    <label>Temporary password</label>
+    <input type="password" name="password" required minlength="8">
+    <label>Role</label>
+    <select name="role">
+      {% for r in roles %}
+        <option value="{{ r }}" {% if r == "lecturer" %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn" type="submit">Create account</button>
+  </form>
+</div>
+{% endblock %}

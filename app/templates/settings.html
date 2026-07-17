@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Settings - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+<div class="card">
+  <h2>Your account</h2>
+  <p class="muted">{{ teacher.email }} — role: <strong>{{ teacher.role }}</strong>{% if teacher.is_primary_admin %} (primary admin, protected){% endif %}</p>
+</div>
+
+<div class="card">
+  <h2>Change password</h2>
+  {% if password_error %}<div class="error-box">{{ password_error }}</div>{% endif %}
+  {% if password_success %}<p class="muted" style="color:var(--success);">Password updated successfully.</p>{% endif %}
+  <form method="post" action="/settings/change-password">
+    <label>Current password</label>
+    <input type="password" name="current_password" required>
+    <label>New password</label>
+    <input type="password" name="new_password" required minlength="8">
+    <label>Confirm new password</label>
+    <input type="password" name="confirm_password" required minlength="8">
+    <button class="btn" type="submit">Update password</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Your feedback style</h2>
+  <p class="muted">Paste 3-5 examples of feedback you've written before. The AI uses this to match your tone in generated comments.</p>
+  <form method="post" action="/settings/style-profile">
+    <label>Comment structure</label>
+    <select name="feedback_style">
+      <option value="standard" {% if teacher.feedback_style == "standard" %}selected{% endif %}>Standard (free-form constructive feedback)</option>
+      <option value="wwebi" {% if teacher.feedback_style == "wwebi" %}selected{% endif %}>What Went Well / Even Better If</option>
+      {% for style in custom_feedback_styles %}
+        <option value="{{ style.name }}" {% if teacher.feedback_style == style.name %}selected{% endif %}>{{ style.name }} (custom)</option>
+      {% endfor %}
+    </select>
+    <label>Feedback tone exemplars</label>
+    <textarea name="style_profile" style="min-height:220px;">{{ teacher.style_profile or "" }}</textarea>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Add a new feedback comment style</h2>
+  <p class="muted">Add a category beyond the two built-in ones - e.g. a college-specific format -
+  without needing any code changes. Shared with all teachers once added.</p>
+  {% if custom_feedback_styles %}
+    <p class="muted"><strong>Existing custom styles:</strong> {{ custom_feedback_styles|map(attribute='name')|join(", ") }}</p>
+  {% endif %}
+  <form method="post" action="/settings/feedback-styles/create">
+    <label>Name (shown in the dropdown above)</label>
+    <input type="text" name="name" required placeholder="e.g. 'Two stars and a wish'">
+    <label>Instructions for the AI (how comments should be structured)</label>
+    <textarea name="instructions" required placeholder="e.g. Structure every comment as exactly two positive points ('stars') followed by one specific improvement ('wish')." style="min-height:120px;"></textarea>
+    <button class="btn btn-secondary" type="submit">Add style</button>
+  </form>
+</div>
+{% endblock %}

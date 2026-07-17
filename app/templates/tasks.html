@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Tasks - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Tasks</h1>
+<p class="muted">Everything currently running, and what finished recently - so you never lose
+track of a PowerPoint, scheme of work, marking run, or spec parse you started earlier.</p>
+
+<div class="card">
+  <h2>In progress</h2>
+  {% set any_in_progress = specs_parsing or submissions_marking or sow_generating or decks_generating %}
+  {% if not any_in_progress %}
+    <p class="muted">Nothing running right now.</p>
+  {% endif %}
+
+  {% for spec in specs_parsing %}
+    <div class="list-item">
+      <span><a href="/spec-library/{{ spec.id }}">Parsing spec: {{ spec.label }}</a>
+        <span class="muted" style="font-size:0.8rem;"> — started {{ spec.created_at.strftime("%d %b, %H:%M") }}</span></span>
+      <span class="badge badge-needs_review">Parsing…</span>
+    </div>
+  {% endfor %}
+  {% for sub in submissions_marking %}
+    <div class="list-item">
+      <span><a href="/submissions/{{ sub.id }}/review">Marking: {{ sub.original_filename }} ({{ sub.student.name }})</a>
+        <span class="muted" style="font-size:0.8rem;"> — started {{ sub.created_at.strftime("%d %b, %H:%M") }}</span></span>
+      <span class="badge badge-needs_review">Marking…</span>
+    </div>
+  {% endfor %}
+  {% for sow in sow_generating %}
+    <div class="list-item">
+      <span><a href="/courses/{{ sow.course_id }}/scheme-of-work/{{ sow.id }}">Scheme of work: {{ sow.title }}</a>
+        <span class="muted" style="font-size:0.8rem;"> — started {{ sow.created_at.strftime("%d %b, %H:%M") }}</span></span>
+      <span class="badge badge-needs_review">Generating…</span>
+    </div>
+  {% endfor %}
+  {% for deck in decks_generating %}
+    <div class="list-item">
+      <span><a href="/lesson-decks/{{ deck.id }}">PowerPoint: {{ deck.title }}</a>
+        <span class="muted" style="font-size:0.8rem;"> — started {{ deck.created_at.strftime("%d %b, %H:%M") }}</span></span>
+      <span class="badge badge-needs_review">Generating…</span>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Recently finished</h2>
+  <p class="muted">Showing up to {{ recent_limit }} most recent per type.</p>
+
+  {% for spec in specs_recent %}
+    <div class="list-item">
+      <span><a href="/spec-library/{{ spec.id }}">Spec: {{ spec.label }}</a>
+        <span class="muted" style="font-size:0.8rem;"> — {{ spec.created_at.strftime("%d %b, %H:%M") }}</span></span>
+      <span class="badge badge-{{ 'released' if spec.parse_status == 'parsed' else 'failed' }}">{{ spec.parse_status }}</span>
+    </div>
+  {% endfor %}
+  {% for sub in submissions_recent %}
+    <div class="list-item">
+      <span><a href="/submissions/{{ sub.id }}/review">{{ sub.original_filename }} ({{ sub.student.name }})</a>
+        <span class="muted" style="font-size:0.8rem;"> — {{ sub.created_at.strftime("%d %b, %H:%M") }}</span></span>
+      <span class="badge badge-{{ 'released' if sub.status in ('needs_review','released') else 'failed' }}">{{ sub.status }}</span>
+    </div>
+  {% endfor %}
+  {% for sow in sow_recent %}
+    <div class="list-item">
+      <span><a href="/courses/{{ sow.course_id }}/scheme-of-work/{{ sow.id }}">{{ sow.title }}</a>
+        <span class="muted" style="font-size:0.8rem;"> — {{ sow.created_at.strftime("%d %b, %H:%M") }}</span></span>
+      <span class="badge badge-{{ 'released' if sow.status == 'ready' else 'failed' }}">{{ sow.status }}</span>
+    </div>
+  {% endfor %}
+  {% for deck in decks_recent %}
+    <div class="list-item">
+      <span><a href="/lesson-decks/{{ deck.id }}">{{ deck.title }}</a>
+        <span class="muted" style="font-size:0.8rem;"> — {{ deck.created_at.strftime("%d %b, %H:%M") }}</span></span>
+      <span class="badge badge-{{ 'released' if deck.status == 'ready' else 'failed' }}">{{ deck.status }}</span>
+    </div>
+  {% endfor %}
+
+  {% if not (specs_recent or submissions_recent or sow_recent or decks_recent) %}
+    <p class="muted">Nothing finished recently.</p>
+  {% endif %}
+</div>
+{% endblock %}

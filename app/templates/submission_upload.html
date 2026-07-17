@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Upload submission - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}/students/{{ student.id }}">&larr; {{ student.name }}</a></p>
+<h1>Upload submission</h1>
+<div class="card">
+  <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/submissions/upload" enctype="multipart/form-data">
+    <label>Which unit is this work for?</label>
+    <select name="target_unit_name">
+      <option value="">-- whole spec (not recommended for large specs) --</option>
+      {% for unit in units %}
+        <option value="{{ unit.name }}">{{ unit.name }}</option>
+      {% endfor %}
+    </select>
+    <p class="muted" style="margin-top:-4px;">Keeps marking focused on the relevant criteria
+    instead of sending the whole specification - important for larger specs, where an
+    unfocused prompt is more likely to come back empty or wrong.</p>
+
+    <label>Submission type</label>
+    <select name="submission_type">
+      <option value="essay">Essay / written coursework</option>
+      <option value="report">Report</option>
+      <option value="network_config">Network config (Packet Tracer etc. - review only, not yet auto-marked)</option>
+      <option value="mcq">MCQ / short-answer</option>
+    </select>
+
+    <label>Date submitted</label>
+    <input type="date" name="submitted_at" value="{{ today }}">
+    <p class="muted" style="margin-top:-4px;">Defaults to today - change this if you're uploading
+    work that was actually submitted earlier (e.g. catching up on marking), so late-submission
+    tracking stays accurate.</p>
+
+    <label>Marking scheme / rubric (optional)</label>
+    <textarea name="marking_scheme_notes" placeholder="If this course uses something other than Met/Partly met/Not met - e.g. a numeric or lettered rubric - describe it here. e.g. 'Score each criterion 2 (below expectations), 5 (approaching), 7 (meets expectations), or 10 (exceeds expectations), with a one-line justification for the score.' Leave blank for standard Met/Partly met/Not met marking."></textarea>
+    <input type="file" name="marking_scheme_file" accept=".docx,.pdf,.txt">
+    <p class="muted" style="margin-top:-4px;">Or upload a rubric document instead/as well - its content
+    is combined with any notes above and used as the actual scale the AI marks against.</p>
+
+    <label>Files (one or more - e.g. a report AND a presentation AND a spreadsheet for the same LO)</label>
+    <input type="file" name="files" required multiple accept=".docx,.pdf,.txt,.pptx,.xlsx">
+    <p class="muted" style="margin-top:-4px;">All files are considered together when marking. Only
+    the .docx (if any) gets in-place Word comments - other formats are reviewed in-app instead.
+    Presentations and spreadsheets are marked with slide/sheet references so feedback can say
+    exactly where evidence was found.</p>
+
+    <button class="btn" type="submit">Upload</button>
+  </form>
+</div>
+{% endblock %}

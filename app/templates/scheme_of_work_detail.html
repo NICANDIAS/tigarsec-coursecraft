@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ sow.title }} - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>{{ sow.title }}</h1>
+{% if sow.content_area %}<p class="muted">Content area: {{ sow.content_area }}</p>{% endif %}
+{% if sow.start_date and sow.end_date %}<p class="muted">{{ sow.start_date }} to {{ sow.end_date }}</p>{% endif %}
+{% if sow.planned_assessments %}
+  <p class="muted">Planned assessment weeks: {% for a in sow.planned_assessments %}Week {{ a.week }} ({{ a.label }}){% if not loop.last %}, {% endif %}{% endfor %}</p>
+{% endif %}
+
+{% if sow.status == "generating" %}
+  <div class="card" id="sow-status-card" data-sow-id="{{ sow.id }}" data-course-id="{{ course.id }}">
+    <p>Generating your scheme of work — this runs in the background, feel free to navigate away and come back.</p>
+  </div>
+  <script>
+    (function () {
+      const card = document.getElementById("sow-status-card");
+      const sowId = card.dataset.sowId, courseId = card.dataset.courseId;
+      const poll = setInterval(async function () {
+        try {
+          const res = await fetch(`/courses/${courseId}/scheme-of-work/${sowId}/status`);
+          const data = await res.json();
+          if (data.status !== "generating") {
+            clearInterval(poll);
+            location.reload();
+          }
+        } catch (e) { /* try again next interval */ }
+      }, 3000);
+    })();
+  </script>
+
+{% elif sow.status == "failed" %}
+  <div class="error-box">Generation failed: {{ sow.error_detail }}</div>
+  <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/retry">
+    <button class="btn" type="submit">Retry</button>
+  </form>
+  <p class="muted" style="margin-top:8px;">Retrying re-uses this same scheme of work rather than
+  creating a new one, so your list doesn't keep growing with failed attempts.</p>
+
+{% else %}
+  {% if sow.error_detail and "capped at" in sow.error_detail %}
+    <div class="error-box" style="border-color:var(--warning);color:var(--warning);">{{ sow.error_detail }}</div>
+  {% endif %}
+  <div class="card">
+    <a class="btn btn-secondary" href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/download">Download as Word document</a>
+    <p class="muted" style="margin-top:8px;">A general table format (Week / Learning Outcomes / Content / Assessment) -
+    not an exact copy of any specific college template, but close to what most use, so you have a
+    real document to submit rather than only this in-app view.</p>
+  </div>
+  {% for week in sow.weeks_json %}
+    <div class="card week-block">
+      <h2>Week {{ week.week }}: {{ week.title }}</h2>
+      <p class="muted">Learning outcomes: {{ week.learning_outcomes|join(", ") }}</p>
+      <ul>
+        {% for act in week.activities %}
+          <li>{{ act }}</li>
+        {% endfor %}
+      </ul>
+      {% if week.practical %}
+        <p><strong>Practical:</strong> {{ week.practical }}</p>
+      {% endif %}
+      {% if week.assignment %}
+        <div class="card" style="background:var(--bg);margin-top:10px;">
+          <p><strong>Assignment: {{ week.assignment.title }}</strong></p>
+          <p>{{ week.assignment.brief }}</p>
+          {% if week.assignment.criteria_covered %}
+            <p class="muted">Covers: {{ week.assignment.criteria_covered|join(", ") }}</p>
+          {% endif %}
+        </div>
+      {% endif %}
+      {% if week.notes %}<p class="muted"><em>{{ week.notes }}</em></p>{% endif %}
+      {% set existing_deck = decks_by_week.get(week.week) %}
+      {% if existing_deck %}
+        <a class="btn" style="margin-top:10px;" href="/lesson-decks/{{ existing_deck.id }}">
+          View generated PowerPoint
+          {% if existing_deck.status == "generating" %}<span class="badge badge-needs_review">Generating…</span>{% endif %}
+        </a>
+        <a class="btn btn-secondary" style="margin-top:10px;"
+           href="/courses/{{ course.id }}/presentations/new?sow_id={{ sow.id }}&week={{ week.week }}">
+          Generate another
+        </a>
+      {% else %}
+        <a class="btn btn-secondary" style="margin-top:10px;"
+           href="/courses/{{ course.id }}/presentations/new?sow_id={{ sow.id }}&week={{ week.week }}">
+          Generate PowerPoint for this week
+        </a>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

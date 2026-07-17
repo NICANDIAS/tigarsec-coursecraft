@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Upload spec - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/spec-library">&larr; Spec library</a></p>
+<h1>Upload course specification</h1>
+{% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+<div class="card">
+  <form method="post" action="/spec-library/upload" enctype="multipart/form-data">
+    <label>Label (e.g. "Digital Support and Security - 2025-26")</label>
+    <input type="text" name="label" required>
+
+    <label>Upload spec file (.pdf, .docx, or .txt)</label>
+    <input type="file" name="spec_file" accept=".pdf,.docx,.txt">
+
+    <p class="muted">— or —</p>
+
+    <label>Fetch from a web link</label>
+    <input type="text" name="source_url" placeholder="https://example.com/spec.pdf">
+    <p class="muted" style="margin-top:-4px;">Works for a direct PDF/docx link or a web page - only
+    public URLs are supported (internal/private addresses are blocked for security).</p>
+
+    <p class="muted">— or —</p>
+
+    <label>Paste spec text directly</label>
+    <textarea name="pasted_text" placeholder="Paste unit / learning outcome / criteria text here if you'd rather not upload a file or link"></textarea>
+
+    <button class="btn" type="submit">Upload</button>
+  </form>
+  <p class="muted" style="margin-top:10px;">Parsing runs in the background after upload — large
+  documents are split into sections and processed one at a time, so this page won't hang even on
+  a full 50-100 page spec. You'll see live progress on the next page.</p>
+</div>
+{% endblock %}

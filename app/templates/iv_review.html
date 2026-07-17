@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}IV Review - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/iv">&larr; Internal Verification</a></p>
+<h1>IV review</h1>
+<p><span class="badge badge-needs_review">{{ iv_request.status }}</span></p>
+
+{% if iv_request.status in ("pending", "ai_assisting") %}
+  <div class="card">
+    <p>AI is preparing suggestions for each criterion — this page will update automatically.</p>
+  </div>
+  <script>
+    setInterval(function () { location.reload(); }, 5000);
+  </script>
+{% elif iv_request.status == "failed" %}
+  <div class="error-box">AI assist failed: {{ iv_request.error_detail }}</div>
+{% else %}
+  {% if iv_request.ai_overall_summary %}
+    <div class="card"><h2>AI overall summary</h2><p>{{ iv_request.ai_overall_summary }}</p></div>
+  {% endif %}
+
+  <form method="post" action="/iv/{{ iv_request.id }}/submit">
+    {% for check in checks %}
+      <div class="card">
+        <h2>{{ check.criterion_ref }}</h2>
+        <p><strong>Original mark:</strong> {{ check.original_mark or "—" }}</p>
+        <p class="muted"><strong>Original comment:</strong> {{ check.original_comment or "—" }}</p>
+        {% if check.ai_suggestion %}
+          <p><strong>AI suggestion:</strong> {{ check.ai_suggestion }}
+            {% if check.ai_confidence is not none %}<span class="muted">({{ (check.ai_confidence * 100)|round|int }}% confidence)</span>{% endif %}
+          </p>
+        {% endif %}
+
+        <label>Do you agree with the original mark?</label>
+        <select name="agree_{{ check.id }}">
+          <option value="yes">Yes, mark stands</option>
+          <option value="no">No, needs changing</option>
+        </select>
+
+        <label>IV comment</label>
+        <textarea name="comment_{{ check.id }}" placeholder="Your IV judgement on this criterion"></textarea>
+      </div>
+    {% endfor %}
+    <button class="btn" type="submit">Submit IV review</button>
+  </form>
+{% endif %}
+{% endblock %}

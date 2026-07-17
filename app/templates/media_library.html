@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Media Library - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Media library</h1>
+<p class="muted"><strong>What this is for:</strong> when generating a lesson PowerPoint, each slide
+that wants an image tries three sources in order: (1) a real photo from Unsplash, if you've set
+<code>UNSPLASH_ACCESS_KEY</code> in <code>.env</code>, (2) a tagged image from THIS library that
+matches the slide's topic keywords, (3) a plain generated placeholder graphic if neither of those
+finds anything. Upload and tag images here to improve source #2 - useful if you don't want to set up
+Unsplash, or want specific images (real screenshots, diagrams, photos from your own workplace/labs)
+to show up instead of generic stock photos. Shared with every teacher once uploaded.</p>
+
+<div class="card">
+  <h2>Unsplash connection</h2>
+  <p class="muted">Test whether your <code>UNSPLASH_ACCESS_KEY</code> actually works, instead of
+  only finding out indirectly when a generated PowerPoint uses placeholder graphics.</p>
+  <form method="post" action="/media-library/test-unsplash">
+    <button class="btn btn-secondary" type="submit">Test Unsplash connection</button>
+  </form>
+  {% if unsplash_test %}
+    <div class="{{ 'card' if unsplash_test.ok else 'error-box' }}" style="margin-top:12px;{% if unsplash_test.ok %}background:var(--bg);border:1px solid var(--success);{% endif %}">
+      <strong>{{ "✓ Success" if unsplash_test.ok else "✗ Failed" }}:</strong> {{ unsplash_test.message }}
+    </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Upload an image</h2>
+  <form method="post" action="/media-library/upload" enctype="multipart/form-data">
+    <label>Image file</label>
+    <input type="file" name="image_file" accept="image/*" required>
+    <label>Tags (comma-separated)</label>
+    <input type="text" name="tags" placeholder="e.g. network, server room, cables" required>
+    <button class="btn" type="submit">Upload</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Existing images ({{ images|length }})</h2>
+  {% if images %}
+    {% for img in images %}
+      <div class="list-item">
+        <span>{{ img.tags }}</span>
+        <span class="muted">{{ img.file_path.split('/')[-1] }}</span>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No images uploaded yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

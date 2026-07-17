@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Error - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/">&larr; Dashboard</a></p>
+<h1>{{ course.name }}</h1>
+<div class="error-box">
+  This course's page hit an unexpected error. Full detail below - please share this if you
+  need help fixing it.
+  <pre style="white-space:pre-wrap;font-size:0.8rem;margin-top:10px;">{{ error_detail }}</pre>
+</div>
+
+<div class="card">
+  <p>If this course doesn't have any real work in it, you can delete it directly from here
+  even though its normal page won't load.</p>
+  <form method="post" action="/courses/{{ course.id }}/delete"
+        onsubmit="return confirm('Delete this course permanently? This can\'t be undone.');">
+    <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">
+      Delete this course
+    </button>
+  </form>
+  <p class="muted" style="margin-top:8px;">Blocked if it has students, a scheme of work, or
+  lesson PowerPoints attached - you'll see a message explaining what's blocking it.</p>
+
+  {% if teacher.role == "admin" %}
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">
+      <p><strong>Admin: force delete</strong></p>
+      <p class="muted">Deletes this course AND everything under it permanently, no safety
+      check. Type the course's exact name below to confirm.</p>
+      <form method="post" action="/courses/{{ course.id }}/force-delete"
+            onsubmit="return confirm('This permanently destroys all student work, marks, and records for this course with no way back. Are you absolutely sure?');">
+        <input type="text" name="confirm_name" required placeholder="Type &quot;{{ course.name }}&quot; exactly to confirm" style="max-width:400px;">
+        <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);margin-top:8px;">
+          Force delete (destroys all student work)
+        </button>
+      </form>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

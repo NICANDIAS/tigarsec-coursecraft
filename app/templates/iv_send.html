@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Send for IV - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/submissions/{{ submission.id }}/review">&larr; Back to submission</a></p>
+<h1>Send for internal verification</h1>
+<div class="card">
+  <p><strong>{{ submission.original_filename }}</strong></p>
+  <form method="post" action="/iv/send/{{ submission.id }}" enctype="multipart/form-data">
+    <label>Send to</label>
+    <select name="assigned_to_teacher_id" required>
+      {% for t in other_teachers %}
+        <option value="{{ t.id }}">{{ t.name }} ({{ t.role }})</option>
+      {% endfor %}
+    </select>
+
+    <label>IV format/template sample (optional - .docx/.pdf/.txt)</label>
+    <input type="file" name="iv_format_file" accept=".docx,.pdf,.txt">
+
+    <button class="btn" type="submit">Send for IV</button>
+  </form>
+  <p class="muted" style="margin-top:10px;">The AI prepares a first-pass suggestion on each
+  criterion before your colleague reviews it — this speeds up their review, it doesn't replace it.</p>
+</div>
+{% endblock %}

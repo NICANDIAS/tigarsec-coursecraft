@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Generate PowerPoint - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>Generate lesson PowerPoint</h1>
+
+{% if not units %}
+  <div class="error-box">You need a parsed course specification attached to this course before
+  generating a PowerPoint. <a href="/courses/{{ course.id }}">Go back and attach one first.</a></div>
+{% else %}
+{% if prefill %}
+  <div class="card" style="background:var(--bg-elevated);border-color:var(--accent);">
+    <p class="muted">Pre-filled from your scheme of work - check it over, then generate.</p>
+  </div>
+{% endif %}
+<div class="card">
+  <form method="post" action="/courses/{{ course.id }}/presentations/generate">
+    {% if prefill and prefill.source_sow_id %}
+      <input type="hidden" name="source_sow_id" value="{{ prefill.source_sow_id }}">
+      <input type="hidden" name="source_week" value="{{ prefill.source_week }}">
+    {% endif %}
+    <label>Lesson title</label>
+    <input type="text" name="title" required placeholder="e.g. Network Topologies" value="{{ prefill.title if prefill else '' }}">
+
+    <label>Content area (unit)</label>
+    <select name="unit_index" id="unit-select" required onchange="showUnitLOs()">
+      <option value="">-- choose a unit --</option>
+      {% for unit in units %}
+        <option value="{{ loop.index0 }}" {% if prefill and prefill.unit_index == loop.index0 %}selected{% endif %}>{{ unit.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label style="margin-top:10px;">Which topic(s) is THIS lesson actually about?</label>
+    <p class="muted" style="margin-top:-4px;">A content area usually spans many lessons - tick
+    just the learning outcome(s) this specific lesson covers. Leave all unticked to build a
+    (much bigger) lesson covering the whole content area at once.</p>
+    <div id="lo-checklists" style="border:1px solid var(--border);border-radius:7px;padding:10px;margin-bottom:14px;max-height:260px;overflow-y:auto;">
+      {% for unit in units %}
+        {% set unit_idx = loop.index0 %}
+        <div class="lo-group" data-unit-index="{{ unit_idx }}" style="display:none;">
+          {% if unit.learning_outcomes %}
+            {% for lo in unit.learning_outcomes %}
+              <label style="display:flex;gap:8px;align-items:center;font-size:0.9rem;margin-bottom:6px;color:var(--text);">
+                <input type="checkbox" name="selected_los" value="{{ loop.index0 }}" style="width:auto;margin:0;"
+                  {% if prefill and prefill.unit_index == unit_idx and loop.index0 in prefill.lo_indices %}checked{% endif %}>
+                {{ lo.code }} — {{ lo.title }}
+              </label>
+            {% endfor %}
+          {% else %}
+            <p class="muted">No learning outcomes found for this unit.</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+      <p class="muted" id="lo-placeholder">Pick a content area above to see its topics.</p>
+    </div>
+
+    <label>Lesson duration (minutes)</label>
+    <input type="number" name="duration_minutes" value="60" min="20" max="240" required>
+
+    <label>What did students cover last lesson? (for the retrieval starter)</label>
+    {% if sow_weeks %}
+      <select name="previous_lesson_context_select" onchange="document.getElementById('prev-context').value = this.options[this.selectedIndex].dataset.summary || '';">
+        <option value="">-- pick a week from your scheme of work, or type below --</option>
+        {% for week in sow_weeks %}
+          <option data-summary="Week {{ week.week }}: {{ week.title }} — covered: {{ week.learning_outcomes|join(', ') }}">
+            Week {{ week.week }}: {{ week.title }}
+          </option>
+        {% endfor %}
+      </select>
+    {% endif %}
+    <textarea name="previous_lesson_context" id="prev-context" placeholder="e.g. Last lesson covered LAN vs WAN and basic network devices. Leave blank to use foundational recall questions instead.">{{ prefill.previous_context if prefill else '' }}</textarea>
+
+    <label style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" name="include_practicals" value="yes" checked style="width:auto;margin:0;">
+      Include a practical activity where appropriate
+    </label>
+
+    <button class="btn" type="submit" style="margin-top:14px;">Generate PowerPoint</button>
+  </form>
+  <p class="muted" style="margin-top:10px;">This runs in the background - large lessons with several
+  images can take a little while, especially if fetching real photos. You'll see live status on the
+  next page.</p>
+</div>
+
+<script>
+function showUnitLOs() {
+  const idx = document.getElementById('unit-select').value;
+  const placeholder = document.getElementById('lo-placeholder');
+  let anyShown = false;
+  document.querySelectorAll('.lo-group').forEach(function (group) {
+    if (group.dataset.unitIndex === idx && idx !== '') {
+      group.style.display = 'block';
+      anyShown = true;
+    } else {
+      group.style.display = 'none';
+      // Clear ticks in hidden groups so switching units never submits stray selections
+      // from a different content area.
+      group.querySelectorAll('input[type=checkbox]').forEach(function (cb) { cb.checked = false; });
+    }
+  });
+  if (placeholder) placeholder.style.display = anyShown ? 'none' : 'block';
+}
+{% if prefill and prefill.unit_index is not none %}
+showUnitLOs();  // reveal the pre-selected unit's checklist immediately on page load
+{% endif %}
+</script>
+{% endif %}
+{% endblock %}

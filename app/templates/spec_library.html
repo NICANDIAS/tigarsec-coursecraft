@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Spec Library - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Specification library</h1>
+<p class="muted">Shared across everyone — uploaded once by an admin or curriculum manager, then
+attached to courses by any lecturer from a dropdown. This avoids the same document being uploaded
+and re-parsed repeatedly.</p>
+
+<div class="card">
+  {% if specs %}
+    {% for spec in specs %}
+      <div class="list-item">
+        <a href="/spec-library/{{ spec.id }}">{{ spec.label }}</a>
+        <span style="display:flex;align-items:center;gap:8px;">
+          {% if spec.parse_status == "parsed" %}
+            <span class="badge badge-released">Parsed</span>
+          {% elif spec.parse_status == "parsing" %}
+            <span class="badge badge-needs_review">Parsing…</span>
+          {% elif spec.parse_status == "failed" %}
+            <span class="badge badge-failed">Failed</span>
+          {% elif spec.parse_status == "cancelled" %}
+            <span class="badge badge-failed">Cancelled</span>
+          {% else %}
+            <span class="badge badge-uploaded">Not parsed</span>
+          {% endif %}
+          {% if can_upload and spec.parse_status != "parsing" %}
+            <form method="post" action="/spec-library/{{ spec.id }}/delete"
+                  onsubmit="return confirm('Delete this spec permanently? This can\'t be undone.');">
+              <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);padding:4px 10px;font-size:0.8rem;">
+                Delete
+              </button>
+            </form>
+          {% endif %}
+        </span>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No specifications uploaded yet.</p>
+  {% endif %}
+
+  {% if can_upload %}
+    <div style="margin-top:14px;">
+      <a class="btn" href="/spec-library/new">Upload a new specification</a>
+    </div>
+  {% else %}
+    <p class="muted" style="margin-top:14px;">Only admins/curriculum managers can upload new
+    specifications — ask them if the one you need isn't listed above.</p>
+  {% endif %}
+</div>
+{% endblock %}

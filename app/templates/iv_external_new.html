@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}External IV - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/iv">&larr; Internal Verification</a></p>
+<h1>IV for work marked outside this tool</h1>
+
+<div class="card">
+  <form method="post" action="/iv/external/new" enctype="multipart/form-data">
+    <label>Course specification</label>
+    <select name="spec_version_id" required>
+      {% for s in specs %}<option value="{{ s.id }}">{{ s.label }}</option>{% endfor %}
+    </select>
+
+    <label>Assign to</label>
+    <select name="assigned_to_teacher_id" required>
+      {% for t in other_teachers %}<option value="{{ t.id }}">{{ t.name }} ({{ t.role }})</option>{% endfor %}
+    </select>
+
+    <label>Already-marked document (.docx/.pdf/.txt)</label>
+    <input type="file" name="marked_file" required accept=".docx,.pdf,.txt">
+
+    <label>Summary of the marks/comments already given</label>
+    <textarea name="marks_summary" required placeholder="e.g. Unit 3 LO2 P2: achieved - good use of evidence. LO2 M1: not yet met - missing evaluation section." style="min-height:140px;"></textarea>
+    <p class="muted" style="margin-top:-4px;">Automatically reading marks back out of an already-annotated
+    Word document isn't reliable yet, so this summary is how the AI knows what was originally given.</p>
+
+    <label>IV format/template sample (optional)</label>
+    <input type="file" name="iv_format_file" accept=".docx,.pdf,.txt">
+
+    <button class="btn" type="submit">Start AI-assisted IV</button>
+  </form>
+</div>
+{% endblock %}

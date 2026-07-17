@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Coverage - {{ course.name }} - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>Curriculum coverage</h1>
+<p class="muted">Uses only data already in the system - no AI calls, free to check as often
+as you like. Teaching coverage is tracked at the learning-outcome level (whatever your
+scheme of work actually plans at), not per individual P/M/D criterion, since that's the
+level of detail a scheme of work records.</p>
+
+{% if not has_parsed_spec %}
+  <div class="error-box">This course needs a parsed specification attached before coverage
+  can be calculated. <a href="/courses/{{ course.id }}">Go back and attach one.</a></div>
+
+{% else %}
+  <div class="card" style="display:flex;gap:30px;flex-wrap:wrap;">
+    <div><div class="muted">Total criteria</div><h2>{{ summary.total_criteria }}</h2></div>
+    <div><div class="muted">Assessed</div><h2>{{ summary.totals.assessed }}</h2></div>
+    <div><div class="muted">Taught, not assessed</div><h2>{{ summary.totals.taught_not_assessed }}</h2></div>
+    <div><div class="muted">Not taught yet</div><h2>{{ summary.totals.not_taught }}</h2></div>
+    <div><div class="muted">Coverage</div><h2>{{ summary.coverage_pct }}%</h2></div>
+  </div>
+
+  {% if summary.struggling %}
+    <div class="card">
+      <h2>⚠ Criteria students are struggling with</h2>
+      <p class="muted">Assessed, but more students have NOT met it than have met it so far.</p>
+      {% for s in summary.struggling %}
+        <div class="list-item">
+          <span><strong>{{ s.criterion_code }}</strong> ({{ s.unit_name }}) — {{ s.description[:100] }}</span>
+          <span class="badge badge-failed">{{ s.counts.not_met }} not met / {{ s.counts.met }} met</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% for unit in report %}
+    {% set gaps = unit.criteria|selectattr("status", "in", ["not_taught", "taught_not_assessed"])|list %}
+    <div class="card">
+      <h2>{{ unit.unit_name }}</h2>
+      {% if not gaps %}
+        <p class="muted">✓ Every criterion here has at least been taught (and most assessed) - no gaps.</p>
+      {% else %}
+        {% for c in gaps %}
+          <div class="list-item">
+            <span><strong>{{ c.criterion_code }}</strong> — {{ c.description[:110] }}</span>
+            {% if c.status == "not_taught" %}
+              <span class="badge badge-uploaded">Not taught yet</span>
+            {% else %}
+              <span class="badge badge-needs_review">Taught, not assessed</span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base_auth.html" %}
+{% block title %}Log in - TIGARSEC Assess{% endblock %}
+{% block content %}
+<div class="card" style="max-width:400px;margin:60px auto;">
+  <h1>Log in</h1>
+  {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <label>Email</label>
+    <input type="email" name="email" required>
+    <label>Password</label>
+    <input type="password" name="password" required>
+    <button class="btn" type="submit">Log in</button>
+  </form>
+  <p class="muted" style="margin-top:14px;">No account yet? <a href="/register">Register</a></p>
+</div>
+{% endblock %}

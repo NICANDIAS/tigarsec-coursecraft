@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Analytics - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Analytics</h1>
+<p class="muted">
+  {% if selected_student %}Showing: {{ selected_student.name }} ({{ selected_course.name }})
+  {% elif selected_course %}Showing: {{ selected_course.name }} (all students)
+  {% else %}Showing: all your courses{% endif %}
+  — recalculated from scratch on each visit rather than pre-aggregated, so it may feel
+  slower once you have a lot of history; that's a known thing to optimise later.
+</p>
+
+<div class="card">
+  <form method="get" action="/analytics" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+    <div style="flex:1;min-width:200px;">
+      <label>Course</label>
+      <select name="course_id" onchange="this.form.submit()">
+        <option value="0">-- all courses --</option>
+        {% for c in courses %}
+          <option value="{{ c.id }}" {% if selected_course and selected_course.id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if selected_course %}
+      <div style="flex:1;min-width:200px;">
+        <label>Student</label>
+        <select name="student_id" onchange="this.form.submit()">
+          <option value="0">-- all students in this course --</option>
+          {% for s in students_in_selected_course %}
+            <option value="{{ s.id }}" {% if selected_student and selected_student.id == s.id %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+    <button class="btn btn-secondary" type="submit">Apply</button>
+  </form>
+</div>
+
+<div class="card" style="display:flex;gap:30px;flex-wrap:wrap;">
+  <div><div class="muted">Total submissions</div><h2>{{ total_submissions }}</h2></div>
+  <div><div class="muted">Marked</div><h2>{{ marked_count }}</h2></div>
+  <div><div class="muted">Avg. AI confidence</div><h2>{{ avg_confidence if avg_confidence is not none else "—" }}{% if avg_confidence is not none %}%{% endif %}</h2></div>
+  <div><div class="muted">Override rate</div><h2>{{ override_rate if override_rate is not none else "—" }}{% if override_rate is not none %}%{% endif %}</h2></div>
+</div>
+
+<div class="card">
+  <h2>Submission status breakdown</h2>
+  <canvas id="statusChart" height="120"></canvas>
+</div>
+
+<div class="card">
+  <h2>Mark distribution</h2>
+  <canvas id="markChart" height="120"></canvas>
+</div>
+
+<div class="card">
+  <h2>Criteria with the highest override rate</h2>
+  <p class="muted">A high rate here usually means either the rubric wording is ambiguous, or the
+  AI is consistently less reliable on this specific criterion — worth a closer look either way.</p>
+  {% if criterion_override_table %}
+    <table>
+      <tr><th>Criterion</th><th>Times marked</th><th>Times overridden</th><th>Rate</th></tr>
+      {% for row in criterion_override_table %}
+        <tr><td>{{ row.criterion }}</td><td>{{ row.total }}</td><td>{{ row.overridden }}</td><td>{{ row.rate }}%</td></tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="muted">No marked submissions yet.</p>
+  {% endif %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+  const chartData = {{ chart_data_json | safe }};
+
+  new Chart(document.getElementById("statusChart"), {
+    type: "bar",
+    data: {
+      labels: chartData.status_counts.labels,
+      datasets: [{ label: "Submissions", data: chartData.status_counts.values, backgroundColor: "#2f6fed" }]
+    },
+    options: { plugins: { legend: { display: false } } }
+  });
+
+  new Chart(document.getElementById("markChart"), {
+    type: "bar",
+    data: {
+      labels: chartData.mark_distribution.labels,
+      datasets: [{ label: "Criteria marks", data: chartData.mark_distribution.values, backgroundColor: "#5b8dfc" }]
+    },
+    options: { plugins: { legend: { display: false } } }
+  });
+</script>
+{% endblock %}

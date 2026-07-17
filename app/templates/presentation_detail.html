@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ deck.title }} - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ deck.course_id }}">&larr; Back to course</a></p>
+<h1>{{ deck.title }}</h1>
+<p class="muted">{{ deck.content_area_name }} — {{ deck.duration_minutes }} minutes</p>
+<p><span class="badge badge-{{ 'released' if deck.status == 'ready' else 'needs_review' if deck.status in ('generating','queued') else 'failed' }}" id="status-badge">{{ deck.status }}</span></p>
+
+{% if deck.status in ("generating", "queued") %}
+  <div class="card" id="gen-status-card" data-deck-id="{{ deck.id }}">
+    <p>Generating your lesson PowerPoint — this writes the lesson plan first, then builds
+    the slides (fetching any real images last), so it can take a minute or two.</p>
+    <p class="muted" id="gen-last-checked">Checking for updates every few seconds — no need to refresh manually.</p>
+  </div>
+  <script>
+    (function () {
+      const id = document.getElementById("gen-status-card").dataset.deckId;
+      const lastCheckedEl = document.getElementById("gen-last-checked");
+      let checks = 0;
+      const poll = setInterval(async function () {
+        checks++;
+        try {
+          const res = await fetch(`/lesson-decks/${id}/status`);
+          const data = await res.json();
+          if (lastCheckedEl) lastCheckedEl.textContent = `Still checking... (${checks} check(s) so far, still ${data.status})`;
+          if (data.status !== "generating" && data.status !== "queued") {
+            clearInterval(poll);
+            location.reload();
+          }
+        } catch (e) {
+          if (lastCheckedEl) lastCheckedEl.textContent = `Network hiccup checking status (attempt ${checks}) - will retry...`;
+        }
+      }, 4000);
+    })();
+  </script>
+
+{% elif deck.status == "failed" %}
+  <div class="error-box">Generation failed: {{ deck.error_detail or "No error detail was recorded." }}</div>
+  <p class="muted">You'll need to go back to the course and try generating again.</p>
+
+{% elif deck.status == "ready" %}
+  {% if deck.fits_in_requested_time == false %}
+    <div class="error-box" style="border-color:var(--warning);color:var(--warning);background:rgba(184,134,11,0.12);">
+      <strong>⚠ This topic is bigger than fits in {{ deck.duration_minutes }} minutes.</strong>
+      {{ deck.scope_note }}
+    </div>
+    <div class="card" style="margin-bottom:16px;">
+      <a class="btn" href="/courses/{{ deck.course_id }}/presentations/new?from_deck_id={{ deck.id }}">
+        Generate follow-up lesson
+      </a>
+      <p class="muted" style="margin-top:8px;">Pre-fills the same content area and learning outcomes,
+      and tells the AI what this lesson already covered so the next one picks up from there.</p>
+    </div>
+  {% endif %}
+
+  {% if deck.error_detail %}
+    <div class="error-box" style="border-color:var(--warning);color:var(--warning);">{{ deck.error_detail }}</div>
+  {% endif %}
+
+  <div class="card">
+    {% if deck.pptx_path %}
+      <a class="btn" href="/lesson-decks/{{ deck.id }}/download">Download PowerPoint (.pptx)</a>
+      <a class="btn btn-secondary" href="/lesson-decks/{{ deck.id }}/present" target="_blank">Present in browser</a>
+      {% if resource_count > 0 %}
+        <a class="btn btn-secondary" href="/lesson-decks/{{ deck.id }}/resources">Download activity resources ({{ resource_count }})</a>
+      {% endif %}
+    {% else %}
+      <p class="muted">Marked as ready, but no file was recorded - this shouldn't happen. Try generating again.</p>
+    {% endif %}
+  </div>
+
+  {% if deck.outline_json %}
+    <div class="card">
+      <h2>Lesson outline</h2>
+      {% for slide in deck.outline_json.slides %}
+        <div class="week-block">
+          <p class="muted" style="text-transform:uppercase;font-size:0.75rem;">{{ slide.type.replace("_", " ") }}
+            {% if slide.time_minutes %} — {{ slide.time_minutes }} min{% endif %}</p>
+          <p><strong>
+            {% if slide.type == "objectives" %}Learning objectives
+            {% elif slide.type == "objectives_review" %}Objectives review
+            {% else %}{{ slide.title }}
+            {% endif %}
+          </strong></p>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+{% else %}
+  <div class="error-box">
+    Unexpected status: "{{ deck.status }}" - this isn't one this page knows how to display.
+    Please report this so it can be fixed properly (this message existing at all is the fix -
+    previously this situation showed a blank page with no explanation).
+  </div>
+{% endif %}
+{% endblock %}

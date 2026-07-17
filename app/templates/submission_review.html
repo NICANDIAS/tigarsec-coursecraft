@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Review submission - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ submission.student.course_id }}/students/{{ submission.student_id }}">&larr; {{ submission.student.name }}</a></p>
+<h1>{{ submission.original_filename }}</h1>
+<p><span class="badge badge-{{ submission.status }}" id="status-badge">{{ submission.status }}</span>
+{% if submission.submitted_at %}<span class="muted"> — submitted {{ submission.submitted_at.strftime("%d %b %Y") }}</span>{% endif %}</p>
+
+{% if submission.similarity_warning %}
+  <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
+    <strong>⚠ Similarity check:</strong> {{ submission.similarity_warning }}
+    <a href="/courses/{{ submission.student.course_id }}/similarity-check">View full similarity report</a>
+  </div>
+{% endif %}
+
+{% if submission.achieved_grade %}
+  <div class="card" style="background:var(--bg);border:2px solid var(--accent);">
+    <p style="font-size:1.1rem;"><strong>Overall grade: {{ submission.achieved_grade }}</strong></p>
+    <p class="muted">Computed using the standard rule: a grade band is only achieved if
+    every criterion in that band, and every band below it, is marked "Met" - a single
+    unmet criterion blocks that band and everything above it, however many others are met.</p>
+  </div>
+{% endif %}
+
+{% if submission.files %}
+  <div class="card">
+    <h2>Uploaded files</h2>
+    {% for f in submission.files %}
+      <div class="list-item"><span>{{ f.original_filename }}</span></div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if submission.status == "uploaded" %}
+  <div class="card">
+    <p>Not yet marked.</p>
+    <form method="post" action="/submissions/{{ submission.id }}/mark">
+      <button class="btn" type="submit">Mark with AI</button>
+    </form>
+  </div>
+
+{% elif submission.status == "marking" %}
+  <div class="card" id="marking-status-card" data-submission-id="{{ submission.id }}">
+    <p>Marking in progress — this runs in the background, feel free to navigate away and come back.</p>
+    <p class="muted" id="marking-progress-text">Checking status…</p>
+  </div>
+  <script>
+    (function () {
+      const id = document.getElementById("marking-status-card").dataset.submissionId;
+      const poll = setInterval(async function () {
+        try {
+          const res = await fetch(`/submissions/${id}/status`);
+          const data = await res.json();
+          if (data.submission_status !== "marking") {
+            clearInterval(poll);
+            location.reload();
+            return;
+          }
+        } catch (e) { /* network hiccup, try again next interval */ }
+      }, 3000);
+    })();
+  </script>
+
+{% elif submission.status == "failed" %}
+  <div class="error-box">
+    Marking failed: {{ submission.marking_run.error_detail if submission.marking_run else "unknown error" }}
+  </div>
+  <form method="post" action="/submissions/{{ submission.id }}/mark">
+    <button class="btn" type="submit">Retry marking</button>
+  </form>
+
+{% elif submission.status == "needs_review" and not marks %}
+  <div class="error-box">
+    This submission is marked "needs review" but has no marks recorded at all - almost
+    certainly a leftover from before a safety check existed to catch this case. There's
+    nothing to review here yet.
+  </div>
+  <form method="post" action="/submissions/{{ submission.id }}/mark">
+    <button class="btn" type="submit">Re-mark this submission</button>
+  </form>
+
+{% else %}
+  {% if submission.marking_run and submission.marking_run.overall_summary %}
+    <div class="card">
+      <h2>Overall summary</h2>
+      <p>{{ submission.marking_run.overall_summary }}</p>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/submissions/{{ submission.id }}/approve">
+    {% for mark in marks %}
+      <div class="card">
+        <h2>{{ mark.criterion_ref }}</h2>
+
+        {% if mark.needs_human_review %}
+          <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
+            <strong>⚠ Needs human review:</strong> {{ mark.human_review_reason or "The AI could not confidently assess this criterion itself." }}
+          </div>
+        {% endif %}
+
+        <p class="muted">
+          AI confidence:
+          <span class="confidence-bar" style="display:inline-block;vertical-align:middle;">
+            <span class="confidence-fill {{ 'low' if mark.ai_confidence < 0.4 else 'medium' if mark.ai_confidence < 0.7 else 'high' }}" style="width:{{ (mark.ai_confidence * 100)|round|int }}%;"></span>
+          </span>
+          {{ (mark.ai_confidence * 100)|round|int }}%
+          {% if mark.ai_confidence < 0.6 %}<span class="badge badge-needs_review">Low confidence - check this one</span>{% endif %}
+        </p>
+
+        {% if mark.source_file %}
+          <p class="muted">Evidence found in: <strong>{{ mark.source_file }}</strong>{% if mark.source_location %}, {{ mark.source_location }}{% endif %}</p>
+        {% endif %}
+        {% if mark.evidence_text %}
+          <p class="muted">Evidence quoted: "{{ mark.evidence_text }}"</p>
+        {% endif %}
+
+        <label>Mark</label>
+        <input type="text" name="final_mark_{{ mark.id }}" value="{{ mark.final_mark }}" {% if submission.status == "released" %}readonly{% endif %}>
+        {% if mark.final_mark and "partly" in mark.final_mark.lower() %}
+          <p class="muted" style="color:var(--warning);margin-top:-6px;">Marked as partly met</p>
+        {% endif %}
+
+        <label>Comment</label>
+        {% if submission.status == "released" %}
+          <p style="white-space:pre-wrap;">{{ mark.final_comment|bold_markdown }}</p>
+        {% else %}
+          <textarea name="final_comment_{{ mark.id }}">{{ mark.final_comment }}</textarea>
+          {% if mark.final_comment and "**" in mark.final_comment %}
+            <p class="muted" style="font-size:0.85rem;">Preview with bolded command words: {{ mark.final_comment|bold_markdown }}</p>
+          {% endif %}
+        {% endif %}
+
+        {% if mark.overridden %}<p class="muted">✎ You edited this from the AI's original mark.</p>{% endif %}
+      </div>
+    {% endfor %}
+
+    {% if submission.status != "released" %}
+      <button class="btn" type="submit">Save & approve</button>
+    {% endif %}
+  </form>
+
+  {% if submission.status == "released" %}
+    <div class="card">
+      <p>Approved and released.</p>
+      {% if submission.annotated_path %}
+        <a class="btn" href="/submissions/{{ submission.id }}/download">Download marked document</a>
+      {% else %}
+        <p class="muted">This file type doesn't support in-place Word comments — use the marks above manually.</p>
+      {% endif %}
+      <a class="btn btn-secondary" href="/iv/send/{{ submission.id }}">Send for internal verification</a>
+      <form method="post" action="/submissions/{{ submission.id }}/unapprove" style="display:inline-block;margin-left:8px;">
+        <button class="btn btn-secondary" type="submit">Pull back for editing</button>
+      </form>
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

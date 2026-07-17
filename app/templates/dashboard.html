@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Welcome, {{ teacher.name }}</h1>
+
+<div class="card">
+  <h2>Your courses</h2>
+  {% if courses %}
+    {% for course in courses %}
+      <div class="list-item">
+        <a href="/courses/{{ course.id }}">{{ course.name }}</a>
+        <span class="muted">{{ course.students|length }} student(s)</span>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No courses yet — create one below to get started.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Create a course</h2>
+  <form method="post" action="/courses/create">
+    <label>Course name (e.g. "T-Level Digital Production, Design and Development - Year 2")</label>
+    <input type="text" name="name" required>
+    <button class="btn" type="submit">Create course</button>
+  </form>
+</div>
+{% endblock %}

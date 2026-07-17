@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Similarity Check - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>Similarity check</h1>
+<p class="muted">Every new upload is now checked automatically against other students'
+submissions for the same assignment - you'll see a warning right on that submission's
+page if a match is found. This page is for re-checking everything at once (e.g. older
+submissions uploaded before this existed, or just a full sweep) - compares submissions
+for the SAME assignment against each other to catch students copying from one another.
+This is a fast, free text-similarity check on your own class's submissions - not a full
+Turnitin-style check against the internet/academic archives, but a genuine first line of
+defence for the specific case of students copying each other within your class.</p>
+
+{% if not report %}
+  <div class="card">
+    <p class="muted">No submissions with a high enough match to flag - either nothing
+    similar was found, or there aren't yet at least 2 submissions for the same assignment
+    to compare.</p>
+  </div>
+{% endif %}
+
+{% for group in report %}
+  <div class="card">
+    <h2>{{ group.unit_name }}</h2>
+    {% for pair in group.pairs %}
+      <div class="list-item">
+        <span>{{ pair.student_a }} <a href="/submissions/{{ pair.submission_a_id }}/review">(view)</a>
+        &harr;
+        {{ pair.student_b }} <a href="/submissions/{{ pair.submission_b_id }}/review">(view)</a></span>
+        <span class="badge badge-{{ 'failed' if pair.severity == 'very_high' else 'needs_review' }}">
+          {{ pair.similarity }}% similar
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+{% endfor %}
+{% endblock %}

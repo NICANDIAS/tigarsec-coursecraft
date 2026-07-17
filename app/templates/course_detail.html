@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}{{ course.name }} - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/">&larr; Dashboard</a></p>
+<h1>{{ course.name }}</h1>
+{% if delete_error %}<div class="error-box">{{ delete_error }}</div>{% endif %}
+
+{% set active_students = course.students|selectattr("is_active")|list %}
+{% set ready_decks = course.spec_version and course.schemes_of_work %}
+<div class="stats-strip">
+  <div class="stat-pill">
+    <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span>
+      {% if course.spec_version and course.spec_version.parse_status == "parsed" %}Spec parsed
+      {% elif course.spec_version %}Spec {{ course.spec_version.parse_status }}
+      {% else %}No spec attached{% endif %}
+    </span>
+  </div>
+  <div class="stat-pill">
+    <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span class="stat-value">{{ active_students|length }}</span> student(s)
+  </div>
+  <div class="stat-pill">
+    <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <span class="stat-value">{{ course.schemes_of_work|selectattr("status","equalto","ready")|list|length }}</span> scheme(s) of work
+  </div>
+</div>
+
+<div class="section-card">
+  <div class="section-header">
+    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+    <h2>Course specification</h2>
+  </div>
+  {% if course.spec_version %}
+    <p>Attached: <strong>{{ course.spec_version.label }}</strong>
+      {% if course.spec_version.parse_status == "parsed" %}
+        <span class="badge badge-released">Parsed</span>
+      {% elif course.spec_version.parse_status == "parsing" %}
+        <span class="badge badge-needs_review">Parsing…</span>
+      {% else %}
+        <span class="badge badge-uploaded">Not parsed</span>
+      {% endif %}
+    </p>
+    <a class="btn btn-secondary" href="/spec-library/{{ course.spec_version.id }}">View spec</a>
+    <form method="post" action="/courses/{{ course.id }}/detach-spec" style="display:inline-block;">
+      <button class="btn btn-secondary" type="submit">Remove from this course</button>
+    </form>
+    <p class="muted" style="margin-top:8px;">This only unlinks it from THIS course - the spec
+    itself stays in the shared library. To delete it entirely, go to the spec's own page in
+    the <a href="/spec-library">spec library</a>.</p>
+  {% else %}
+    <p class="muted">No specification attached yet. Attach one from the shared library below.</p>
+  {% endif %}
+
+  <form method="post" action="/courses/{{ course.id }}/attach-spec" style="margin-top:14px;max-width:400px;">
+    <label>Attach a spec from the library</label>
+    <select name="spec_version_id" required>
+      <option value="">-- choose a specification --</option>
+      {% for s in all_specs %}
+        <option value="{{ s.id }}" {% if course.spec_version_id == s.id %}selected{% endif %}>
+          {{ s.label }} {% if s.parse_status != "parsed" %}({{ s.parse_status }}){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-secondary" type="submit">Attach</button>
+  </form>
+  <p class="muted" style="margin-top:8px;">Don't see the one you need? Visit the
+    <a href="/spec-library">spec library</a> — only admins/curriculum managers can upload new ones.</p>
+</div>
+
+<div class="section-card">
+  <div class="section-header">
+    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
+    <h2>Lesson PowerPoints</h2>
+  </div>
+  <p class="muted">Retrieval starter → objectives → student-led content → activities/practicals →
+  retrieval plenary → objectives review.</p>
+  {% if recent_decks %}
+    {% for deck in recent_decks %}
+      <div class="list-item">
+        <a href="/lesson-decks/{{ deck.id }}">{{ deck.title }}</a>
+        {% if deck.status == "ready" %}
+          <span class="badge badge-released">Ready</span>
+        {% elif deck.status in ("generating", "queued") %}
+          <span class="badge badge-needs_review">Generating…</span>
+        {% elif deck.status == "failed" %}
+          <span class="badge badge-failed">Failed</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No PowerPoints generated yet.</p>
+  {% endif %}
+  <div style="margin-top:12px;">
+    <a class="btn" href="/courses/{{ course.id }}/presentations/new">Generate a PowerPoint</a>
+  </div>
+</div>
+
+<div class="section-card">
+  <div class="section-header">
+    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+    <h2>Scheme of work</h2>
+  </div>
+  {% if course.schemes_of_work %}
+    {% for sow in course.schemes_of_work %}
+      <div class="list-item">
+        <a href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}">{{ sow.title }}</a>
+        {% if sow.status == "ready" %}
+          <span class="muted">{{ sow.weeks_json|length }} weeks</span>
+        {% elif sow.status == "generating" %}
+          <span class="badge badge-needs_review">Generating…</span>
+        {% elif sow.status == "failed" %}
+          <span class="badge badge-failed">Failed</span>
+        {% else %}
+          <span class="muted">{{ sow.status }}</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No scheme of work generated yet.</p>
+  {% endif %}
+  <div style="margin-top:12px;">
+    <a class="btn" href="/courses/{{ course.id }}/scheme-of-work/new">Generate scheme of work</a>
+  </div>
+</div>
+
+<div class="section-card">
+  <div class="section-header">
+    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+    <h2>Students</h2>
+  </div>
+  {% if active_students %}
+    {% for student in active_students %}
+      <div class="list-item">
+        <a href="/courses/{{ course.id }}/students/{{ student.id }}">{{ student.name }}</a>
+        <span class="muted">{{ student.submissions|length }} submission(s)</span>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No students added yet.</p>
+  {% endif %}
+  <form method="post" action="/courses/{{ course.id }}/students/create" style="margin-top:14px;">
+    <label>Student name</label>
+    <input type="text" name="name" required>
+    <label>Student reference (optional)</label>
+    <input type="text" name="student_ref">
+    <button class="btn" type="submit">Add student</button>
+  </form>
+</div>
+
+<div class="utility-grid">
+  <div class="section-card category-insight">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+      <h2>Curriculum coverage</h2>
+    </div>
+    <p class="muted">See which criteria haven't been taught yet, taught but never assessed, or
+    where students are struggling - using data already in the system, no AI cost.</p>
+    <a class="btn btn-secondary" href="/courses/{{ course.id }}/coverage">View coverage dashboard</a>
+  </div>
+
+  <div class="section-card category-insight">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+      <h2>Similarity check</h2>
+    </div>
+    <p class="muted">Compares this course's submissions against each other to catch students
+    copying from one another.</p>
+    <a class="btn btn-secondary" href="/courses/{{ course.id }}/similarity-check">Run similarity check</a>
+  </div>
+</div>
+
+<div class="section-card category-danger">
+  <div class="section-header">
+    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+    <h2>Delete this course</h2>
+  </div>
+  <p class="muted">Only possible if it has no students, scheme of work, or lesson PowerPoints
+  attached yet - protects real work from being deleted by accident.</p>
+  <form method="post" action="/courses/{{ course.id }}/delete"
+        onsubmit="return confirm('Delete this course permanently? This can\'t be undone.');">
+    <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">
+      Delete course
+    </button>
+  </form>
+
+  {% if teacher.role == "admin" %}
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">
+      <p><strong>Admin: force delete</strong></p>
+      <p class="muted">Deletes this course AND everything under it - students, submissions,
+      marks, override history, IV records - permanently, with no safety check and no way
+      to recover any of it. Type the course's exact name below to confirm.</p>
+      <form method="post" action="/courses/{{ course.id }}/force-delete"
+            onsubmit="return confirm('This permanently destroys all student work, marks, and records for this course with no way back. Are you absolutely sure?');">
+        <input type="text" name="confirm_name" required placeholder="Type &quot;{{ course.name }}&quot; exactly to confirm" style="max-width:400px;">
+        <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);margin-top:8px;">
+          Force delete (destroys all student work)
+        </button>
+      </form>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

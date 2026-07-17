@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ student.name }} - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>{{ student.name }} {% if not student.is_active %}<span class="badge badge-failed">Archived</span>{% endif %}</h1>
+{% if student.student_ref %}<p class="muted">Ref: {{ student.student_ref }}</p>{% endif %}
+
+<div class="card">
+  <h2>Edit student</h2>
+  <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/edit">
+    <label>Name</label>
+    <input type="text" name="name" value="{{ student.name }}" required>
+    <label>Student reference</label>
+    <input type="text" name="student_ref" value="{{ student.student_ref or '' }}">
+    <button class="btn btn-secondary" type="submit">Save changes</button>
+  </form>
+  <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/toggle-active" style="margin-top:10px;">
+    <button class="btn btn-secondary" type="submit">
+      {% if student.is_active %}Archive student{% else %}Reactivate student{% endif %}
+    </button>
+  </form>
+  <p class="muted" style="margin-top:8px;">Students aren't permanently deleted — archiving keeps
+  their submission/marking history intact but hides them from the active list.</p>
+</div>
+
+<div class="card">
+  <h2>Submissions</h2>
+  {% if student.submissions %}
+    {% for sub in student.submissions %}
+      <div class="list-item">
+        <a href="/submissions/{{ sub.id }}/review">{{ sub.original_filename }}</a>
+        <span class="badge badge-{{ sub.status }}">{{ sub.status }}</span>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No submissions yet.</p>
+  {% endif %}
+
+  {% if has_parsed_spec %}
+    <div style="margin-top:14px;">
+      <a class="btn" href="/courses/{{ course.id }}/students/{{ student.id }}/submissions/new">Upload submission</a>
+    </div>
+  {% else %}
+    <p class="error-box">Attach a parsed course spec before submissions can be marked.</p>
+  {% endif %}
+</div>
+{% endblock %}

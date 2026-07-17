@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Audit Log - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<p class="muted">Admin-only record of user actions for accountability and security purposes -
+uploads, approvals, pull-backs for review, course deletions, and anything else the app logs.
+Showing the most recent 200 entries. This is the app's own action log, not raw server logs -
+those live on the server itself (<code>docker compose logs app</code>).</p>
+
+{% if not entries %}
+  <div class="card"><p class="muted">Nothing logged yet.</p></div>
+{% endif %}
+
+{% for entry in entries %}
+  <div class="card" style="padding:14px 20px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
+      <div>
+        <strong>{{ entry.action }}</strong>
+        <span class="muted">by {{ entry.actor }}</span>
+        {% if entry.submission_id and context_by_submission_id.get(entry.submission_id) %}
+          {% set ctx = context_by_submission_id[entry.submission_id] %}
+          <span class="muted"> — {{ ctx.filename }} ({{ ctx.student_name }}, {{ ctx.course_name }})</span>
+        {% endif %}
+        {% if entry.detail %}<p style="margin:6px 0 0 0;">{{ entry.detail }}</p>{% endif %}
+      </div>
+      <span class="muted" style="white-space:nowrap;font-size:0.85rem;">{{ entry.created_at.strftime("%d %b %Y, %H:%M") }}</span>
+    </div>
+  </div>
+{% endfor %}
+{% endblock %}

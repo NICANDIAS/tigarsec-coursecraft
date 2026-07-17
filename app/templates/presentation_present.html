@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ deck.title }} - Present</title>
+<style>
+  :root {
+    --p-accent: #{{ deck.outline_json.palette.accent if deck.outline_json.palette else "2F6FED" }};
+    --p-tint: #{{ deck.outline_json.palette.tint if deck.outline_json.palette else "EEF3FD" }};
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #ffffff; color: #1a1a1e; height: 100vh; overflow: hidden;
+  }
+  .slide {
+    display: none; height: 100vh; padding: 60px 90px; flex-direction: column;
+    justify-content: center; overflow-y: auto;
+  }
+  .slide.active { display: flex; }
+  .slide h1 { font-size: 2.6rem; margin-bottom: 10px; color: var(--p-accent); }
+  .slide h2 { font-size: 2rem; margin-bottom: 24px; color: #1a1a1e; }
+  .slide .subtitle { font-size: 1.3rem; color: #5b5b63; }
+  .slide .label {
+    text-transform: uppercase; letter-spacing: 2px; font-size: 0.85rem;
+    color: var(--p-accent); margin-bottom: 14px; font-weight: 700;
+  }
+  .slide ul, .slide ol { font-size: 1.25rem; line-height: 1.7; }
+  .slide p { font-size: 1.25rem; line-height: 1.6; }
+  .slide .muted { color: #5b5b63; font-size: 1rem; }
+  .slide .check-question {
+    margin-top: 24px; padding: 16px 20px; background: var(--p-tint);
+    border-left: 4px solid var(--p-accent); border-radius: 4px;
+  }
+  .slide .resource-note {
+    margin-top: 20px; padding: 14px 18px; background: #fff8e1;
+    border-left: 4px solid #e0b23a; border-radius: 4px; font-size: 1rem;
+  }
+  .slide .meta { color: #5b5b63; font-size: 1rem; margin-bottom: 20px; }
+  .slide-body { display: flex; gap: 40px; align-items: center; flex: 1; min-height: 0; }
+  .slide-body .text-col { flex: 1.2; min-width: 0; }
+  .slide-body .image-col { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; }
+  .slide-body .image-col img { max-width: 100%; max-height: 55vh; border-radius: 10px; object-fit: cover; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+  .placeholder-graphic {
+    width: 100%; max-width: 320px; aspect-ratio: 4/3; border-radius: 14px;
+    background: var(--p-tint); display: flex; align-items: center; justify-content: center;
+  }
+  .placeholder-graphic .dot { width: 70px; height: 70px; border-radius: 50%; background: var(--p-accent); opacity: 0.85; }
+  .activity-box, .practical-box { padding: 24px; border-radius: 10px; background: var(--p-tint); }
+  .nav {
+    position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between;
+    align-items: center; padding: 14px 30px; background: rgba(0,0,0,0.06);
+  }
+  .nav button {
+    background: var(--p-accent); color: #ffffff; border: none; padding: 10px 20px; border-radius: 6px;
+    cursor: pointer; font-size: 1rem;
+  }
+  .nav button:disabled { opacity: 0.3; cursor: default; }
+  .nav .counter { color: #5b5b63; }
+  .exit-link { position: fixed; top: 16px; right: 20px; color: #5b5b63; text-decoration: none; font-size: 0.9rem; z-index: 10; }
+</style>
+</head>
+<body>
+
+<a href="/lesson-decks/{{ deck.id }}" class="exit-link">&times; Exit present mode</a>
+
+<div id="slides">
+  {% for slide in deck.outline_json.slides %}
+    <div class="slide" data-index="{{ loop.index0 }}">
+      {% if slide.type == "title" %}
+        <h1>{{ slide.title }}</h1>
+        <p class="subtitle">{{ slide.subtitle }}</p>
+
+      {% elif slide.type == "retrieval_starter" %}
+        <div class="label">Do Now — Last Lesson Recap</div>
+        <h2>{{ slide.title }}</h2>
+        <ul>{% for q in slide.questions %}<li>{{ q }}</li>{% endfor %}</ul>
+        {% if slide.time_minutes %}<p class="muted">{{ slide.time_minutes }} minutes</p>{% endif %}
+
+      {% elif slide.type == "objectives" %}
+        <div class="label">Learning Objectives</div>
+        <ul>{% for o in slide.objectives %}<li>{{ o }}</li>{% endfor %}</ul>
+
+      {% elif slide.type == "content" %}
+        <h2>{{ slide.title }}</h2>
+        <div class="slide-body">
+          <div class="text-col">
+            {% if slide.guiding_question %}<p class="meta"><em>{{ slide.guiding_question }}</em></p>{% endif %}
+            <ul>{% for kp in slide.key_points %}<li>{{ kp }}</li>{% endfor %}</ul>
+            {% if slide.check_question %}<div class="check-question">Check: {{ slide.check_question }}</div>{% endif %}
+          </div>
+          <div class="image-col">
+            {% if slide.resolved_image and slide.resolved_image.type == "photo" %}
+              <img src="/lesson-decks/{{ deck.id }}/slide-image/{{ loop.index0 }}" alt="">
+            {% else %}
+              <div class="placeholder-graphic"><div class="dot"></div></div>
+            {% endif %}
+          </div>
+        </div>
+
+      {% elif slide.type == "real_life_example" %}
+        <div class="label">Real-World Example</div>
+        <h2>{{ slide.title }}</h2>
+        <div class="slide-body">
+          <div class="text-col">
+            <p>{{ slide.scenario }}</p>
+            {% if slide.discussion_question %}<div class="check-question">{{ slide.discussion_question }}</div>{% endif %}
+          </div>
+          <div class="image-col">
+            {% if slide.resolved_image and slide.resolved_image.type == "photo" %}
+              <img src="/lesson-decks/{{ deck.id }}/slide-image/{{ loop.index0 }}" alt="">
+            {% else %}
+              <div class="placeholder-graphic"><div class="dot"></div></div>
+            {% endif %}
+          </div>
+        </div>
+
+      {% elif slide.type == "activity" or slide.type == "practical" %}
+        <div class="label">{{ "Practical" if slide.type == "practical" else "Activity" }}</div>
+        <h2>{{ slide.title }}</h2>
+        <div class="{{ 'practical-box' if slide.type == 'practical' else 'activity-box' }}">
+          <p class="meta" style="margin-bottom:10px;">
+            {% if slide.grouping %}Grouping: {{ slide.grouping }} — {% endif %}
+            {% if slide.materials_needed %}Materials: {{ slide.materials_needed }} — {% endif %}
+            {% if slide.time_minutes %}{{ slide.time_minutes }} minutes{% endif %}
+          </p>
+          <p style="white-space:pre-wrap;margin:0;">{{ slide.instructions }}</p>
+        </div>
+        {% if slide.resource and slide.resource.needed %}
+          <div class="resource-note">📄 Printable resource needed for this - see "Download activity resources" on the deck page.</div>
+        {% endif %}
+
+      {% elif slide.type == "retrieval_plenary" %}
+        <div class="label">Check Your Understanding</div>
+        <h2>{{ slide.title }}</h2>
+        <ul>{% for q in slide.questions %}<li>{{ q }}</li>{% endfor %}</ul>
+
+      {% elif slide.type == "objectives_review" %}
+        <div class="label">Have We Met Today's Objectives?</div>
+        {% for oc in slide.objectives_check %}
+          <p><strong>{{ oc.objective }}</strong><br><span class="muted">{{ oc.self_assess_prompt }}</span></p>
+        {% endfor %}
+
+      {% else %}
+        <p class="muted">Unrecognised slide type: {{ slide.type }}</p>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+<div class="nav">
+  <button id="prev-btn" onclick="goTo(currentIndex - 1)">&larr; Prev</button>
+  <span class="counter" id="counter"></span>
+  <button id="next-btn" onclick="goTo(currentIndex + 1)">Next &rarr;</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll(".slide");
+  const total = slides.length;
+  let currentIndex = 0;
+
+  function goTo(index) {
+    if (index < 0 || index >= total) return;
+    slides[currentIndex].classList.remove("active");
+    currentIndex = index;
+    slides[currentIndex].classList.add("active");
+    document.getElementById("counter").textContent = (currentIndex + 1) + " / " + total;
+    document.getElementById("prev-btn").disabled = currentIndex === 0;
+    document.getElementById("next-btn").disabled = currentIndex === total - 1;
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowRight" || e.key === " ") goTo(currentIndex + 1);
+    if (e.key === "ArrowLeft") goTo(currentIndex - 1);
+    if (e.key === "Escape") window.location.href = "/lesson-decks/{{ deck.id }}";
+  });
+
+  if (total > 0) goTo(0);
+</script>
+
+</body>
+</html>

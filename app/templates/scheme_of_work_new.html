@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Generate scheme of work - TIGARSEC Assess{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>Generate scheme of work</h1>
+
+{% if not has_parsed_spec %}
+  <div class="error-box">You need a parsed course specification attached to this course before
+  generating a scheme of work. <a href="/courses/{{ course.id }}">Go back and attach one from the
+  spec library first.</a></div>
+{% else %}
+<div class="card">
+  <form method="post" action="/courses/{{ course.id }}/scheme-of-work/generate" enctype="multipart/form-data">
+    <label>Title (e.g. "Year 2 Term 1")</label>
+    <input type="text" name="title" required>
+
+    <label>Term/period start and end date (recommended - number of weeks is calculated for you)</label>
+    <div style="display:flex;gap:10px;">
+      <input type="date" name="start_date" style="flex:1;">
+      <input type="date" name="end_date" style="flex:1;">
+    </div>
+    <p class="muted" style="margin-top:-4px;">Leave both blank and just type a week count below instead, if you'd rather not pick calendar dates.</p>
+
+    <label>Number of weeks (used only if you didn't pick dates above)</label>
+    <input type="number" name="weeks" min="1" max="{{ max_weeks }}" value="12">
+    <p class="muted" style="margin-top:-4px;">This is a target, not a strict requirement - the AI
+    will use its own judgement if your content genuinely needs more or fewer weeks than this to
+    teach properly, and will say so if it deviates. ({{ max_weeks }}-week sanity ceiling for obviously
+    mistyped numbers only.)</p>
+
+    <label>Content area(s) to cover</label>
+    <p class="muted" style="margin-top:-4px;">Tick the units to include — leave all unticked to cover the whole spec.</p>
+    <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:10px;margin-bottom:14px;">
+      {% for unit in units %}
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--text);margin-bottom:6px;">
+          <input type="checkbox" name="selected_units" value="{{ unit.name }}" style="width:auto;margin:0;">
+          {{ unit.name }} <span class="muted">({{ unit.learning_outcomes|length }} LOs)</span>
+        </label>
+      {% endfor %}
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" name="include_practicals" value="yes" style="width:auto;margin:0;">
+      Include practical/hands-on activities
+    </label>
+    <input type="text" name="practicals_notes" placeholder="Optional - what kind of practicals? e.g. 'lab-based networking exercises using Packet Tracer'">
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+      <input type="checkbox" name="design_assignments" value="yes" style="width:auto;margin:0;">
+      Design assignment briefs where the spec is ready to be assessed
+    </label>
+
+    <label style="margin-top:14px;">Planned assessment weeks (optional)</label>
+    <p class="muted" style="margin-top:-4px;">If you already know when your major assessments need
+    to happen (e.g. from your college calendar), specify them here and the scheme of work will be
+    paced so enough content is covered by each one. Leave all blank and the AI will decide freely
+    where assessments go instead - this works fine either way.</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+      {% for i in range(1, 5) %}
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input type="number" name="assessment_week" min="1" max="{{ max_weeks }}" placeholder="Week #" style="width:100px;">
+          <input type="text" name="assessment_label" placeholder="e.g. Set Task A: Fundamentals" style="flex:1;">
+        </div>
+      {% endfor %}
+    </div>
+
+    <label style="margin-top:10px;">Upload your college's scheme of work format/template (optional - .docx/.pdf/.txt)</label>
+    <input type="file" name="format_sample_file" accept=".docx,.pdf,.txt">
+    <p class="muted" style="margin-top:-4px;">Used as a style guide for structure/detail level, not copied literally.</p>
+
+    <label>Extra notes / preferences (optional)</label>
+    <textarea name="notes" placeholder="e.g. two double lessons per week, exam board mock in week 8, avoid overlapping with half-term"></textarea>
+
+    <button class="btn" type="submit">Generate with AI</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

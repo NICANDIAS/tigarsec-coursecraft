@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Internal Verification - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Internal Verification</h1>
+
+<div class="card">
+  <h2>Assigned to me</h2>
+  {% if assigned_to_me %}
+    {% for req in assigned_to_me %}
+      <div class="list-item">
+        <span>
+          {% if req.submission %}{{ req.submission.original_filename }}{% else %}External upload{% endif %}
+          — requested by {{ req.requested_by.name }}
+        </span>
+        <span>
+          <span class="badge badge-{{ 'released' if req.status == 'completed' else 'needs_review' if req.status == 'ready_for_review' else 'uploaded' }}">{{ req.status }}</span>
+          {% if req.status == "ready_for_review" %}<a class="btn btn-secondary" href="/iv/{{ req.id }}/review">Review</a>{% endif %}
+        </span>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">Nothing assigned to you right now.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Sent by me</h2>
+  {% if sent_by_me %}
+    {% for req in sent_by_me %}
+      <div class="list-item">
+        <span>{% if req.submission %}{{ req.submission.original_filename }}{% else %}External upload{% endif %} — assigned to {{ req.assigned_to.name if req.assigned_to else "?" }}</span>
+        <span class="badge badge-{{ 'released' if req.status == 'completed' else 'needs_review' if req.status == 'ready_for_review' else 'uploaded' }}">{{ req.status }}</span>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">You haven't sent anything for IV yet — do that from a released submission's review page.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>IV work marked outside this tool</h2>
+  <p class="muted">Upload a document that was already marked elsewhere, along with the spec and an
+  optional IV format sample, and get AI-assisted verification suggestions.</p>
+  <a class="btn" href="/iv/external/new">Start external IV</a>
+</div>
+{% endblock %}

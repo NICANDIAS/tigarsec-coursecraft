@@ -1,0 +1,62 @@
+services:
+  # Bundled local LLM - free, no account/API key needed. Used automatically when
+  # LLM_PROVIDER=ollama (the default in .env). The model is downloaded automatically
+  # on first run and cached in the ollama_data volume, so it only downloads once.
+  #
+  # Resource limits below cap how much of your machine Ollama can use - without them,
+  # CPU inference on a large model will legitimately try to use every core it can find
+  # for as long as generation takes (this is what caused the 1000%+ CPU reading - not a
+  # misconfiguration, just what unthrottled local LLM inference looks like). Capping it
+  # makes usage predictable and stops it starving the rest of your machine, at the cost
+  # of generation taking somewhat longer under the cap.
+  #
+  # mem_limit raised from 6g to 10g: 6GB was likely too tight for an 8B model plus context
+  # under sustained load - if it hits that ceiling, Ollama can stall or get killed/restarted
+  # mid-request, which looks exactly like "parsing takes hours" or "it's not loading at all".
+  # If your machine doesn't have 10GB+ free to give Docker, also check Docker Desktop's own
+  # VM memory allocation (Settings -> Resources -> Memory) - if THAT'S capped low, this
+  # per-container limit doesn't matter, the whole Docker VM is already starved.
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    cpus: 4
+    mem_limit: 10g
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+
+volumes:
+  ollama_data:
+
+# --- Optional: expose to other lecturers on the college LAN ---
+# Once you're ready for other teachers on the same building network to reach this from
+# their own browsers, add an Nginx service proxying "/" to "http://app:8000". Check with
+# IT first about network/VLAN reachability (see README) before relying on this for a
+# multi-campus rollout.
+#
+#   nginx:
+#     image: nginx:alpine
+#     ports:
+#       - "80:80"
+#     volumes:
+#       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+#     depends_on:
+#       - app
