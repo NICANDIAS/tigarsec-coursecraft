@@ -210,7 +210,7 @@ class AuditLogEntry(Base):
 class IVRequest(Base):
     """
     Internal Verification. Two flows feed into this same model:
-    1. In-tool: a submission already marked in TIGARSEC Assess gets sent to a colleague
+    1. In-tool: a submission already marked in TIGARSEC CourseCraft gets sent to a colleague
        for IV (submission_id is set).
     2. External: a lecturer uploads work that was ALREADY marked outside this tool
        (submission_id is null; external_original_marks_summary holds what they typed

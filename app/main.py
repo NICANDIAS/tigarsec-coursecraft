@@ -11,7 +11,7 @@ from .routers import auth_router, courses, specs, scheme_of_work, students, subm
 # startup via docker-entrypoint.sh) instead of create_all() here - this is what lets
 # schema changes ship as real migrations instead of requiring a database reset.
 
-app = FastAPI(title="TIGARSEC Assess")
+app = FastAPI(title="TIGARSEC CourseCraft")
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")

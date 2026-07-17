@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ student.name }} - TIGARSEC Assess{% endblock %}
+{% block title %}{{ student.name }} - TIGARSEC CourseCraft{% endblock %}
 {% block content %}
 <p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
 <h1>{{ student.name }} {% if not student.is_active %}<span class="badge badge-failed">Archived</span>{% endif %}</h1>

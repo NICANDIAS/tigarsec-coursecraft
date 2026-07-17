@@ -75,7 +75,7 @@ def annotate_submission(
     file_path: str,
     marks: list[dict],
     output_path: str,
-    author: str = "TIGARSEC Assess (AI)",
+    author: str = "TIGARSEC CourseCraft (AI)",
 ) -> list[str]:
     """
     marks: list of dicts with keys "evidence_text" and "comment".

@@ -102,7 +102,7 @@ def _complete_json_ollama(system: str, prompt: str) -> dict:
         raise RuntimeError(
             f"Could not reach Ollama at {OLLAMA_HOST}. Is it running? "
             f"(`ollama serve`, and `ollama pull {OLLAMA_MODEL}` if you haven't already). "
-            f"If TIGARSEC Assess is running in Docker, OLLAMA_HOST usually needs to be "
+            f"If TIGARSEC CourseCraft is running in Docker, OLLAMA_HOST usually needs to be "
             f"http://host.docker.internal:11434 rather than localhost - see README."
         ) from e
 
