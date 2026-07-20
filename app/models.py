@@ -6,6 +6,23 @@ from sqlalchemy.orm import relationship
 from .database import Base
 
 
+class MarkingTemplate(Base):
+    """
+    A saved rubric/marking scheme reusable across every student's submission for the same
+    assignment, so the teacher doesn't have to re-paste or re-upload it every single time -
+    select it once per upload instead.
+    """
+    __tablename__ = "marking_templates"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    marking_scheme_notes = Column(Text, nullable=True)
+    pass_threshold_pct = Column(Float, nullable=True)
+    rubric_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded rubric file - filled in place, never rebuilt as a new document
+    created_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 class FeedbackStyleTemplate(Base):
     """
     Lets teachers add new feedback-comment styles (beyond the two built-in ones) without
@@ -142,6 +159,10 @@ class Submission(Base):
     submitted_at = Column(Date, nullable=True)  # when the student actually submitted, distinct from created_at (upload timestamp) - lets late-submission tracking work even if you upload something days after the fact
     achieved_grade = Column(String(50), nullable=True)  # computed via the BTEC aggregation rule (must meet ALL criteria in a band, and all lower bands) - null if criteria don't use recognisable P/M/D codes
     marking_scheme_notes = Column(Text, nullable=True)  # optional - overrides the default Met/Partly met/Not met scale with a rubric/numeric scheme (e.g. "score 2/5/7/10") the course actually uses
+    pregraded_components = Column(JSON, nullable=True)  # components already scored externally (e.g. an auto-marked MCQ) - [{"label": str, "section": str, "score": float, "max_score": float}] - given to the AI as context only, never re-derived, and included in the deterministic section totals
+    pass_threshold_pct = Column(Float, nullable=True)  # e.g. 70.0 - if set, each "section" (grouped by the section field on marks/pregraded components) must independently reach this % to count as an overall pass
+    section_results = Column(JSON, nullable=True)  # computed after marking: {"MCQ": {"total":.., "max":.., "pct":.., "passed":..}, ...} plus "overall_passed"
+    rubric_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded rubric file - filled in place, never rebuilt as a new document
     similarity_warning = Column(Text, nullable=True)  # set automatically at upload time if this matches another student's submission for the same assignment above the threshold
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -179,6 +200,9 @@ class CriterionMark(Base):
     source_location = Column(String(255), nullable=True)  # e.g. "Slide 2", "Q25", "Sheet1 Row 12"
     needs_human_review = Column(Boolean, default=False, nullable=False)
     human_review_reason = Column(Text, nullable=True)  # why the AI couldn't confidently assess this itself
+    numeric_score = Column(Float, nullable=True)  # only populated for numeric/points rubrics - real arithmetic sums these, never trusts an AI's own claimed total
+    max_score = Column(Float, nullable=True)
+    section = Column(String(255), nullable=True)  # groups criteria for section-level pass thresholds (e.g. "MCQ" vs "LF")
     final_mark = Column(String(100), nullable=True)
     final_comment = Column(Text, nullable=True)
     overridden = Column(Boolean, default=False)
@@ -210,7 +234,7 @@ class AuditLogEntry(Base):
 class IVRequest(Base):
     """
     Internal Verification. Two flows feed into this same model:
-    1. In-tool: a submission already marked in TIGARSEC CourseCraft gets sent to a colleague
+    1. In-tool: a submission already marked in TIGARSEC Assess gets sent to a colleague
        for IV (submission_id is set).
     2. External: a lecturer uploads work that was ALREADY marked outside this tool
        (submission_id is null; external_original_marks_summary holds what they typed

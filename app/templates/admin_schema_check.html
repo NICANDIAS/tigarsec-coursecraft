@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Schema Check - TIGARSEC Assess{% endblock %}
+{% block content %}
+<h1>Database schema check</h1>
+<p class="muted">Compares what the app's models expect against what's actually in the
+live database - the same class of issue behind most "no such column" errors after
+applying an update. Purely additive: the fix below only ever creates missing tables or
+adds missing columns, never drops or modifies anything that already exists.</p>
+
+{% if fix_report is not none %}
+  <div class="section-card category-insight">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+      <h2>Fix applied</h2>
+    </div>
+    {% if fix_report %}
+      {% for line in fix_report %}
+        <p{% if "FAILED" in line %} style="color:var(--danger);"{% endif %}>{{ line }}</p>
+      {% endfor %}
+    {% else %}
+      <p class="muted">Nothing needed fixing - the schema already matched.</p>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if not diff.missing_tables and not diff.missing_columns %}
+  <div class="card">
+    <p><strong>✓ Everything matches.</strong> No missing tables or columns - every model's
+    expected schema is present in the live database.</p>
+  </div>
+{% else %}
+  <div class="section-card category-danger">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>
+      <h2>Schema mismatch found</h2>
+    </div>
+
+    {% if diff.missing_tables %}
+      <p><strong>Missing tables:</strong></p>
+      <ul>
+        {% for t in diff.missing_tables %}<li>{{ t }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if diff.missing_columns %}
+      <p><strong>Missing columns:</strong></p>
+      {% for table, cols in diff.missing_columns.items() %}
+        <div class="list-item">
+          <span>{{ table }}</span>
+          <span class="muted">{{ cols|map(attribute=0)|join(", ") }}</span>
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    <form method="post" action="/admin/schema-check/fix" style="margin-top:16px;">
+      <button class="btn" type="submit">Fix now</button>
+    </form>
+  </div>
+{% endif %}
+{% endblock %}

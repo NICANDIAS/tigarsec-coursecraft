@@ -3,9 +3,10 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import get_db, engine, Base
 from ..models import Teacher, AuditLogEntry, Submission, Student, Course
 from ..auth import require_admin, hash_password, ROLES
+from ..schema_check import diff_schema, apply_schema_fix
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -144,3 +145,50 @@ def admin_reset_password(
         ))
         db.commit()
     return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.get("/admin/schema-check", response_class=HTMLResponse)
+def schema_check_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Teacher = Depends(require_admin),
+):
+    """
+    Compares what the app's models expect against what's actually in the live database -
+    replaces the recurring "run this ALTER TABLE command" pattern from every recent
+    update, which kept getting missed. Purely diagnostic - the fix itself only runs when
+    explicitly requested via the button below, never automatically.
+    """
+    diff = diff_schema(engine, Base)
+    return templates.TemplateResponse(
+        "admin_schema_check.html",
+        {"request": request, "teacher": admin, "diff": diff, "fix_report": None},
+    )
+
+
+@router.post("/admin/schema-check/fix", response_class=HTMLResponse)
+def schema_check_fix(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Teacher = Depends(require_admin),
+):
+    """
+    Applies whatever the diff finds - purely additive (creates missing tables, adds
+    missing columns), never drops or modifies anything that already exists, so there's no
+    real risk to running this even speculatively.
+    """
+    diff = diff_schema(engine, Base)
+    fix_report = apply_schema_fix(engine, Base, diff)
+
+    db.add(AuditLogEntry(
+        actor=admin.email, action="schema_fix_applied",
+        detail="; ".join(fix_report) if fix_report else "Nothing to fix - schema already matched.",
+    ))
+    db.commit()
+
+    # Re-diff after fixing, so the page shows the genuinely current state, not a promise
+    new_diff = diff_schema(engine, Base)
+    return templates.TemplateResponse(
+        "admin_schema_check.html",
+        {"request": request, "teacher": admin, "diff": new_diff, "fix_report": fix_report},
+    )

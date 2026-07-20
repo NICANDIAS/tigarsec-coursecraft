@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}TIGARSEC CourseCraft{% endblock %}</title>
+  <title>{% block title %}TIGARSEC Assess{% endblock %}</title>
   <link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon.png">
   <link rel="icon" type="image/png" sizes="48x48" href="/static/img/favicon-48.png">
   <link rel="stylesheet" href="/static/css/style.css?v=3">
@@ -21,7 +21,7 @@
       <div class="sidebar-brand">
         <img src="/static/img/logo.png" alt="" class="brand-logo" onerror="this.style.display='none'; document.getElementById('brand-monogram').style.display='flex';">
         <div class="brand-monogram" id="brand-monogram" style="display:none;">TA</div>
-        <span>TIGARSEC CourseCraft</span>
+        <span>TIGARSEC Assess</span>
       </div>
       <nav class="sidebar-nav">
         <a href="/" class="{{ 'active' if request.url.path == '/' }}">Dashboard</a>
@@ -36,6 +36,7 @@
           <div class="sidebar-divider"></div>
           <a href="/admin/users" class="{{ 'active' if request.url.path == '/admin/users' }}">Admin: Users</a>
           <a href="/admin/logs" class="{{ 'active' if request.url.path == '/admin/logs' }}">Admin: Audit Log</a>
+          <a href="/admin/schema-check" class="{{ 'active' if request.url.path == '/admin/schema-check' }}">Admin: Schema Check</a>
         {% endif %}
         <div class="sidebar-divider"></div>
         <a href="/settings" class="{{ 'active' if request.url.path == '/settings' }}">Settings</a>
@@ -49,7 +50,7 @@
         {% block content %}{% endblock %}
       </div>
       <footer class="app-footer">
-        <span>TIGARSEC CourseCraft — internal tool, TIGARSEC Innovations</span>
+        <span>TIGARSEC Assess — internal tool, TIGARSEC Innovations</span>
       </footer>
     </div>
   </div>

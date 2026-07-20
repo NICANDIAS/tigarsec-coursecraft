@@ -187,6 +187,9 @@ def force_delete_course(
     db.delete(course)
     db.commit()
     return RedirectResponse(url="/", status_code=303)
+
+
+@router.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request,
     db: Session = Depends(get_db),

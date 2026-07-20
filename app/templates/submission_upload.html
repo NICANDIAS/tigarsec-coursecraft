@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Upload submission - TIGARSEC CourseCraft{% endblock %}
+{% block title %}Upload submission - TIGARSEC Assess{% endblock %}
 {% block content %}
 <p><a href="/courses/{{ course.id }}/students/{{ student.id }}">&larr; {{ student.name }}</a></p>
 <h1>Upload submission</h1>
@@ -30,11 +30,50 @@
     work that was actually submitted earlier (e.g. catching up on marking), so late-submission
     tracking stays accurate.</p>
 
+    {% if marking_templates %}
+      <label>Use a saved marking template (optional)</label>
+      <select name="marking_template_id">
+        <option value="">-- none, enter/upload manually below --</option>
+        {% for t in marking_templates %}
+          <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <p class="muted" style="margin-top:-4px;">Selecting one applies its saved rubric and
+      pass threshold automatically - anything you also type below is added on top, not a
+      replacement. <a href="/courses/{{ course.id }}/marking-templates">Manage templates</a>.</p>
+    {% else %}
+      <p class="muted"><a href="/courses/{{ course.id }}/marking-templates">Save a reusable marking template</a>
+      so you don't have to re-enter the rubric for every student.</p>
+    {% endif %}
+
     <label>Marking scheme / rubric (optional)</label>
     <textarea name="marking_scheme_notes" placeholder="If this course uses something other than Met/Partly met/Not met - e.g. a numeric or lettered rubric - describe it here. e.g. 'Score each criterion 2 (below expectations), 5 (approaching), 7 (meets expectations), or 10 (exceeds expectations), with a one-line justification for the score.' Leave blank for standard Met/Partly met/Not met marking."></textarea>
     <input type="file" name="marking_scheme_file" accept=".docx,.pdf,.txt">
     <p class="muted" style="margin-top:-4px;">Or upload a rubric document instead/as well - its content
     is combined with any notes above and used as the actual scale the AI marks against.</p>
+
+    <label>Already-graded components (optional)</label>
+    <p class="muted" style="margin-top:-4px;">If part of this submission is already scored elsewhere (e.g.
+    an auto-marked multiple-choice section, or specific questions marked by another system) - list them here.
+    The AI is told these are given facts and won't re-mark them; they're still included in the pass/fail
+    calculation below. Leave all blank if nothing is pre-graded.</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+      {% for i in range(1, 5) %}
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input type="text" name="pregraded_label" placeholder="e.g. MCQ, or Q2 Matching" style="flex:1.5;">
+          <input type="text" name="pregraded_section" placeholder="Section (e.g. MCQ)" style="flex:1;">
+          <input type="number" step="any" name="pregraded_score" placeholder="Score" style="width:90px;">
+          <span class="muted">/</span>
+          <input type="number" step="any" name="pregraded_max" placeholder="Max" style="width:90px;">
+        </div>
+      {% endfor %}
+    </div>
+
+    <label>Pass threshold per section (%, optional)</label>
+    <input type="number" name="pass_threshold_pct" min="1" max="100" placeholder="e.g. 70" style="max-width:150px;">
+    <p class="muted" style="margin-top:-4px;">If set, each section (grouped by the "Section" labels above and
+    on any AI-scored numeric criteria) must independently reach this percentage to count as an overall pass -
+    e.g. MCQ and Longform both needing 70% separately, not a blended average. Leave blank if not applicable.</p>
 
     <label>Files (one or more - e.g. a report AND a presentation AND a spreadsheet for the same LO)</label>
     <input type="file" name="files" required multiple accept=".docx,.pdf,.txt,.pptx,.xlsx">

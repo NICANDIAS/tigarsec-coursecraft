@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ course.name }} - TIGARSEC CourseCraft{% endblock %}
+{% block title %}{{ course.name }} - TIGARSEC Assess{% endblock %}
 {% block content %}
 <p><a href="/">&larr; Dashboard</a></p>
 <h1>{{ course.name }}</h1>
@@ -146,6 +146,10 @@
     <input type="text" name="student_ref">
     <button class="btn" type="submit">Add student</button>
   </form>
+  <p class="muted" style="margin-top:12px;">
+    <a href="/courses/{{ course.id }}/marking-templates">Manage reusable marking templates</a>
+    - save a rubric once, use it for every student's upload.
+  </p>
 </div>
 
 <div class="utility-grid">

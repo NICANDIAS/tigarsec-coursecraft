@@ -44,18 +44,38 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 _anthropic_client = None
 
 
-def _parse_json_response(text: str) -> dict:
+def _parse_json_response(text: str, provider: str = "unknown", debug_info: str = "") -> dict:
     text = text.strip()
     if text.startswith("```"):
         text = text.strip("`")
         if text.lower().startswith("json"):
             text = text[4:]
         text = text.strip()
+
+    if not text:
+        # An entirely empty response is a distinct, more diagnosable failure than
+        # malformed JSON - most commonly the local model running out of usable context
+        # window on a large combined prompt (several files + a long custom rubric), or a
+        # dropped/errored connection that didn't raise a proper exception upstream.
+        hint = (
+            "the combined prompt (files + rubric + context) may be too large for the "
+            "local Ollama model's context window - try shortening the custom marking "
+            "scheme text, marking fewer files at once, or switching this course/submission "
+            "to LLM_PROVIDER=anthropic, which handles larger multi-document prompts far "
+            "more reliably"
+        ) if provider == "ollama" else (
+            "this is unusual for Anthropic specifically - check for an API error in the "
+            "server logs (docker compose logs app) around this time, e.g. a rate limit or "
+            "an invalid API key"
+        )
+        debug_suffix = f" [debug: {debug_info}]" if debug_info else ""
+        raise ValueError(f"[Provider used: {provider}] The model returned a completely empty response - {hint}.{debug_suffix}")
+
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
         raise ValueError(
-            f"LLM did not return valid JSON: {e}\nFirst 500 chars of raw response:\n{text[:500]}"
+            f"[Provider used: {provider}] LLM did not return valid JSON: {e}\nFirst 500 chars of raw response:\n{text[:500]}"
         )
 
 
@@ -78,7 +98,18 @@ def _complete_json_anthropic(system: str, prompt: str, max_tokens: int) -> dict:
         messages=[{"role": "user", "content": prompt}],
     )
     text = "".join(block.text for block in response.content if block.type == "text")
-    return _parse_json_response(text)
+    debug_info = (
+        f"stop_reason={response.stop_reason}, "
+        f"content_block_types={[b.type for b in response.content]}, "
+        f"usage={response.usage}"
+    )
+    # Printed directly to stdout, immediately, unconditionally - visible via
+    # `docker compose logs app` regardless of what happens to the exception object
+    # afterward (retry loops, exception re-wrapping, etc.) - the most reliable place to
+    # see this, since the error-message route has repeatedly not shown it for reasons
+    # not yet understood.
+    print(f"[llm_gateway] Anthropic response: {debug_info}, text_length={len(text)}", flush=True)
+    return _parse_json_response(text, provider="anthropic", debug_info=debug_info)
 
 
 def _complete_json_ollama(system: str, prompt: str) -> dict:
@@ -102,13 +133,13 @@ def _complete_json_ollama(system: str, prompt: str) -> dict:
         raise RuntimeError(
             f"Could not reach Ollama at {OLLAMA_HOST}. Is it running? "
             f"(`ollama serve`, and `ollama pull {OLLAMA_MODEL}` if you haven't already). "
-            f"If TIGARSEC CourseCraft is running in Docker, OLLAMA_HOST usually needs to be "
+            f"If TIGARSEC Assess is running in Docker, OLLAMA_HOST usually needs to be "
             f"http://host.docker.internal:11434 rather than localhost - see README."
         ) from e
 
     data = resp.json()
     text = data.get("message", {}).get("content", "")
-    return _parse_json_response(text)
+    return _parse_json_response(text, provider="ollama")
 
 
 def get_effective_provider(provider_override: str | None = None) -> str:

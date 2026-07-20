@@ -1,32 +1,98 @@
 {% extends "base.html" %}
-{% block title %}Review submission - TIGARSEC CourseCraft{% endblock %}
+{% block title %}Review submission - TIGARSEC Assess{% endblock %}
 {% block content %}
 <p><a href="/courses/{{ submission.student.course_id }}/students/{{ submission.student_id }}">&larr; {{ submission.student.name }}</a></p>
 <h1>{{ submission.original_filename }}</h1>
-<p><span class="badge badge-{{ submission.status }}" id="status-badge">{{ submission.status }}</span>
-{% if submission.submitted_at %}<span class="muted"> — submitted {{ submission.submitted_at.strftime("%d %b %Y") }}</span>{% endif %}</p>
+
+<div class="stats-strip">
+  <div class="stat-pill">
+    <span class="badge badge-{{ submission.status }}">{{ submission.status }}</span>
+  </div>
+  {% if submission.submitted_at %}
+    <div class="stat-pill">
+      <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <span>Submitted {{ submission.submitted_at.strftime("%d %b %Y") }}</span>
+    </div>
+  {% endif %}
+</div>
 
 {% if submission.similarity_warning %}
-  <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
-    <strong>⚠ Similarity check:</strong> {{ submission.similarity_warning }}
-    <a href="/courses/{{ submission.student.course_id }}/similarity-check">View full similarity report</a>
+  <div class="section-card category-danger">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+      <h2>Similarity check</h2>
+    </div>
+    <p>{{ submission.similarity_warning }}</p>
+    <a class="btn btn-secondary" href="/courses/{{ submission.student.course_id }}/similarity-check">View full similarity report</a>
   </div>
 {% endif %}
 
-{% if submission.achieved_grade %}
-  <div class="card" style="background:var(--bg);border:2px solid var(--accent);">
-    <p style="font-size:1.1rem;"><strong>Overall grade: {{ submission.achieved_grade }}</strong></p>
-    <p class="muted">Computed using the standard rule: a grade band is only achieved if
-    every criterion in that band, and every band below it, is marked "Met" - a single
-    unmet criterion blocks that band and everything above it, however many others are met.</p>
+{% if submission.achieved_grade or submission.section_results %}
+  <div class="section-card category-insight">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+      <h2>Result</h2>
+    </div>
+    {% if submission.achieved_grade %}
+      <p style="font-size:1.15rem;"><strong>Overall grade: {{ submission.achieved_grade }}</strong></p>
+      <p class="muted">Computed using the standard rule: a grade band is only achieved if
+      every criterion in that band, and every band below it, is marked "Met" - a single
+      unmet criterion blocks that band and everything above it, however many others are met.</p>
+    {% endif %}
+    {% if submission.section_results %}
+      <p style="font-size:1.15rem;margin-top:{{ '16px' if submission.achieved_grade else '0' }};">
+        <strong>Overall: {{ "PASS" if submission.section_results.overall_passed else "FAIL" }}</strong>
+      </p>
+      {% for name, r in submission.section_results.items() if name != "overall_passed" %}
+        <div class="list-item">
+          <span>{{ name }}</span>
+          <span>{{ r.total }}/{{ r.max }} = {{ r.pct }}% — <strong>{{ "PASS" if r.passed else "FAIL" }}</strong></span>
+        </div>
+      {% endfor %}
+      <p class="muted" style="margin-top:8px;">Computed by summing actual scores per section
+      (including any pre-graded components) and checking each independently against the pass
+      threshold - every section must pass on its own, never a blended average, never left to
+      the AI's own arithmetic.</p>
+    {% endif %}
   </div>
 {% endif %}
 
-{% if submission.files %}
-  <div class="card">
-    <h2>Uploaded files</h2>
-    {% for f in submission.files %}
-      <div class="list-item"><span>{{ f.original_filename }}</span></div>
+{% if submission.rubric_file_path and submission.status not in ("generating", "marking") %}
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+      <h2>Filled rubric</h2>
+    </div>
+    <p class="muted">The rubric document you uploaded at marking time, with every original
+    column and criterion row preserved exactly as given, and the awarded scores/comments
+    added in.</p>
+    <a class="btn btn-secondary" href="/submissions/{{ submission.id }}/filled-rubric">Download filled rubric</a>
+  </div>
+{% endif %}
+
+{% if file_views %}
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
+      <h2>Uploaded files — what the student actually submitted</h2>
+    </div>
+    <p class="muted">This is the real document (or the exact text extracted from it and
+    given to the AI) - use it to check the AI's marks against full context, not just its
+    short quoted evidence.</p>
+    {% for fv in file_views %}
+      <div style="margin-bottom:20px;border-top:1px solid var(--border);padding-top:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong>{{ fv.filename }}</strong>
+          <a class="btn btn-secondary" href="/submission-files/{{ fv.id }}/view" target="_blank">Open original</a>
+        </div>
+        {% if fv.is_pdf %}
+          <iframe src="/submission-files/{{ fv.id }}/view" style="width:100%;height:500px;border:1px solid var(--border);border-radius:6px;margin-top:10px;"></iframe>
+        {% endif %}
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:var(--accent);">View extracted text (exactly what was given to the AI)</summary>
+          <pre style="white-space:pre-wrap;max-height:400px;overflow-y:auto;background:var(--bg);padding:12px;border-radius:6px;margin-top:8px;font-size:0.85rem;">{{ fv.text }}</pre>
+        </details>
+      </div>
     {% endfor %}
   </div>
 {% endif %}
@@ -62,22 +128,29 @@
   </script>
 
 {% elif submission.status == "failed" %}
-  <div class="error-box">
-    Marking failed: {{ submission.marking_run.error_detail if submission.marking_run else "unknown error" }}
+  <div class="section-card category-danger">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>
+      <h2>Marking failed</h2>
+    </div>
+    <p>{{ submission.marking_run.error_detail if submission.marking_run else "unknown error" }}</p>
+    <form method="post" action="/submissions/{{ submission.id }}/mark" style="margin-top:12px;">
+      <button class="btn" type="submit">Retry marking</button>
+    </form>
   </div>
-  <form method="post" action="/submissions/{{ submission.id }}/mark">
-    <button class="btn" type="submit">Retry marking</button>
-  </form>
 
 {% elif submission.status == "needs_review" and not marks %}
-  <div class="error-box">
-    This submission is marked "needs review" but has no marks recorded at all - almost
-    certainly a leftover from before a safety check existed to catch this case. There's
-    nothing to review here yet.
+  <div class="section-card category-danger">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>
+      <h2>Nothing to review yet</h2>
+    </div>
+    <p>This submission is marked "needs review" but has no marks recorded at all - almost
+    certainly a leftover from before a safety check existed to catch this case.</p>
+    <form method="post" action="/submissions/{{ submission.id }}/mark" style="margin-top:12px;">
+      <button class="btn" type="submit">Re-mark this submission</button>
+    </form>
   </div>
-  <form method="post" action="/submissions/{{ submission.id }}/mark">
-    <button class="btn" type="submit">Re-mark this submission</button>
-  </form>
 
 {% else %}
   {% if submission.marking_run and submission.marking_run.overall_summary %}
@@ -89,8 +162,14 @@
 
   <form method="post" action="/submissions/{{ submission.id }}/approve">
     {% for mark in marks %}
-      <div class="card">
-        <h2>{{ mark.criterion_ref }}</h2>
+      {% set mark_lower = (mark.final_mark or "").lower() %}
+      {% set border_color = "var(--danger)" if "not" in mark_lower else "var(--warning)" if "partly" in mark_lower or "partial" in mark_lower else "var(--success)" if mark_lower else "var(--border)" %}
+      <div class="card" style="border-left:4px solid {{ border_color }};">
+        <h2>{{ mark.criterion_ref }}
+          {% if mark.numeric_score is not none and mark.max_score is not none %}
+            <span class="muted" style="font-size:0.9rem;font-weight:normal;"> — {{ mark.numeric_score }}/{{ mark.max_score }}{% if mark.section %} ({{ mark.section }}){% endif %}</span>
+          {% endif %}
+        </h2>
 
         {% if mark.needs_human_review %}
           <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
@@ -140,8 +219,11 @@
   </form>
 
   {% if submission.status == "released" %}
-    <div class="card">
-      <p>Approved and released.</p>
+    <div class="section-card category-insight">
+      <div class="section-header">
+        <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span>
+        <h2>Approved and released</h2>
+      </div>
       {% if submission.annotated_path %}
         <a class="btn" href="/submissions/{{ submission.id }}/download">Download marked document</a>
       {% else %}
@@ -154,4 +236,46 @@
     </div>
   {% endif %}
 {% endif %}
+
+{% if feedback_summary %}
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg></span>
+      <h2>Copy for Teams (or any other LMS)</h2>
+    </div>
+    <p class="muted">The overall result and every criterion's mark/comment in one block -
+    copy this into your platform's feedback box, and type the grade into its own points
+    field. Nothing needs re-uploading, so there's no risk of duplicate files on the other
+    side.</p>
+    <textarea id="feedback-summary-text" readonly style="min-height:220px;font-family:monospace;font-size:0.85rem;">{{ feedback_summary }}</textarea>
+    <button class="btn btn-secondary" type="button" onclick="copyFeedbackSummary()" style="margin-top:8px;">Copy to clipboard</button>
+    <span id="copy-confirm" class="muted" style="margin-left:10px;display:none;">Copied!</span>
+  </div>
+  <script>
+    function copyFeedbackSummary() {
+      const text = document.getElementById("feedback-summary-text").value;
+      navigator.clipboard.writeText(text).then(function () {
+        const confirmEl = document.getElementById("copy-confirm");
+        confirmEl.style.display = "inline";
+        setTimeout(function () { confirmEl.style.display = "none"; }, 2000);
+      });
+    }
+  </script>
+{% endif %}
+
+<div class="section-card category-danger" style="margin-top:32px;">
+  <div class="section-header">
+    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+    <h2>Delete this submission</h2>
+  </div>
+  <p class="muted">Deletes everything attached to it (marks, override history, IV records)
+  - useful for clearing out a failed or stuck attempt before re-uploading fresh. This
+  cannot be undone.</p>
+  <form method="post" action="/submissions/{{ submission.id }}/delete"
+        onsubmit="return confirm('Delete this submission permanently? This cannot be undone.');">
+    <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">
+      Delete this submission
+    </button>
+  </form>
+</div>
 {% endblock %}
