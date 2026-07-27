@@ -27,6 +27,18 @@
   </div>
 {% endif %}
 
+{% if submission.detected_scoring_mechanism %}
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+      <h2>Scoring mechanism detected</h2>
+    </div>
+    <p>{{ submission.detected_scoring_mechanism }}</p>
+    <p class="muted">This is what the AI read off the rubric/spec BEFORE marking anything - check this
+    matches what you actually expect before relying on the marks below.</p>
+  </div>
+{% endif %}
+
 {% if submission.achieved_grade or submission.section_results %}
   <div class="section-card category-insight">
     <div class="section-header">
@@ -40,19 +52,69 @@
       unmet criterion blocks that band and everything above it, however many others are met.</p>
     {% endif %}
     {% if submission.section_results %}
-      <p style="font-size:1.15rem;margin-top:{{ '16px' if submission.achieved_grade else '0' }};">
-        <strong>Overall: {{ "PASS" if submission.section_results.overall_passed else "FAIL" }}</strong>
-      </p>
-      {% for name, r in submission.section_results.items() if name != "overall_passed" %}
+      {% set sr = submission.section_results %}
+      {# Backward-compat: submissions marked before this update stored section_results as a
+         flat {SectionName: {...}, "overall_passed": bool} dict with no "sections"/weighting/
+         threshold keys at all. Using .get() everywhere (never dot-notation) means a missing
+         key degrades to None/empty instead of crashing on an old submission's data - and if
+         "sections" itself is missing, the old flat keys are read directly instead. #}
+      {% set known_meta_keys = ["overall_passed", "weighted_overall_pct", "weighted_overall_passed", "weighting_used", "weighting_source", "pass_threshold_pct", "criteria_below_threshold"] %}
+      {% if sr.get("sections") is not none %}
+        {% set sections = sr.get("sections") %}
+      {% else %}
+        {% set sections = {} %}
+        {% for k, v in sr.items() if k not in known_meta_keys %}
+          {% set _ = sections.update({k: v}) %}
+        {% endfor %}
+      {% endif %}
+
+      {% if sr.get("pass_threshold_pct") is not none %}
+        <p class="muted" style="margin-top:{{ '16px' if submission.achieved_grade else '0' }};">
+          Pass threshold used: <strong>{{ sr.get("pass_threshold_pct") }}%</strong> (marker-supplied for this assignment)
+        </p>
+      {% else %}
+        <p class="muted" style="color:var(--warning);margin-top:{{ '16px' if submission.achieved_grade else '0' }};">
+          No pass threshold was supplied for this assignment - raw scores are shown below, but no
+          Pass/Fail verdict has been computed. Set one at upload time if you want a verdict.
+        </p>
+      {% endif %}
+
+      {% for name, r in sections.items() %}
         <div class="list-item">
           <span>{{ name }}</span>
-          <span>{{ r.total }}/{{ r.max }} = {{ r.pct }}% — <strong>{{ "PASS" if r.passed else "FAIL" }}</strong></span>
+          <span>{{ r.total }}/{{ r.max }} = {{ r.pct }}%{% if r.passed is not none %} — <strong>{{ "PASS" if r.passed else "FAIL" }}</strong>{% endif %}</span>
         </div>
       {% endfor %}
-      <p class="muted" style="margin-top:8px;">Computed by summing actual scores per section
-      (including any pre-graded components) and checking each independently against the pass
-      threshold - every section must pass on its own, never a blended average, never left to
-      the AI's own arithmetic.</p>
+      <p class="muted" style="margin-top:8px;">Each section computed by summing actual scores
+      (including any pre-graded components) - every section independently checked against the pass
+      threshold above, never a blended average, never left to the AI's own arithmetic.</p>
+
+      {% if sr.get("weighted_overall_pct") is not none %}
+        <div class="list-item" style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
+          <span><strong>Weighted overall</strong></span>
+          <span>{{ sr.get("weighted_overall_pct") }}%{% if sr.get("weighted_overall_passed") is not none %} — <strong>{{ "PASS" if sr.get("weighted_overall_passed") else "FAIL" }}</strong>{% endif %}</span>
+        </div>
+        {% if sr.get("weighting_source") == "marker_supplied" %}
+          <p class="muted">Weighting used: {% for k, v in (sr.get("weighting_used") or {}).items() %}{{ k }}: {{ v }}%{% if not loop.last %}, {% endif %}{% endfor %} (marker-supplied for this assignment).</p>
+        {% else %}
+          <p class="muted" style="color:var(--warning);">No part weightings were supplied, so this is an
+          <strong>equal weighting</strong> across {% for k, v in (sr.get("weighting_used") or {}).items() %}{{ k }} ({{ v }}%){% if not loop.last %}, {% endif %}{% endfor %} -
+          not a marker-specified split. Add weightings at upload time if the parts should count differently.</p>
+        {% endif %}
+      {% endif %}
+
+      {% if sr.get("criteria_below_threshold") %}
+        <div class="error-box" style="border-color:var(--warning);color:var(--warning);margin-top:12px;">
+          <strong>⚠ {{ sr.get("criteria_below_threshold")|length }} individual criterion/criteria below threshold</strong>
+          despite the section/weighted result above - this is a criteria-referenced rubric, so a learner
+          can pass on weighted average while still failing specific criteria. Both facts are reported:
+          <ul style="margin:8px 0 0 18px;">
+            {% for c in sr.get("criteria_below_threshold") %}
+              <li>{{ c.criterion_ref }} ({{ c.section }}): {{ c.score }}/{{ c.max_score }} = {{ c.pct }}%</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
     {% endif %}
   </div>
 {% endif %}
@@ -170,6 +232,9 @@
             <span class="muted" style="font-size:0.9rem;font-weight:normal;"> — {{ mark.numeric_score }}/{{ mark.max_score }}{% if mark.section %} ({{ mark.section }}){% endif %}</span>
           {% endif %}
         </h2>
+        {% if mark.scoring_vocabulary %}
+          <p class="muted" style="font-size:0.85rem;">Scale used for this criterion: <strong>{{ mark.scoring_vocabulary }}</strong></p>
+        {% endif %}
 
         {% if mark.needs_human_review %}
           <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
@@ -177,20 +242,46 @@
           </div>
         {% endif %}
 
+        {% if mark.descriptor_ambiguous %}
+          <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
+            <strong>⚠ Descriptor ambiguous — human judgement needed:</strong> {{ mark.ambiguity_note or "The rubric's own wording for this band could support more than one reading of this response." }}
+          </div>
+        {% endif %}
+
+        {% if mark.matched_descriptor_quote %}
+          <p class="muted">Rubric descriptor matched: <em>"{{ mark.matched_descriptor_quote }}"</em></p>
+        {% endif %}
+
         <p class="muted">
-          AI confidence:
-          <span class="confidence-bar" style="display:inline-block;vertical-align:middle;">
-            <span class="confidence-fill {{ 'low' if mark.ai_confidence < 0.4 else 'medium' if mark.ai_confidence < 0.7 else 'high' }}" style="width:{{ (mark.ai_confidence * 100)|round|int }}%;"></span>
-          </span>
-          {{ (mark.ai_confidence * 100)|round|int }}%
-          {% if mark.ai_confidence < 0.6 %}<span class="badge badge-needs_review">Low confidence - check this one</span>{% endif %}
+          Review priority:
+          {% if mark.review_priority %}
+            <span class="badge badge-priority-{{ mark.review_priority }}">{{ mark.review_priority|upper }}</span>
+          {% else %}
+            <span class="muted">not computed</span>
+          {% endif %}
+          <span style="font-size:0.85rem;"> — derived from checkable factors, not a bare self-reported percentage:</span>
         </p>
+        <ul class="muted" style="font-size:0.85rem;margin:-6px 0 10px 18px;">
+          <li>Evidence on-topic: {{ "yes" if mark.evidence_on_topic else "no / only adjacent" if mark.evidence_on_topic is not none else "not reported" }}</li>
+          <li>Covers all sub-parts: {{ "yes" if mark.covers_all_subparts else "no / only some" if mark.covers_all_subparts is not none else "not reported" }}</li>
+          <li>Near a band boundary: {{ "yes" if mark.near_band_boundary else "no" }}</li>
+          <li>Source unreadable/missing: {{ "yes" if mark.source_unreadable_or_missing else "no" }}</li>
+        </ul>
 
         {% if mark.source_file %}
           <p class="muted">Evidence found in: <strong>{{ mark.source_file }}</strong>{% if mark.source_location %}, {{ mark.source_location }}{% endif %}</p>
         {% endif %}
         {% if mark.evidence_text %}
           <p class="muted">Evidence quoted: "{{ mark.evidence_text }}"</p>
+        {% endif %}
+
+        {% if correction_history.get(mark.criterion_ref) %}
+          {% set h = correction_history[mark.criterion_ref] %}
+          {% if h.total_graded > 1 %}
+            <p class="muted" style="font-size:0.85rem;">History on this criterion in this course:
+            corrected {{ h.corrected }} of the last {{ h.total_graded }} times graded{% if h.top_reason %},
+            most often "{{ dict(reason_codes).get(h.top_reason, h.top_reason) }}"{% endif %}.</p>
+          {% endif %}
         {% endif %}
 
         <label>Mark</label>
@@ -207,6 +298,16 @@
           {% if mark.final_comment and "**" in mark.final_comment %}
             <p class="muted" style="font-size:0.85rem;">Preview with bolded command words: {{ mark.final_comment|bold_markdown }}</p>
           {% endif %}
+        {% endif %}
+
+        {% if submission.status != "released" %}
+          <label>If you change the mark above, why? (optional but builds correction history)</label>
+          <select name="reason_code_{{ mark.id }}">
+            <option value="">-- not changing this mark --</option>
+            {% for code, description in reason_codes %}
+              <option value="{{ code }}">{{ description }}</option>
+            {% endfor %}
+          </select>
         {% endif %}
 
         {% if mark.overridden %}<p class="muted">✎ You edited this from the AI's original mark.</p>{% endif %}

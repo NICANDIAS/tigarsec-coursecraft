@@ -44,7 +44,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 _anthropic_client = None
 
 
-def _parse_json_response(text: str, provider: str = "unknown", debug_info: str = "") -> dict:
+def _parse_json_response(text: str, provider: str = "unknown", debug_info: str = "", stop_reason: str | None = None) -> dict:
     text = text.strip()
     if text.startswith("```"):
         text = text.strip("`")
@@ -74,8 +74,28 @@ def _parse_json_response(text: str, provider: str = "unknown", debug_info: str =
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
+        # Standing fix: a JSON parse failure with stop_reason=max_tokens is NOT a malformed-
+        # JSON bug in the model's output - it's the response getting cut off mid-string
+        # because the caller's max_tokens budget was too small for what was actually being
+        # generated (confirmed as the real cause of a genuine "unterminated string" error on
+        # a lesson outline with rich generated practical/resource content). Distinguish this
+        # case explicitly rather than leaving it looking like a generic JSON bug, since the
+        # fix (raise max_tokens on the calling code) is completely different from a genuine
+        # malformed-output bug.
+        if stop_reason == "max_tokens":
+            raise ValueError(
+                f"[Provider used: {provider}] The response was cut off before it finished, because "
+                f"it hit the max_tokens limit for this call - it is not malformed JSON, it's an "
+                f"incomplete one. This usually means the requested content (e.g. a longer lesson, or "
+                f"one with several practicals/printable resources) genuinely needs more output than "
+                f"this call was budgeted for. If this keeps happening, the max_tokens value for this "
+                f"specific call needs raising in the code, or the request needs to ask for less in one "
+                f"go (e.g. a shorter duration, or generating practical resources separately). "
+                f"[debug: {debug_info}]"
+            )
+        debug_suffix = f"\n[debug: {debug_info}]" if debug_info else ""
         raise ValueError(
-            f"[Provider used: {provider}] LLM did not return valid JSON: {e}\nFirst 500 chars of raw response:\n{text[:500]}"
+            f"[Provider used: {provider}] LLM did not return valid JSON: {e}\nFirst 500 chars of raw response:\n{text[:500]}{debug_suffix}"
         )
 
 
@@ -109,7 +129,7 @@ def _complete_json_anthropic(system: str, prompt: str, max_tokens: int) -> dict:
     # see this, since the error-message route has repeatedly not shown it for reasons
     # not yet understood.
     print(f"[llm_gateway] Anthropic response: {debug_info}, text_length={len(text)}", flush=True)
-    return _parse_json_response(text, provider="anthropic", debug_info=debug_info)
+    return _parse_json_response(text, provider="anthropic", debug_info=debug_info, stop_reason=response.stop_reason)
 
 
 def _complete_json_ollama(system: str, prompt: str) -> dict:

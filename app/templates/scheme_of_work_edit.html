@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ sow.title }} - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}">&larr; {{ sow.title }}</a></p>
+<h1>Edit &amp; regenerate: {{ sow.title }}</h1>
+<p class="muted">Changes here update this scheme of work in place and regenerate its content -
+you don't need to delete it and start over. Its uploaded template (if any) is managed separately
+from the "Replace template"/"Remove template" controls on the scheme of work's own page.</p>
+
+<div class="card">
+  <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/edit">
+
+    <div class="form-section-title">Timing</div>
+    <div class="field-grid">
+      <div>
+        <label>Term/period start date</label>
+        <input type="date" name="start_date" value="{{ sow.start_date }}">
+      </div>
+      <div>
+        <label>Term/period end date</label>
+        <input type="date" name="end_date" value="{{ sow.end_date }}">
+      </div>
+      <p class="muted full" style="margin-top:-2px;">If a .docx template is attached, the week count is
+      calculated from its actual available (blank) weeks in this date range, not just the raw
+      number of calendar weeks - so it correctly excludes inductions, breaks, and conferences already
+      in the template.</p>
+
+      <div>
+        <label>Number of weeks (used only if you clear the dates above)</label>
+        <input type="number" name="weeks" min="1" max="{{ max_weeks }}" value="{{ sow.weeks_requested or 12 }}">
+      </div>
+      <div>
+        <label>Contact hours per week with this class (optional)</label>
+        <input type="number" name="hours_per_week" min="0.5" step="0.5" value="{{ sow.hours_per_week or '' }}">
+      </div>
+    </div>
+
+    <div class="form-section-title">Content to cover</div>
+    <label>Content area(s)</label>
+    <p class="muted" style="margin-top:-4px;">Tick the units to include — leave all unticked to cover the whole spec.</p>
+    <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
+      {% for unit in units %}
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;font-weight:normal;color:var(--text);margin:0 0 8px;">
+          <input type="checkbox" name="selected_units" value="{{ unit.name }}"
+                 {% if sow.selected_unit_names and unit.name in sow.selected_unit_names %}checked{% endif %}
+                 style="width:auto;margin:0;">
+          {{ unit.name }} <span class="muted">({{ unit.learning_outcomes|length }} LOs)</span>
+        </label>
+      {% endfor %}
+    </div>
+
+    <div class="form-section-title">Practicals &amp; assessment</div>
+    <label style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" name="include_practicals" value="yes" {% if sow.include_practicals %}checked{% endif %} style="width:auto;margin:0;">
+      Include practical/hands-on activities
+    </label>
+    <input type="text" name="practicals_notes" value="{{ sow.practicals_notes or '' }}" placeholder="Optional - what kind of practicals?">
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;">
+      <input type="checkbox" name="design_assignments" value="yes" {% if sow.design_assignments %}checked{% endif %} style="width:auto;margin:0;">
+      Design assignment briefs where the spec is ready to be assessed
+    </label>
+
+    <label>Occupational Specialism assessment structure (optional)</label>
+    <textarea name="os_assessment_structure" placeholder="e.g. Synoptic project, Performance Outcome 2 (Propose remediation advice for a security risk assessment, 38.4%). Task 1: Analysing a problem and designing a solution. Task 2: Developing the solution. Task 3: Evaluating the system. Portfolio of evidence, scenario-response - not assessed on discrete knowledge points.">{{ sow.os_assessment_structure or '' }}</textarea>
+    <p class="muted" style="margin-top:-2px;">Every assignment brief the AI designs will be
+    explicitly framed as practice for this real structure. Leave blank for briefs designed freely.</p>
+
+    <label style="margin-top:14px;">Planned assessment weeks (optional)</label>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+      {% for i in range(1, 5) %}
+        {% set existing = sow.planned_assessments[i-1] if sow.planned_assessments and sow.planned_assessments|length >= i else None %}
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input type="number" name="assessment_week" min="1" max="{{ max_weeks }}" placeholder="Week #" style="width:100px;margin-bottom:0;" value="{{ existing.week if existing else '' }}">
+          <input type="text" name="assessment_label" placeholder="e.g. Set Task A: Fundamentals" style="flex:1;margin-bottom:0;" value="{{ existing.label if existing else '' }}">
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="form-section-title">Template &amp; people</div>
+    <div class="field-grid">
+      <div>
+        <label>Tutor(s) name(s) (optional)</label>
+        <input type="text" name="tutor_names" value="{{ sow.tutor_names or '' }}" placeholder="e.g. Abdulhakeem Ekun">
+      </div>
+      <div>
+        <label>Existing template weeks that should still get lesson content (optional)</label>
+        <input type="text" name="append_eligible_labels" value="{{ sow.append_eligible_labels or '' }}" placeholder="e.g. Discover, Understand, Develop, Look Ahead, Engage, One to one week">
+      </div>
+      <p class="muted full" style="margin-top:-2px;">List exact existing labels (comma-separated) that are
+      still real teaching weeks - content is added underneath them rather than the week being skipped.
+      Anything not listed that already has content stays fully protected, as before.</p>
+    </div>
+
+    <div class="form-section-title">Anything else</div>
+    <label>Extra notes / preferences (optional)</label>
+    <textarea name="notes" placeholder="e.g. two double lessons per week, exam board mock in week 8">{{ sow.extra_notes or '' }}</textarea>
+
+    <button class="btn" type="submit" style="margin-top:8px;">Save changes and regenerate</button>
+  </form>
+</div>
+{% endblock %}

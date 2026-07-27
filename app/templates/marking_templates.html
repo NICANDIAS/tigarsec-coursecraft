@@ -14,6 +14,7 @@ re-upload it every time.</p>
         <div>
           <h2 style="margin-top:0;">{{ t.name }}</h2>
           {% if t.pass_threshold_pct %}<p class="muted">Pass threshold: {{ t.pass_threshold_pct }}%</p>{% endif %}
+          {% if t.part_weightings %}<p class="muted">Part weightings: {% for k, v in t.part_weightings.items() %}{{ k }}: {{ v }}%{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
           {% if t.rubric_file_path %}<p class="muted">Includes the original rubric file (filled-in-place export available).</p>{% endif %}
           {% if t.marking_scheme_notes %}<p style="white-space:pre-wrap;max-height:150px;overflow-y:auto;">{{ t.marking_scheme_notes[:500] }}{% if t.marking_scheme_notes|length > 500 %}...{% endif %}</p>{% endif %}
         </div>
@@ -41,6 +42,16 @@ re-upload it every time.</p>
 
     <label>Pass threshold per section (%, optional)</label>
     <input type="number" name="pass_threshold_pct" min="1" max="100" placeholder="e.g. 70" style="max-width:150px;">
+    <p class="muted" style="margin-top:-4px;">Get this from the assignment/rubric itself - don't assume 70%,
+    different assignments genuinely use different thresholds.</p>
+
+    <label>Part weightings (optional)</label>
+    <input type="text" name="part_weightings_text" placeholder="e.g. MCQ: 45, Longform: 55">
+    <p class="muted" style="margin-top:-4px;">Only needed if this assignment has multiple parts (e.g. MCQ vs
+    Longform) that should count toward the overall percentage in different proportions - state this
+    explicitly from the rubric/spec, it is never assumed to be an even split or 45/55. Format:
+    "Part name: weight%, Part name: weight%" - part names should match the section/filename each part's
+    evidence comes from. Leave blank if not applicable, or if every part should count equally.</p>
 
     <button class="btn" type="submit" style="margin-top:14px;">Save template</button>
   </form>

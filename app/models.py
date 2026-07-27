@@ -18,6 +18,7 @@ class MarkingTemplate(Base):
     name = Column(String(255), nullable=False)
     marking_scheme_notes = Column(Text, nullable=True)
     pass_threshold_pct = Column(Float, nullable=True)
+    part_weightings = Column(JSON, nullable=True)  # e.g. {"MCQ": 45, "Longform": 55} - marker-supplied weighting of each assessment part toward the weighted overall %, reused on every submission that selects this template. Never assumed/hardcoded - null means "not specified", and the app falls back to an explicitly-flagged equal weighting rather than guessing a split.
     rubric_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded rubric file - filled in place, never rebuilt as a new document
     created_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -99,7 +100,14 @@ class SchemeOfWork(Base):
     title = Column(String(255), nullable=False)
     content_area = Column(Text, nullable=True)
     selected_unit_names = Column(JSON, nullable=True)  # stored so "Retry" can rebuild the same request
-    format_sample = Column(Text, nullable=True)
+    format_sample = Column(Text, nullable=True)  # extracted text, used only as an AI style-reference (unchanged behaviour)
+    format_sample_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded template file, kept on disk so it can be filled in place - separate from the extracted text above, and independently replaceable/removable
+    format_sample_original_filename = Column(String(500), nullable=True)  # for display, and to check the extension is .docx before offering template-fill
+    tutor_names = Column(String(500), nullable=True)  # optional - if given, infilled into a template's "Tutor(s)" field; never guessed if left blank
+    os_assessment_structure = Column(Text, nullable=True)  # teacher-supplied description of the REAL occupational specialism exam/project's task structure (e.g. "Task 1: Analysing a problem...") for THIS content area - assignment briefs are framed around this exact structure rather than a generic invented one. Per-scheme-of-work, since each content area maps to a different Performance Outcome.
+    hours_per_week = Column(Float, nullable=True)  # teacher-supplied contact hours per week with this class - context for how much material can genuinely fit per week, not a hard constraint
+    append_eligible_labels = Column(Text, nullable=True)  # comma-separated labels (e.g. "Discover, Understand, Develop") that the teacher has confirmed are STILL real teaching weeks even though the template already has a short induction/pastoral label in them - content is appended under the existing text rather than the row being skipped. Deliberately never auto-detected - only the teacher reliably knows which of their own calendar's existing labels mean "still teach something this week" vs a genuine closure.
+    last_download_warnings = Column(JSON, nullable=True)  # non-fatal notes from the most recent template-fill download (e.g. weeks that didn't fit, rows left blank) - shown on the detail page since a GET download can't otherwise surface them to the teacher
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     weeks_requested = Column(Integer, nullable=True)  # the actual (capped) week count used
@@ -161,7 +169,9 @@ class Submission(Base):
     marking_scheme_notes = Column(Text, nullable=True)  # optional - overrides the default Met/Partly met/Not met scale with a rubric/numeric scheme (e.g. "score 2/5/7/10") the course actually uses
     pregraded_components = Column(JSON, nullable=True)  # components already scored externally (e.g. an auto-marked MCQ) - [{"label": str, "section": str, "score": float, "max_score": float}] - given to the AI as context only, never re-derived, and included in the deterministic section totals
     pass_threshold_pct = Column(Float, nullable=True)  # e.g. 70.0 - if set, each "section" (grouped by the section field on marks/pregraded components) must independently reach this % to count as an overall pass
-    section_results = Column(JSON, nullable=True)  # computed after marking: {"MCQ": {"total":.., "max":.., "pct":.., "passed":..}, ...} plus "overall_passed"
+    part_weightings = Column(JSON, nullable=True)  # e.g. {"MCQ": 45, "Longform": 55} - marker-supplied weight of each part toward the weighted overall % (see section_grading.py). Null = not specified; the app then uses an explicitly-flagged equal weighting rather than assuming a split.
+    detected_scoring_mechanism = Column(Text, nullable=True)  # what the AI identified as this rubric's own scoring vocabulary (e.g. "Numeric 2/5/7/10 for Longform criteria; Met/Partly met/Not met for MCQ") - stated upfront so the marker can confirm the rubric was read correctly before trusting the marks
+    section_results = Column(JSON, nullable=True)  # computed after marking: {"MCQ": {"total":.., "max":.., "pct":.., "passed":..}, ...} plus "overall_passed", "weighted_overall_pct", "weighted_overall_passed", "weighting_source", "criteria_below_threshold"
     rubric_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded rubric file - filled in place, never rebuilt as a new document
     similarity_warning = Column(Text, nullable=True)  # set automatically at upload time if this matches another student's submission for the same assignment above the threshold
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -203,11 +213,35 @@ class CriterionMark(Base):
     numeric_score = Column(Float, nullable=True)  # only populated for numeric/points rubrics - real arithmetic sums these, never trusts an AI's own claimed total
     max_score = Column(Float, nullable=True)
     section = Column(String(255), nullable=True)  # groups criteria for section-level pass thresholds (e.g. "MCQ" vs "LF")
+    scoring_vocabulary = Column(String(255), nullable=True)  # the literal scale/vocabulary the rubric itself uses for THIS criterion (e.g. "Met/Partly met/Not met" or "numeric 0-10"), read off the rubric rather than assumed - lets one document mix scales per criterion
+    matched_descriptor_quote = Column(Text, nullable=True)  # the exact band descriptor text quoted from the rubric row that the AI matched the response against, so the marker can check the judgement against the rubric's own wording rather than a paraphrase
+    descriptor_ambiguous = Column(Boolean, default=False, nullable=False)  # true if the rubric's own descriptor could support two different readings of this response - flagged rather than silently picking one
+    ambiguity_note = Column(Text, nullable=True)  # only set when descriptor_ambiguous is true: explains the two readings
+    evidence_on_topic = Column(Boolean, nullable=True)  # concrete confidence factor: was the cited evidence directly on-topic for this criterion, or only adjacent?
+    covers_all_subparts = Column(Boolean, nullable=True)  # concrete confidence factor: did the response cover all sub-parts of the criterion, or only some?
+    near_band_boundary = Column(Boolean, nullable=True)  # concrete confidence factor: is the response genuinely near a boundary between two rubric bands?
+    source_unreadable_or_missing = Column(Boolean, nullable=True)  # concrete confidence factor: was any part of the source material unreadable or missing?
+    review_priority = Column(String(20), nullable=True)  # "low"/"medium"/"high" - computed deterministically in code from the four factors above (see compute_review_priority in submissions.py), never trusted as a bare self-reported percentage
     final_mark = Column(String(100), nullable=True)
     final_comment = Column(Text, nullable=True)
     overridden = Column(Boolean, default=False)
 
     marking_run = relationship("MarkingRun", back_populates="criterion_marks")
+
+
+# Fixed set of reason codes for the correct-then-approve feedback loop - a short controlled
+# vocabulary (rather than free text only) so per-criterion correction history can actually be
+# aggregated and surfaced ("this criterion has been corrected 4 of the last 10 times, always in
+# the same direction") instead of being locked away in unstructured comment_diff text.
+CORRECTION_REASON_CODES = [
+    ("too_strict", "Too strict on command-word interpretation"),
+    ("too_lenient", "Too lenient on command-word interpretation"),
+    ("missed_evidence", "Missed evidence elsewhere in the submission"),
+    ("misread_band_boundary", "Misread the rubric's band boundary"),
+    ("wrong_descriptor_match", "Matched the wrong descriptor/band entirely"),
+    ("factual_error", "Factual error in the AI's evidence or reasoning"),
+    ("other", "Other (see comment)"),
+]
 
 
 class TeacherOverride(Base):
@@ -217,6 +251,7 @@ class TeacherOverride(Base):
     teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
     ai_mark = Column(String(100))
     final_mark = Column(String(100))
+    reason_code = Column(String(50), nullable=True)  # one of CORRECTION_REASON_CODES - why the human corrected the AI, so the gap is auditable and aggregable per criterion, not just visible as a diff
     comment_diff = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 

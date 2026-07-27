@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db, SessionLocal
 from ..models import Teacher, Course, SchemeOfWork, LessonDeck
 from ..sow_docx_export import render_sow_docx
+from ..sow_docx_fill import fill_sow_template_docx, count_available_weeks_in_range, _parse_append_labels
 from ..auth import get_current_teacher
 from ..llm_gateway import complete_json, get_effective_provider
 from ..docx_annotator import extract_text
@@ -126,7 +127,24 @@ If a college scheme-of-work FORMAT SAMPLE is given,
 match its general structure/level of detail/tone as closely as the JSON shape above allows - treat
 it as a style guide for how much detail per week, not as literal content to copy. Build up
 foundational content before assessment-heavy weeks. Leave the final 1-2 weeks for review/
-consolidation where the total week count allows for it."""
+consolidation where the total week count allows for it.
+
+OCCUPATIONAL SPECIALISM ASSESSMENT STRUCTURE - if given below, this describes the REAL exam/
+project this content area is building toward (its actual task names/stages, Performance Outcome,
+and assessment style - e.g. a synoptic scenario-response project marked on applied skills, not
+recall of discrete criteria). Every assignment brief you design (when assignments are requested)
+MUST be explicitly framed as PRACTICE for this real structure - name the actual task/stage it's
+practising (e.g. "Practising Task 1: Analysing a problem and designing a solution") and write the
+brief in the same scenario-response, portfolio-style character as the real assessment, not as a
+generic "cover these criteria" checklist. The "criteria_covered" field is still useful for the
+teacher's own tracking, but the brief text itself (title/brief) must read like genuine practice for
+the named real task, not a knowledge quiz. If NO structure is given below, design assignment briefs
+as you would normally.
+
+TEACHER CONTACT TIME - if given below, this is roughly how many hours per week the teacher
+actually has with this class. Use it as context for how much can realistically fit in one "week"
+of this plan - don't assume a single lesson's worth of time if more hours are stated, and don't
+cram a multi-topic week into a single short session if fewer hours are stated."""
 
 
 @router.get("/courses/{course_id}/scheme-of-work/new", response_class=HTMLResponse)
@@ -159,6 +177,10 @@ async def generate_sow(
     include_practicals: str = Form(""),
     practicals_notes: str = Form(""),
     design_assignments: str = Form(""),
+    tutor_names: str = Form(""),
+    os_assessment_structure: str = Form(""),
+    hours_per_week: str = Form(""),
+    append_eligible_labels: str = Form(""),
     format_sample_file: UploadFile = File(None),
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
@@ -185,6 +207,27 @@ async def generate_sow(
     if planned_assessments:
         design_assignments = "yes"
 
+    format_sample_text = ""
+    format_sample_path = None
+    format_sample_filename = None
+    if format_sample_file is not None and format_sample_file.filename:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{format_sample_file.filename}"
+        stored_path = os.path.join(UPLOAD_DIR, stored_name)
+        contents = await format_sample_file.read()
+        with open(stored_path, "wb") as f:
+            f.write(contents)
+        try:
+            format_sample_text = extract_text(stored_path, format_sample_file.filename)
+        except Exception:
+            format_sample_text = ""
+        # Kept on disk (not just its extracted text) so the "Download" step can fill this
+        # ACTUAL file in place later, rather than only using it as an AI style reference -
+        # only offered for .docx, since only that format can be edited in place this way.
+        if format_sample_file.filename.lower().endswith(".docx"):
+            format_sample_path = stored_path
+            format_sample_filename = format_sample_file.filename
+
     parsed_start = None
     parsed_end = None
     computed_weeks = weeks
@@ -193,8 +236,33 @@ async def generate_sow(
         try:
             parsed_start = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
             parsed_end = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
-            days = (parsed_end - parsed_start).days
-            computed_weeks = max(1, round(days / 7))
+            # Standing fix: a raw day-count between two dates assumes every calendar week
+            # in between is a free teaching week - not true once a real template is
+            # attached (induction weeks, conferences, half terms, Christmas all eat into
+            # it). If a .docx template was uploaded in this same request, count its ACTUAL
+            # available (blank) weeks in this date range instead - confirmed against a
+            # real template where the day-count estimate and the true available count
+            # differed enough to make a stated "finish by January" goal silently not
+            # actually happen (content spilling to June while the day-count looked fine).
+            template_based_weeks = (
+                count_available_weeks_in_range(
+                    format_sample_path, parsed_start, parsed_end,
+                    _parse_append_labels(append_eligible_labels),
+                )
+                if format_sample_path else None
+            )
+            if template_based_weeks is not None:
+                computed_weeks = max(1, template_based_weeks)
+                if template_based_weeks == 0:
+                    date_range_note = (
+                        f"Your uploaded template has no available (blank) teaching weeks "
+                        f"between {parsed_start} and {parsed_end} - every row in that range "
+                        f"already has real college content (inductions, breaks, etc). Check "
+                        f"the date range or the template."
+                    )
+            else:
+                days = (parsed_end - parsed_start).days
+                computed_weeks = max(1, round(days / 7))
         except ValueError:
             pass
 
@@ -208,19 +276,6 @@ async def generate_sow(
         )
         computed_weeks = SANITY_MAX_WEEKS
 
-    format_sample_text = ""
-    if format_sample_file is not None and format_sample_file.filename:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        temp_name = f"{uuid.uuid4().hex}_{format_sample_file.filename}"
-        temp_path = os.path.join(UPLOAD_DIR, temp_name)
-        contents = await format_sample_file.read()
-        with open(temp_path, "wb") as f:
-            f.write(contents)
-        try:
-            format_sample_text = extract_text(temp_path, format_sample_file.filename)
-        except Exception:
-            format_sample_text = ""
-
     sow = SchemeOfWork(
         course_id=course.id,
         spec_version_id=course.spec_version_id,
@@ -228,6 +283,12 @@ async def generate_sow(
         content_area=content_area_label,
         selected_unit_names=selected_unit_names or None,
         format_sample=format_sample_text or None,
+        format_sample_file_path=format_sample_path,
+        format_sample_original_filename=format_sample_filename,
+        tutor_names=tutor_names.strip() or None,
+        os_assessment_structure=os_assessment_structure.strip() or None,
+        append_eligible_labels=append_eligible_labels.strip() or None,
+        hours_per_week=(float(hours_per_week) if hours_per_week.strip().replace(".", "", 1).isdigit() else None),
         start_date=parsed_start,
         end_date=parsed_end,
         weeks_requested=computed_weeks,
@@ -246,6 +307,123 @@ async def generate_sow(
     background_tasks.add_task(_run_sow_generation, sow.id)
 
     return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow.id}", status_code=303)
+
+
+@router.get("/courses/{course_id}/scheme-of-work/{sow_id}/edit", response_class=HTMLResponse)
+def edit_sow_page(
+    course_id: int,
+    sow_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Lets a teacher change this scheme of work's own parameters (dates, week count, notes,
+    OS assessment structure, etc.) and regenerate in place - answers "do I have to delete
+    and start over to change something": no, this is the alternative. The uploaded
+    template (if any) is untouched by this - it's managed separately via Replace/Remove.
+    """
+    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    has_parsed_spec = bool(course and course.spec_version and course.spec_version.structured_json)
+    units = course.spec_version.structured_json.get("units", []) if has_parsed_spec else []
+    return templates.TemplateResponse(
+        "scheme_of_work_edit.html",
+        {"request": request, "teacher": teacher, "course": course, "sow": sow,
+         "units": units, "max_weeks": SANITY_MAX_WEEKS},
+    )
+
+
+@router.post("/courses/{course_id}/scheme-of-work/{sow_id}/edit")
+async def update_sow(
+    course_id: int,
+    sow_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    weeks: int = Form(0),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    notes: str = Form(""),
+    include_practicals: str = Form(""),
+    practicals_notes: str = Form(""),
+    design_assignments: str = Form(""),
+    tutor_names: str = Form(""),
+    os_assessment_structure: str = Form(""),
+    hours_per_week: str = Form(""),
+    append_eligible_labels: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    if not sow:
+        return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+
+    form = await request.form()
+    selected_unit_names = form.getlist("selected_units")
+    checkpoint_weeks = form.getlist("assessment_week")
+    checkpoint_labels = form.getlist("assessment_label")
+    planned_assessments = [
+        {"week": int(week), "label": label.strip()}
+        for week, label in zip(checkpoint_weeks, checkpoint_labels)
+        if week.strip().isdigit() and label.strip()
+    ]
+    if planned_assessments:
+        design_assignments = "yes"
+
+    parsed_start = None
+    parsed_end = None
+    computed_weeks = weeks
+    date_range_note = None
+    if start_date and end_date:
+        try:
+            parsed_start = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+            parsed_end = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+            template_based_weeks = (
+                count_available_weeks_in_range(
+                    sow.format_sample_file_path, parsed_start, parsed_end,
+                    _parse_append_labels(append_eligible_labels),
+                )
+                if sow.format_sample_file_path else None
+            )
+            if template_based_weeks is not None:
+                computed_weeks = max(1, template_based_weeks)
+            else:
+                days = (parsed_end - parsed_start).days
+                computed_weeks = max(1, round(days / 7))
+        except ValueError:
+            pass
+    if computed_weeks < 1:
+        computed_weeks = 1
+    if computed_weeks > SANITY_MAX_WEEKS:
+        date_range_note = f"Capped at the {SANITY_MAX_WEEKS}-week sanity ceiling."
+        computed_weeks = SANITY_MAX_WEEKS
+
+    if selected_unit_names:
+        sow.selected_unit_names = selected_unit_names
+        sow.content_area = ", ".join(selected_unit_names)
+    else:
+        sow.selected_unit_names = None
+        sow.content_area = "whole spec (no units selected)"
+    sow.start_date = parsed_start
+    sow.end_date = parsed_end
+    sow.weeks_requested = computed_weeks
+    sow.planned_assessments = planned_assessments or None
+    sow.include_practicals = bool(include_practicals)
+    sow.practicals_notes = practicals_notes or None
+    sow.design_assignments = bool(design_assignments)
+    sow.extra_notes = notes or None
+    sow.tutor_names = tutor_names.strip() or None
+    sow.os_assessment_structure = os_assessment_structure.strip() or None
+    sow.append_eligible_labels = append_eligible_labels.strip() or None
+    sow.hours_per_week = float(hours_per_week) if hours_per_week.strip().replace(".", "", 1).isdigit() else None
+    sow.status = "generating"
+    sow.error_detail = date_range_note
+    sow.weeks_json = None
+    sow.last_download_warnings = None
+    db.commit()
+
+    background_tasks.add_task(_run_sow_generation, sow.id)
+    return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
 
 
 @router.post("/courses/{course_id}/scheme-of-work/{sow_id}/retry")
@@ -268,6 +446,93 @@ def retry_sow(
         sow.weeks_json = None
         db.commit()
         background_tasks.add_task(_run_sow_generation, sow.id)
+
+    return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
+
+
+@router.post("/courses/{course_id}/scheme-of-work/{sow_id}/delete")
+def delete_sow(
+    course_id: int,
+    sow_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Deletes this scheme of work entirely (its stored parameters, generated weeks, and any
+    uploaded template file), so a teacher who wants to start over with different
+    parameters isn't stuck editing in place. Any PowerPoint decks previously generated from
+    this scheme's weeks are NOT deleted - they're independently useful files - but their
+    back-link (source_sow_id) is cleared rather than left pointing at a deleted row.
+    """
+    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    if sow:
+        if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
+            os.remove(sow.format_sample_file_path)
+        db.query(LessonDeck).filter(LessonDeck.source_sow_id == sow_id).update({"source_sow_id": None})
+        db.delete(sow)
+        db.commit()
+
+    return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+
+
+@router.post("/courses/{course_id}/scheme-of-work/{sow_id}/template")
+async def replace_sow_template(
+    course_id: int,
+    sow_id: int,
+    template_file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Uploads a new template (or replaces the existing one) on an already-generated scheme
+    of work, without needing to regenerate the AI content itself - the two are independent:
+    this only changes which document "Download" fills into.
+    """
+    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    if sow and template_file.filename:
+        if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
+            os.remove(sow.format_sample_file_path)
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        stored_name = f"{uuid.uuid4().hex}_{template_file.filename}"
+        stored_path = os.path.join(UPLOAD_DIR, stored_name)
+        contents = await template_file.read()
+        with open(stored_path, "wb") as f:
+            f.write(contents)
+
+        if template_file.filename.lower().endswith(".docx"):
+            sow.format_sample_file_path = stored_path
+            sow.format_sample_original_filename = template_file.filename
+        else:
+            # Not a .docx - can't be filled in place, so don't set it as the fill target,
+            # but it can still be useful as an AI style reference on the next regenerate.
+            sow.format_sample_file_path = None
+            sow.format_sample_original_filename = None
+        try:
+            sow.format_sample = extract_text(stored_path, template_file.filename) or sow.format_sample
+        except Exception:
+            pass
+        db.commit()
+
+    return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
+
+
+@router.post("/courses/{course_id}/scheme-of-work/{sow_id}/template/remove")
+def remove_sow_template(
+    course_id: int,
+    sow_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """Removes the uploaded template without deleting the scheme of work itself -
+    "Download" then falls back to the general-shape export until a new template is
+    uploaded."""
+    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    if sow:
+        if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
+            os.remove(sow.format_sample_file_path)
+        sow.format_sample_file_path = None
+        sow.format_sample_original_filename = None
+        db.commit()
 
     return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
 
@@ -319,6 +584,14 @@ def _run_sow_generation(sow_id: int):
                 f"Design assignment briefs where appropriate: {'yes' if sow.design_assignments else 'no'}",
                 f"Extra teacher notes/preferences: {sow.extra_notes or 'none'}",
             ]
+            if sow.hours_per_week:
+                prompt_parts.append(f"TEACHER CONTACT TIME: {sow.hours_per_week} hours per week with this class")
+            if sow.os_assessment_structure:
+                os_structure_header = (
+                    "OCCUPATIONAL SPECIALISM ASSESSMENT STRUCTURE (see the instruction above - "
+                    "frame every assignment brief as explicit practice for this real structure):"
+                )
+                prompt_parts.append(os_structure_header + " " + sow.os_assessment_structure)
             if sow.planned_assessments:
                 checkpoints_text = "; ".join(f"Week {a['week']}: {a['label']}" for a in sow.planned_assessments)
                 prompt_parts.append(
@@ -450,19 +723,52 @@ def download_sow(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     """
-    Generated fresh from weeks_json on each request rather than stored - the SOW view
-    itself stays exactly as it is (per your request), this just adds a real downloadable
-    document alongside it in a general table shape close to what most college SOW
-    templates use (not an exact replica of any specific one).
+    If a .docx template was uploaded for this scheme of work, fills it in place (see
+    sow_docx_fill.py) - reusing the ALREADY-GENERATED weeks_json exactly as shown in the
+    in-app view, just written into the real template's blank teaching weeks instead of a
+    generic export. Falls back to the general table-shape export if no template was
+    uploaded (or it wasn't a .docx), so a scheme of work without a template keeps working
+    exactly as before.
     """
     course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
     sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
     if not sow or sow.status != "ready" or not course:
         return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
 
-    output_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}_sow_export.docx")
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    render_sow_docx(sow, course.name, output_path)
+    output_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}_sow_export.docx")
+
+    if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
+        header_updates = {
+            "start_date": sow.start_date,
+            "end_date": sow.end_date,
+            "tutor_names": sow.tutor_names,
+        }
+        try:
+            report, warnings = fill_sow_template_docx(
+                sow.format_sample_file_path, sow.weeks_json or [], header_updates, output_path,
+                _parse_append_labels(sow.append_eligible_labels),
+            )
+            # Surfaced on the next page load rather than failing the download - the file
+            # is still real and usable even when there's something worth the teacher's
+            # attention (e.g. weeks that didn't fit).
+            sow.error_detail = None
+            if warnings:
+                sow.last_download_warnings = warnings
+            db.commit()
+        except Exception as e:
+            # Template-fill failed outright (e.g. couldn't find a recognisable grid table) -
+            # fall back to the general export rather than giving the teacher nothing, but
+            # say so clearly rather than silently substituting a different document.
+            sow.last_download_warnings = [
+                f"Could not fill your uploaded template ({e}) - the document below is the "
+                f"general table-shape export instead. Check the template's structure, or "
+                f"remove/replace it if this keeps happening."
+            ]
+            db.commit()
+            render_sow_docx(sow, course.name, output_path)
+    else:
+        render_sow_docx(sow, course.name, output_path)
 
     return FileResponse(
         output_path,

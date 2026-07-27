@@ -125,6 +125,22 @@ one title, one retrieval_starter, one objectives, one retrieval_plenary, and one
 slide, with as many content/real_life_example/activity/practical slides in between as make sense."""
 
 
+def _estimate_outline_max_tokens(duration_minutes: int, include_practicals: bool) -> int:
+    """
+    Standing fix: a flat max_tokens=6000 genuinely truncated real lesson outlines mid-response
+    (confirmed via a real "Unterminated string" error, and via response.stop_reason=='max_tokens'
+    in server logs) - this single call has to hold every slide's full text AND, per the RESOURCES
+    instruction above, the complete printable content of any practical/activity resource (a whole
+    worksheet's worth of text, not a reference to one). Longer lessons need more content slides;
+    practicals add substantial resource text on top. Scaled rather than a bigger flat guess, since
+    a 20-minute lesson doesn't need the same budget as a 3-hour one.
+    """
+    base = 8000
+    duration_component = duration_minutes * 120  # roughly accounts for more content/activity slides
+    practicals_component = 6000 if include_practicals else 0
+    return min(32000, base + duration_component + practicals_component)
+
+
 def generate_lesson_outline(
     content_area_text: str,
     duration_minutes: int,
@@ -137,7 +153,8 @@ def generate_lesson_outline(
         f"Previous lesson context: {previous_lesson_context or 'Not provided - use foundational recall questions instead.'}\n\n"
         f"Content area / spec criteria to build this lesson from:\n{content_area_text}"
     )
-    return complete_json(system=LESSON_OUTLINE_SYSTEM_PROMPT, prompt=prompt, max_tokens=6000)
+    max_tokens = _estimate_outline_max_tokens(duration_minutes, include_practicals)
+    return complete_json(system=LESSON_OUTLINE_SYSTEM_PROMPT, prompt=prompt, max_tokens=max_tokens)
 
 
 # ---------------------------------------------------------------------------

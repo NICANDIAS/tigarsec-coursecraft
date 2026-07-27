@@ -38,8 +38,8 @@
           <option value="{{ t.id }}">{{ t.name }}</option>
         {% endfor %}
       </select>
-      <p class="muted" style="margin-top:-4px;">Selecting one applies its saved rubric and
-      pass threshold automatically - anything you also type below is added on top, not a
+      <p class="muted" style="margin-top:-4px;">Selecting one applies its saved rubric, pass threshold,
+      and part weightings automatically - anything you also type below is added on top, not a
       replacement. <a href="/courses/{{ course.id }}/marking-templates">Manage templates</a>.</p>
     {% else %}
       <p class="muted"><a href="/courses/{{ course.id }}/marking-templates">Save a reusable marking template</a>
@@ -73,7 +73,16 @@
     <input type="number" name="pass_threshold_pct" min="1" max="100" placeholder="e.g. 70" style="max-width:150px;">
     <p class="muted" style="margin-top:-4px;">If set, each section (grouped by the "Section" labels above and
     on any AI-scored numeric criteria) must independently reach this percentage to count as an overall pass -
-    e.g. MCQ and Longform both needing 70% separately, not a blended average. Leave blank if not applicable.</p>
+    e.g. MCQ and Longform both needing 70% separately, not a blended average. Leave blank if not applicable.
+    Get this from the actual assignment/rubric - it isn't assumed to be 70%.</p>
+
+    <label>Part weightings (optional)</label>
+    <input type="text" name="part_weightings_text" placeholder="e.g. MCQ: 45, Longform: 55">
+    <p class="muted" style="margin-top:-4px;">Only needed if this assignment's parts should count toward
+    the overall percentage in different proportions. State it explicitly here (or via a saved template
+    above) - it's never assumed to be an even split or a 45/55 split. Part names should match the section/
+    filename labels used elsewhere on this page. Leave blank for an equal weighting across whatever parts
+    are present (this will be clearly labelled as such in the results, not silently treated as your choice).</p>
 
     <label>Files (one or more - e.g. a report AND a presentation AND a spreadsheet for the same LO)</label>
     <input type="file" name="files" required multiple accept=".docx,.pdf,.txt,.pptx,.xlsx">

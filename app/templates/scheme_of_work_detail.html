@@ -3,11 +3,25 @@
 {% block content %}
 <p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
 <h1>{{ sow.title }}</h1>
+<p><a href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/edit">Edit parameters &amp; regenerate</a></p>
 {% if sow.content_area %}<p class="muted">Content area: {{ sow.content_area }}</p>{% endif %}
+{% if sow.tutor_names %}<p class="muted">Tutor(s): {{ sow.tutor_names }}</p>{% endif %}
 {% if sow.start_date and sow.end_date %}<p class="muted">{{ sow.start_date }} to {{ sow.end_date }}</p>{% endif %}
 {% if sow.planned_assessments %}
   <p class="muted">Planned assessment weeks: {% for a in sow.planned_assessments %}Week {{ a.week }} ({{ a.label }}){% if not loop.last %}, {% endif %}{% endfor %}</p>
 {% endif %}
+
+<details style="margin-bottom:14px;">
+  <summary class="muted" style="cursor:pointer;">Delete this scheme of work</summary>
+  <div class="card" style="margin-top:8px;border-color:var(--danger);">
+    <p>This permanently deletes this scheme of work, its generated weeks, and any template you've
+    uploaded for it. Any PowerPoint decks already generated from its weeks are kept, just unlinked.</p>
+    <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/delete"
+          onsubmit="return confirm('Delete this scheme of work permanently? This cannot be undone.');">
+      <button class="btn" style="background:var(--danger);" type="submit">Delete permanently</button>
+    </form>
+  </div>
+</details>
 
 {% if sow.status == "generating" %}
   <div class="card" id="sow-status-card" data-sow-id="{{ sow.id }}" data-course-id="{{ course.id }}">
@@ -44,9 +58,46 @@
   {% endif %}
   <div class="card">
     <a class="btn btn-secondary" href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/download">Download as Word document</a>
-    <p class="muted" style="margin-top:8px;">A general table format (Week / Learning Outcomes / Content / Assessment) -
-    not an exact copy of any specific college template, but close to what most use, so you have a
-    real document to submit rather than only this in-app view.</p>
+    {% if sow.format_sample_file_path %}
+      <p class="muted" style="margin-top:8px;">Fills your uploaded template
+      (<strong>{{ sow.format_sample_original_filename }}</strong>) directly - only writing into
+      teaching weeks that were genuinely blank, leaving anything the college already put in the
+      calendar (half terms, bank holidays, named exam windows) completely untouched.</p>
+    {% else %}
+      <p class="muted" style="margin-top:8px;">A general table format (Week / Learning Outcomes / Content / Assessment) -
+      not an exact copy of any specific college template, but close to what most use. Upload a .docx
+      template below to have "Download" fill your actual college template instead.</p>
+    {% endif %}
+
+    {% if sow.last_download_warnings %}
+      <div class="error-box" style="border-color:var(--warning);color:var(--warning);margin-top:10px;">
+        <strong>From your last download:</strong>
+        <ul style="margin:6px 0 0 18px;">
+          {% for w in sow.last_download_warnings %}<li>{{ w }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <details style="margin-top:12px;">
+      <summary class="muted" style="cursor:pointer;">
+        {% if sow.format_sample_file_path %}Replace or remove template{% else %}Upload a template to fill{% endif %}
+      </summary>
+      <div style="margin-top:10px;">
+        <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/template" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <input type="file" name="template_file" accept=".docx" required style="flex:1;min-width:200px;">
+          <button class="btn btn-secondary" type="submit">{% if sow.format_sample_file_path %}Replace{% else %}Upload{% endif %}</button>
+        </form>
+        <p class="muted" style="margin-top:6px;">Must be a .docx to be filled directly - a college's
+        own scheme of work template usually has a week-by-week table with a header mentioning
+        "week" or "commencing".</p>
+        {% if sow.format_sample_file_path %}
+          <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/template/remove" style="margin-top:8px;"
+                onsubmit="return confirm('Remove the uploaded template? Download will go back to the general export until you upload a new one.');">
+            <button class="btn" style="background:var(--danger);" type="submit">Remove current template</button>
+          </form>
+        {% endif %}
+      </div>
+    </details>
   </div>
   {% for week in sow.weeks_json %}
     <div class="card week-block">

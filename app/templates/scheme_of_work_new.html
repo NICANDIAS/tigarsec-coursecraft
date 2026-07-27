@@ -11,44 +11,74 @@
 {% else %}
 <div class="card">
   <form method="post" action="/courses/{{ course.id }}/scheme-of-work/generate" enctype="multipart/form-data">
+
+    <div class="form-section-title">Basics &amp; timing</div>
     <label>Title (e.g. "Year 2 Term 1")</label>
     <input type="text" name="title" required>
 
-    <label>Term/period start and end date (recommended - number of weeks is calculated for you)</label>
-    <div style="display:flex;gap:10px;">
-      <input type="date" name="start_date" style="flex:1;">
-      <input type="date" name="end_date" style="flex:1;">
+    <div class="field-grid">
+      <div>
+        <label>Term/period start date</label>
+        <input type="date" name="start_date">
+      </div>
+      <div>
+        <label>Term/period end date</label>
+        <input type="date" name="end_date">
+      </div>
+      <p class="muted full" style="margin-top:-2px;">Recommended - the number of weeks is calculated
+      for you. Leave both blank and just type a week count below instead, if you'd rather not pick
+      calendar dates. If you upload a .docx template below, these dates also fill its Start Date/End
+      Date fields (only if it has them), matching whatever date format the template already uses. The
+      week count is calculated from the template's own available (blank) weeks in this date range where
+      possible, rather than the raw number of calendar weeks - so weeks already taken up by inductions,
+      breaks, or conferences in your template don't get miscounted as teaching time.</p>
+
+      <div>
+        <label>Number of weeks (used only if you didn't pick dates above)</label>
+        <input type="number" name="weeks" min="1" max="{{ max_weeks }}" value="12">
+      </div>
+      <div>
+        <label>Contact hours per week with this class (optional)</label>
+        <input type="number" name="hours_per_week" min="0.5" step="0.5" placeholder="e.g. 4">
+      </div>
+      <p class="muted full" style="margin-top:-2px;">Weeks is a target, not a strict requirement - the
+      AI will use its own judgement if your content genuinely needs more or fewer weeks than this to
+      teach properly, and will say so if it deviates ({{ max_weeks }}-week sanity ceiling for obviously
+      mistyped numbers only). Hours per week is context for how much content can genuinely fit in one
+      week of the plan - not a hard rule.</p>
     </div>
-    <p class="muted" style="margin-top:-4px;">Leave both blank and just type a week count below instead, if you'd rather not pick calendar dates.</p>
 
-    <label>Number of weeks (used only if you didn't pick dates above)</label>
-    <input type="number" name="weeks" min="1" max="{{ max_weeks }}" value="12">
-    <p class="muted" style="margin-top:-4px;">This is a target, not a strict requirement - the AI
-    will use its own judgement if your content genuinely needs more or fewer weeks than this to
-    teach properly, and will say so if it deviates. ({{ max_weeks }}-week sanity ceiling for obviously
-    mistyped numbers only.)</p>
-
-    <label>Content area(s) to cover</label>
+    <div class="form-section-title">Content to cover</div>
+    <label>Content area(s)</label>
     <p class="muted" style="margin-top:-4px;">Tick the units to include — leave all unticked to cover the whole spec.</p>
-    <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:10px;margin-bottom:14px;">
+    <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
       {% for unit in units %}
-        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--text);margin-bottom:6px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;font-weight:normal;color:var(--text);margin:0 0 8px;">
           <input type="checkbox" name="selected_units" value="{{ unit.name }}" style="width:auto;margin:0;">
           {{ unit.name }} <span class="muted">({{ unit.learning_outcomes|length }} LOs)</span>
         </label>
       {% endfor %}
     </div>
 
+    <div class="form-section-title">Practicals &amp; assessment</div>
     <label style="display:flex;align-items:center;gap:8px;">
       <input type="checkbox" name="include_practicals" value="yes" style="width:auto;margin:0;">
       Include practical/hands-on activities
     </label>
     <input type="text" name="practicals_notes" placeholder="Optional - what kind of practicals? e.g. 'lab-based networking exercises using Packet Tracer'">
 
-    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;">
       <input type="checkbox" name="design_assignments" value="yes" style="width:auto;margin:0;">
       Design assignment briefs where the spec is ready to be assessed
     </label>
+
+    <label>Occupational Specialism assessment structure (optional)</label>
+    <textarea name="os_assessment_structure" placeholder="e.g. Synoptic project, Performance Outcome 2 (Propose remediation advice for a security risk assessment, 38.4%). Task 1: Analysing a problem and designing a solution. Task 2: Developing the solution. Task 3: Evaluating the system. Portfolio of evidence, scenario-response - not assessed on discrete knowledge points."></textarea>
+    <p class="muted" style="margin-top:-2px;">If this scheme of work covers ONE occupational specialism
+    content area, paste the real exam/project's task structure from your spec here (its actual task
+    names, Performance Outcome, and assessment style). Every assignment brief the AI designs will then
+    be explicitly framed as practice for this real structure, in its language, rather than a generic
+    invented one. Leave blank for briefs designed freely as normal.</p>
 
     <label style="margin-top:14px;">Planned assessment weeks (optional)</label>
     <p class="muted" style="margin-top:-4px;">If you already know when your major assessments need
@@ -58,20 +88,45 @@
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
       {% for i in range(1, 5) %}
         <div style="display:flex;gap:10px;align-items:center;">
-          <input type="number" name="assessment_week" min="1" max="{{ max_weeks }}" placeholder="Week #" style="width:100px;">
-          <input type="text" name="assessment_label" placeholder="e.g. Set Task A: Fundamentals" style="flex:1;">
+          <input type="number" name="assessment_week" min="1" max="{{ max_weeks }}" placeholder="Week #" style="width:100px;margin-bottom:0;">
+          <input type="text" name="assessment_label" placeholder="e.g. Set Task A: Fundamentals" style="flex:1;margin-bottom:0;">
         </div>
       {% endfor %}
     </div>
 
-    <label style="margin-top:10px;">Upload your college's scheme of work format/template (optional - .docx/.pdf/.txt)</label>
-    <input type="file" name="format_sample_file" accept=".docx,.pdf,.txt">
-    <p class="muted" style="margin-top:-4px;">Used as a style guide for structure/detail level, not copied literally.</p>
+    <div class="form-section-title">Template &amp; people</div>
+    <div class="field-grid">
+      <div>
+        <label>Tutor(s) name(s) (optional)</label>
+        <input type="text" name="tutor_names" placeholder="e.g. Abdulhakeem Ekun">
+      </div>
+      <div>
+        <label>Existing template weeks that should still get lesson content (optional)</label>
+        <input type="text" name="append_eligible_labels" placeholder="e.g. Discover, Understand, Develop, Look Ahead, Engage, One to one week">
+      </div>
+      <p class="muted full" style="margin-top:-2px;">Tutor(s) fills a matching field in your uploaded
+      .docx template, if it has one. For "existing template weeks" - if your template already has short
+      labels in some weeks (e.g. induction themes like "Discover"/"Understand") that are STILL real
+      teaching weeks where subject content should also be taught, list those exact labels here,
+      comma-separated - content is added underneath the existing label rather than the week being
+      skipped. Anything NOT listed here that already has content (Half Term, bank holidays, exam
+      windows, conferences) stays fully protected as before - never touched.</p>
+    </div>
 
+    <label>Upload your college's scheme of work format/template (optional - .docx/.pdf/.txt)</label>
+    <input type="file" name="format_sample_file" accept=".docx,.pdf,.txt">
+    <p class="muted" style="margin-top:-2px;">Used as a style guide for the AI's structure/detail
+    level either way. If you upload a <strong>.docx</strong> specifically, "Download" on the
+    finished scheme of work will also fill your actual template's blank teaching weeks directly -
+    it detects which rows already have real college content and leaves those completely alone, only
+    filling genuinely blank (or explicitly listed above) weeks. A .pdf or .txt sample is
+    style-guide-only and can't be filled this way.</p>
+
+    <div class="form-section-title">Anything else</div>
     <label>Extra notes / preferences (optional)</label>
     <textarea name="notes" placeholder="e.g. two double lessons per week, exam board mock in week 8, avoid overlapping with half-term"></textarea>
 
-    <button class="btn" type="submit">Generate with AI</button>
+    <button class="btn" type="submit" style="margin-top:8px;">Generate with AI</button>
   </form>
 </div>
 {% endif %}

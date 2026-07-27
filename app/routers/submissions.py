@@ -13,14 +13,14 @@ from ..database import get_db, SessionLocal
 from ..models import (
     Teacher, Course, Student, Submission, SubmissionFile, MarkingRun,
     CriterionMark, TeacherOverride, AuditLogEntry, FeedbackStyleTemplate, MarkingTemplate,
-    IVRequest, IVCriterionCheck,
+    IVRequest, IVCriterionCheck, CORRECTION_REASON_CODES,
 )
 from ..auth import get_current_teacher
 from ..docx_annotator import extract_text, extract_text_with_locations, annotate_submission
 from ..spec_parser import _strip_repeated_boilerplate_lines  # same fix as spec parsing - repeated page headers/footers confuse marking too, confirmed on a real submission
 from ..llm_gateway import complete_json, get_effective_provider
 from ..similarity_check import find_similar_pairs, find_matches_for_one
-from ..section_grading import compute_section_results
+from ..section_grading import compute_grading_results
 from ..rubric_fill import fill_original_rubric_docx
 
 router = APIRouter()
@@ -95,6 +95,58 @@ def _is_criterion_met(final_mark: str) -> bool:
     return "met" in text or "achieved" in text or "pass" in text
 
 
+def _parse_weightings_text(text: str) -> dict | None:
+    """
+    Parses "Part name: weight%, Part name: weight%" into {"Part name": weight_float, ...}.
+    Marker-supplied weightings are read verbatim here rather than inferred - if parsing
+    fails or produces nothing usable, returns None so the app falls back to an explicitly-
+    flagged equal weighting (see section_grading.py) instead of guessing a split itself.
+    """
+    if not text or not text.strip():
+        return None
+    result = {}
+    for chunk in text.split(","):
+        if ":" not in chunk:
+            continue
+        name, _, value = chunk.partition(":")
+        name = name.strip()
+        value = value.strip().rstrip("%")
+        if not name or not value:
+            continue
+        try:
+            result[name] = float(value)
+        except ValueError:
+            continue
+    return result or None
+
+
+def compute_review_priority(evidence_on_topic, covers_all_subparts, near_band_boundary, source_unreadable_or_missing) -> str:
+    """
+    Standing fix (per marker feedback): a bare self-reported confidence percentage from the
+    AI isn't trustworthy on its own - it's replaced here with a priority derived, in code,
+    from four concrete checkable factors the AI reports about its OWN judgement (was the
+    evidence on-topic, did it cover every sub-part, is the response near a band boundary,
+    was any source material unreadable/missing). This function is the deterministic part:
+    it never re-derives whether those factors are individually true (only the AI, having
+    read the actual submission, can assess that), but it DOES own the arithmetic of turning
+    those factors into a priority bucket - never trusting a bare AI-computed bucket either.
+    """
+    concerns = 0
+    if evidence_on_topic is False:
+        concerns += 2
+    if covers_all_subparts is False:
+        concerns += 1
+    if near_band_boundary:
+        concerns += 1
+    if source_unreadable_or_missing:
+        concerns += 2
+    if concerns >= 3:
+        return "high"
+    if concerns >= 1:
+        return "medium"
+    return "low"
+
+
 def compute_overall_grade(marks) -> str | None:
     """
     Standard BTEC/Pearson aggregation rule: to achieve Merit, ALL Pass-band AND ALL
@@ -144,6 +196,29 @@ spreadsheets). A single criterion's evidence may come from ANY of the files, or 
 than one - always identify exactly which file and, where a location tag is present, which location
 the evidence came from.
 
+STEP 1 - DETECT THE RUBRIC'S OWN SCORING VOCABULARY BEFORE MARKING ANYTHING: read the course
+specification and any marking scheme/rubric given below FIRST, and identify exactly which scoring
+vocabulary each criterion actually uses - its own literal column headers or band labels (e.g. "Met /
+Partly met / Not met", or "2 / 5 / 7 / 10", or some other scale entirely). Use that EXACT vocabulary
+for every criterion under that scheme. Do not translate a qualitative rubric into numbers, a numeric
+rubric into words, or mix formats within the same document unless the rubric ITSELF genuinely uses
+different scales for different criteria (e.g. numeric for longform criteria, Met/Not Met for an
+MCQ-based criterion) - if so, preserve that per-criterion split exactly as given, never force one
+scale across the whole document. State what you detected in the top-level "detected_scoring_mechanism"
+field before anything else, so the teacher can confirm you read the rubric correctly.
+
+STEP 2 - GROUND EVERY JUDGEMENT IN THE RUBRIC'S OWN WORDING, NOT AN INVENTED STANDARD: when a
+criterion's command word (e.g. "explain", "analyse", "design", "develop") is ambiguous about how much
+reasoning/evidence a given band actually requires, do not invent your own strict/lenient reading.
+Quote the exact descriptor text from the rubric row for the band you're awarding into
+"matched_descriptor_quote", and justify the mark by matching the response against that literal text,
+phrase by phrase - not against a paraphrased or generalised version of it. Where the rubric's own
+descriptor genuinely could support two different readings of the same response, set
+"descriptor_ambiguous" to true, explain both readings in "ambiguity_note", and say so explicitly in
+the comment too ("descriptor ambiguous - human judgement needed") rather than silently picking one.
+Do not carry a calibration decision over from a different assignment's rubric - this rubric's own
+wording is the source of truth every time.
+
 STRICT COMMAND-WORD MARKING: mark strictly against the actual command word(s) used in each
 criterion's own wording in the specification (e.g. "explain", "describe", "identify", "analyse",
 "evaluate", "justify", "compare") - these words define what LEVEL of response is actually required,
@@ -158,14 +233,25 @@ required command word drove the judgement.
 
 Return ONLY raw JSON (no markdown fences, no commentary) matching exactly this shape:
 {{
+  "detected_scoring_mechanism": "string - state which scoring vocabulary/vocabularies you found in the \
+rubric/spec given below, per STEP 1, e.g. 'Numeric 2/5/7/10 rubric for all Longform criteria; Met/Partly \
+met/Not met for the MCQ-derived criterion' - always required, even for the plain default scale.",
   "marks": [
     {{
       "criterion_ref": "string - e.g. 'Unit 3 / LO2 / P2'",
-      "mark": "string - one of 'Met', 'Partly met', 'Not met', or a numeric/lettered mark if the rubric is numeric",
+      "scoring_vocabulary": "string - the literal scale used for THIS specific criterion, copied from \
+the rubric's own words/numbers, e.g. 'Met / Partly met / Not met' or 'numeric 0-10'",
+      "mark": "string - the mark in that exact vocabulary - e.g. 'Met'/'Partly met'/'Not met', or the \
+literal numeric/lettered value if the rubric for this criterion is numeric/lettered",
       "numeric_score": null,
       "max_score": null,
       "section": null,
-      "confidence": 0.0,
+      "matched_descriptor_quote": "string - the exact band descriptor text quoted verbatim from the \
+rubric row you matched this response against (per STEP 2). Empty string only if no written rubric/\
+descriptor text was given for this criterion (e.g. plain Met/Partly met/Not met with no rubric doc).",
+      "descriptor_ambiguous": false,
+      "ambiguity_note": "string - ONLY set if descriptor_ambiguous is true: explain the two readings \
+the descriptor could support and why you couldn't resolve it from the rubric text alone.",
       "evidence_text": "string - a short (under 15 words) exact quote from the submission that most \
 supports this judgement, so it can be anchored as a comment. Empty string if no clear single quote applies.",
       "source_file": "string - the filename this evidence came from, e.g. 'presentation.pptx'. Empty string if not applicable/no marks yet.",
@@ -177,14 +263,29 @@ weave them in naturally, e.g. 'This is well evidenced in your presentation, Slid
       "needs_human_review": false,
       "human_review_reason": "string - ONLY set if needs_human_review is true: explain specifically why you \
 couldn't assess this yourself, e.g. 'This criterion likely requires evidence from a diagram/image that isn't \
-extractable as text from this file format' or 'No content addressing this criterion was found in any uploaded file'"
+extractable as text from this file format' or 'No content addressing this criterion was found in any uploaded file'",
+      "confidence_factors": {{
+        "evidence_on_topic": true,
+        "covers_all_subparts": true,
+        "near_band_boundary": false,
+        "source_unreadable_or_missing": false
+      }}
     }}
   ],
   "overall_summary": "string - a short overall summary comment for the whole submission"
 }}
 
-confidence must be a number between 0.0 (very unsure, needs teacher review) and 1.0 (very confident). \
-Be honest about confidence - do not default to high confidence.
+CONFIDENCE FACTORS replace a bare self-reported confidence percentage (which is not checkable) with \
+four concrete, honestly-reported factors the application turns into a review priority itself:
+- evidence_on_topic: true if the cited evidence is directly on-topic for this criterion, false if it's \
+only adjacent/tangential.
+- covers_all_subparts: true only if the response addresses every sub-part of the criterion, false if \
+it only covers some.
+- near_band_boundary: true if the response is genuinely close to the line between two rubric bands \
+(this is exactly the kind of case worth a human's attention even if the mark itself seems clear-cut).
+- source_unreadable_or_missing: true if any part of the relevant source material was unreadable, \
+missing, or non-extractable (e.g. an image-only answer).
+Report these honestly per criterion - do not default all four to the "everything is fine" values.
 
 IMPORTANT on needs_human_review: if you genuinely cannot find or assess evidence for a criterion - most \
 commonly because the actual answer is only visible as an image, diagram, drawing, or other non-text \
@@ -237,6 +338,7 @@ async def create_marking_template(
     marking_scheme_notes: str = Form(""),
     marking_scheme_file: UploadFile = File(None),
     pass_threshold_pct: str = Form(""),
+    part_weightings_text: str = Form(""),
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
@@ -276,6 +378,7 @@ async def create_marking_template(
         name=name.strip(),
         marking_scheme_notes="\n\n".join(combined_notes_parts) or None,
         pass_threshold_pct=parsed_pass_threshold,
+        part_weightings=_parse_weightings_text(part_weightings_text),
         rubric_file_path=rubric_file_path,
         created_by_teacher_id=teacher.id,
     ))
@@ -331,6 +434,7 @@ async def upload_submission(
     marking_scheme_file: UploadFile = File(None),
     marking_template_id: str = Form(""),
     pass_threshold_pct: str = Form(""),
+    part_weightings_text: str = Form(""),
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
@@ -357,6 +461,8 @@ async def upload_submission(
             parsed_pass_threshold = float(pass_threshold_pct.strip())
         except ValueError:
             pass
+
+    parsed_part_weightings = _parse_weightings_text(part_weightings_text)
 
     # Pre-graded components - parallel form fields (4 fixed rows, same pattern as the
     # scheme-of-work assessment checkpoints), keeping only rows where both a score and a
@@ -407,6 +513,8 @@ async def upload_submission(
             )
         if parsed_pass_threshold is None and selected_template.pass_threshold_pct is not None:
             parsed_pass_threshold = selected_template.pass_threshold_pct
+        if parsed_part_weightings is None and selected_template.part_weightings:
+            parsed_part_weightings = selected_template.part_weightings
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     saved_files = []
@@ -469,6 +577,7 @@ async def upload_submission(
         marking_scheme_notes=combined_scheme_notes,
         pregraded_components=all_pregraded_components or None,
         pass_threshold_pct=parsed_pass_threshold,
+        part_weightings=parsed_part_weightings,
         rubric_file_path=rubric_file_path,
         status="uploaded",
     )
@@ -655,6 +764,21 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
                     for c in submission.pregraded_components
                 )
                 prompt_parts.append(f"PRE-GRADED COMPONENTS (given facts, see PRE-GRADED COMPONENTS instruction above):\n{pregraded_text}")
+            # Pass threshold and part weightings are marker-supplied per assignment (never
+            # hardcoded) - the AI is only told these as given context for its comments, the
+            # actual Pass/Fail arithmetic is always computed in code from real numbers, never
+            # asked of the model.
+            if submission.pass_threshold_pct is not None:
+                prompt_parts.append(
+                    f"MARKER-SUPPLIED PASS THRESHOLD (context only - the app computes the real "
+                    f"Pass/Fail arithmetic itself): {submission.pass_threshold_pct}%"
+                )
+            if submission.part_weightings:
+                weighting_text = ", ".join(f"{k}: {v}%" for k, v in submission.part_weightings.items())
+                prompt_parts.append(
+                    f"MARKER-SUPPLIED PART WEIGHTINGS (context only - the app computes the weighted "
+                    f"overall itself): {weighting_text}"
+                )
             prompt_parts.append(f"Student submission text:\n{submission_text}")
             prompt = "\n\n".join(prompt_parts)
 
@@ -697,11 +821,21 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
                 )
 
             for m in marks_data:
+                factors = m.get("confidence_factors") or {}
+                evidence_on_topic = factors.get("evidence_on_topic")
+                covers_all_subparts = factors.get("covers_all_subparts")
+                near_band_boundary = bool(factors.get("near_band_boundary", False))
+                source_unreadable = bool(factors.get("source_unreadable_or_missing", False))
+                review_priority = compute_review_priority(
+                    evidence_on_topic, covers_all_subparts, near_band_boundary, source_unreadable
+                )
                 db.add(CriterionMark(
                     marking_run_id=run.id,
                     criterion_ref=m.get("criterion_ref", "unknown"),
                     ai_mark=m.get("mark"),
-                    ai_confidence=float(m.get("confidence", 0.0)),
+                    ai_confidence=None,  # deliberately not populated from a bare AI-reported percentage
+                                          # any more - see review_priority, computed deterministically
+                                          # in code from the concrete factors below instead
                     evidence_text=m.get("evidence_text", ""),
                     ai_comment=m.get("comment", ""),
                     source_file=m.get("source_file") or None,
@@ -711,11 +845,21 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
                     numeric_score=m.get("numeric_score"),
                     max_score=m.get("max_score"),
                     section=m.get("section") or None,
+                    scoring_vocabulary=m.get("scoring_vocabulary") or None,
+                    matched_descriptor_quote=m.get("matched_descriptor_quote") or None,
+                    descriptor_ambiguous=bool(m.get("descriptor_ambiguous", False)),
+                    ambiguity_note=m.get("ambiguity_note") or None,
+                    evidence_on_topic=evidence_on_topic,
+                    covers_all_subparts=covers_all_subparts,
+                    near_band_boundary=near_band_boundary,
+                    source_unreadable_or_missing=source_unreadable,
+                    review_priority=review_priority,
                     final_mark=m.get("mark"),
                     final_comment=m.get("comment", ""),
                 ))
 
             run.overall_summary = result.get("overall_summary", "")
+            submission.detected_scoring_mechanism = result.get("detected_scoring_mechanism") or None
             run.status = "needs_review"
             run.completed_at = datetime.datetime.utcnow()
             submission.status = "needs_review"
@@ -741,14 +885,35 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
                     section_label = os.path.splitext(m.source_file)[0]
                 else:
                     section_label = m.section or "default"
-                section_items.append({"section": section_label, "score": m.numeric_score, "max_score": m.max_score})
+                section_items.append({
+                    "criterion_ref": m.criterion_ref, "section": section_label,
+                    "score": m.numeric_score, "max_score": m.max_score,
+                })
             for c in (submission.pregraded_components or []):
-                section_items.append({"section": c["section"], "score": c["score"], "max_score": c["max_score"]})
+                section_items.append({
+                    "criterion_ref": c.get("label"), "section": c["section"],
+                    "score": c["score"], "max_score": c["max_score"],
+                })
             if section_items:
-                section_results, overall_passed = compute_section_results(
-                    section_items, pass_threshold_pct=submission.pass_threshold_pct or 70.0
+                # pass_threshold_pct/part_weightings are always the MARKER's own values for
+                # THIS assignment - never a hardcoded default (see section_grading.py). If the
+                # marker didn't supply a threshold, pass/fail is left uncomputed (None) rather
+                # than silently assumed at 70%.
+                grading = compute_grading_results(
+                    section_items,
+                    pass_threshold_pct=submission.pass_threshold_pct,
+                    part_weightings=submission.part_weightings,
                 )
-                submission.section_results = {**section_results, "overall_passed": overall_passed}
+                submission.section_results = {
+                    "sections": grading["sections"],
+                    "overall_passed": grading["all_sections_passed"],
+                    "weighted_overall_pct": grading["weighted_overall_pct"],
+                    "weighted_overall_passed": grading["weighted_overall_passed"],
+                    "weighting_used": grading["weighting_used"],
+                    "weighting_source": grading["weighting_source"],
+                    "pass_threshold_pct": grading["pass_threshold_pct"],
+                    "criteria_below_threshold": grading["criteria_below_threshold"],
+                }
             submission.achieved_grade = compute_overall_grade(
                 db.query(CriterionMark).filter(CriterionMark.marking_run_id == run.id).all()
             )
@@ -800,9 +965,26 @@ def build_feedback_summary(submission, marks) -> str:
     lines = []
     if submission.achieved_grade:
         lines.append(f"Overall grade: {submission.achieved_grade}")
+    if submission.detected_scoring_mechanism:
+        lines.append(f"Scoring mechanism detected: {submission.detected_scoring_mechanism}")
     if submission.section_results:
-        overall = "PASS" if submission.section_results.get("overall_passed") else "FAIL"
-        lines.append(f"Overall: {overall}")
+        sr = submission.section_results
+        threshold = sr.get("pass_threshold_pct")
+        for name, s in (sr.get("sections") or {}).items():
+            verdict = "PASS" if s.get("passed") else ("FAIL" if s.get("passed") is False else "n/a")
+            lines.append(f"{name}: {s['total']}/{s['max']} = {s['pct']}% — {verdict}")
+        if sr.get("weighted_overall_pct") is not None:
+            weight_note = (
+                "marker-supplied weightings" if sr.get("weighting_source") == "marker_supplied"
+                else "equal weighting - no weightings supplied"
+            )
+            verdict = "PASS" if sr.get("weighted_overall_passed") else ("FAIL" if sr.get("weighted_overall_passed") is False else "n/a")
+            threshold_note = f" against a {threshold}% threshold" if threshold is not None else " (no pass threshold supplied)"
+            lines.append(f"Weighted overall: {sr['weighted_overall_pct']}% ({weight_note}){threshold_note} — {verdict}")
+        if sr.get("criteria_below_threshold"):
+            lines.append("Individual criteria below threshold despite the above:")
+            for c in sr["criteria_below_threshold"]:
+                lines.append(f"  - {c['criterion_ref']} ({c['section']}): {c['score']}/{c['max_score']} = {c['pct']}%")
     if submission.marking_run and submission.marking_run.overall_summary:
         lines.append("")
         lines.append(submission.marking_run.overall_summary)
@@ -819,6 +1001,61 @@ def build_feedback_summary(submission, marks) -> str:
         lines.append("")
 
     return "\n".join(lines).strip()
+
+
+def compute_criterion_correction_history(db: Session, course_id: int, criterion_refs: list[str]) -> dict:
+    """
+    Standing fix (correct-then-approve feedback loop): surfaces, per criterion_ref, how often
+    a human has corrected the AI on THIS specific criterion across THIS course before - e.g.
+    "corrected in 4 of the last 10 submissions, always adjusted the same direction" - so a
+    marker can see where the AI has a track record of drifting on this specific rubric,
+    rather than that history being buried only in individual comment_diff text. Computed
+    directly from real TeacherOverride/CriterionMark rows, not summarised by the AI itself.
+    """
+    if not criterion_refs:
+        return {}
+
+    # Every CriterionMark ever graded for these criterion_refs within this course, joined
+    # through MarkingRun -> Submission -> Student -> Course.
+    graded_rows = (
+        db.query(CriterionMark.criterion_ref, CriterionMark.id)
+        .join(MarkingRun, CriterionMark.marking_run_id == MarkingRun.id)
+        .join(Submission, MarkingRun.submission_id == Submission.id)
+        .join(Student, Submission.student_id == Student.id)
+        .filter(Student.course_id == course_id, CriterionMark.criterion_ref.in_(criterion_refs))
+        .all()
+    )
+
+    # Which of those criterion_mark_ids were actually corrected, and with what reason code.
+    override_rows = (
+        db.query(TeacherOverride.criterion_mark_id, TeacherOverride.reason_code)
+        .join(CriterionMark, TeacherOverride.criterion_mark_id == CriterionMark.id)
+        .join(MarkingRun, CriterionMark.marking_run_id == MarkingRun.id)
+        .join(Submission, MarkingRun.submission_id == Submission.id)
+        .join(Student, Submission.student_id == Student.id)
+        .filter(Student.course_id == course_id, CriterionMark.criterion_ref.in_(criterion_refs))
+        .all()
+    )
+    overridden_mark_ids = {row[0] for row in override_rows}
+
+    history: dict[str, dict] = {}
+    for criterion_ref, mark_id in graded_rows:
+        h = history.setdefault(criterion_ref, {"total_graded": 0, "corrected": 0, "reason_counts": {}})
+        h["total_graded"] += 1
+        if mark_id in overridden_mark_ids:
+            h["corrected"] += 1
+    for mark_id, reason_code in override_rows:
+        if not reason_code:
+            continue
+        criterion_ref = next((cr for cr, mid in graded_rows if mid == mark_id), None)
+        if criterion_ref:
+            history[criterion_ref]["reason_counts"][reason_code] = (
+                history[criterion_ref]["reason_counts"].get(reason_code, 0) + 1
+            )
+
+    for criterion_ref, h in history.items():
+        h["top_reason"] = max(h["reason_counts"], key=h["reason_counts"].get) if h["reason_counts"] else None
+    return history
 
 
 @router.get("/submissions/{submission_id}/review", response_class=HTMLResponse)
@@ -851,10 +1088,18 @@ def review_submission(
 
     feedback_summary = build_feedback_summary(submission, marks) if marks else None
 
+    correction_history = {}
+    if submission and marks and submission.status != "released":
+        course_id = submission.student.course_id
+        correction_history = compute_criterion_correction_history(
+            db, course_id, [m.criterion_ref for m in marks]
+        )
+
     return templates.TemplateResponse(
         "submission_review.html",
         {"request": request, "teacher": teacher, "submission": submission, "marks": marks,
-         "file_views": file_views, "feedback_summary": feedback_summary},
+         "file_views": file_views, "feedback_summary": feedback_summary,
+         "correction_history": correction_history, "reason_codes": CORRECTION_REASON_CODES},
     )
 
 
@@ -875,6 +1120,7 @@ async def approve_submission(
     for mark in marks:
         new_mark = form.get(f"final_mark_{mark.id}", mark.ai_mark)
         new_comment = form.get(f"final_comment_{mark.id}", mark.ai_comment)
+        reason_code = form.get(f"reason_code_{mark.id}", "").strip() or None
         changed = (new_mark != mark.ai_mark) or (new_comment != mark.ai_comment)
         mark.final_mark = new_mark
         mark.final_comment = new_comment
@@ -882,7 +1128,7 @@ async def approve_submission(
         if changed:
             db.add(TeacherOverride(
                 criterion_mark_id=mark.id, teacher_id=teacher.id,
-                ai_mark=mark.ai_mark, final_mark=new_mark,
+                ai_mark=mark.ai_mark, final_mark=new_mark, reason_code=reason_code,
                 comment_diff=f"AI: {mark.ai_comment}\n---\nFinal: {new_comment}",
             ))
     submission.achieved_grade = compute_overall_grade(marks)  # recompute using the teacher's final marks, not the AI's original ones
