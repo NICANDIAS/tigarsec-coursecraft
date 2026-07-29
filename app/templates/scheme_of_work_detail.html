@@ -12,7 +12,7 @@
 {% endif %}
 
 <details style="margin-bottom:14px;">
-  <summary class="muted" style="cursor:pointer;">Delete this scheme of work</summary>
+  <summary>Delete this scheme of work</summary>
   <div class="card" style="margin-top:8px;border-color:var(--danger);">
     <p>This permanently deletes this scheme of work, its generated weeks, and any template you've
     uploaded for it. Any PowerPoint decks already generated from its weeks are kept, just unlinked.</p>
@@ -79,7 +79,7 @@
     {% endif %}
 
     <details style="margin-top:12px;">
-      <summary class="muted" style="cursor:pointer;">
+      <summary>
         {% if sow.format_sample_file_path %}Replace or remove template{% else %}Upload a template to fill{% endif %}
       </summary>
       <div style="margin-top:10px;">
@@ -100,7 +100,7 @@
     </details>
   </div>
   {% for week in sow.weeks_json %}
-    <div class="card week-block">
+    <div class="card week-block" id="week-{{ week.week }}">
       <h2>Week {{ week.week }}: {{ week.title }}</h2>
       <p class="muted">Learning outcomes: {{ week.learning_outcomes|join(", ") }}</p>
       <ul>
@@ -137,6 +137,42 @@
           Generate PowerPoint for this week
         </a>
       {% endif %}
+
+      <details style="margin-top:14px;">
+        <summary>Edit this week</summary>
+        <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/weeks/{{ week.week }}" style="margin-top:12px;">
+          <label>Title</label>
+          <input type="text" name="title" value="{{ week.title }}">
+
+          <label>Learning outcomes (comma-separated)</label>
+          <input type="text" name="learning_outcomes" value="{{ week.learning_outcomes|join(', ') }}">
+
+          <label>Activities (one per line)</label>
+          <textarea name="activities">{{ week.activities|join('\n') }}</textarea>
+
+          <label>Practical (optional)</label>
+          <input type="text" name="practical" value="{{ week.practical or '' }}">
+
+          <label>Notes (optional)</label>
+          <textarea name="notes">{{ week.notes or '' }}</textarea>
+
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+            <input type="checkbox" name="has_assignment" value="yes" {% if week.assignment %}checked{% endif %} style="width:auto;margin:0;">
+            Add an assignment/test to this week
+          </label>
+          <label>Assignment title</label>
+          <input type="text" name="assignment_title" value="{{ week.assignment.title if week.assignment else '' }}">
+          <label>Assignment brief</label>
+          <textarea name="assignment_brief">{{ week.assignment.brief if week.assignment else '' }}</textarea>
+          <label>Criteria covered (comma-separated)</label>
+          <input type="text" name="assignment_criteria_covered" value="{{ week.assignment.criteria_covered|join(', ') if week.assignment and week.assignment.criteria_covered else '' }}">
+
+          <p class="muted" style="margin-top:8px;">Saving here only changes this one week - nothing
+          else is regenerated. "Download" and PowerPoint generation both read this straight away, so
+          there's no separate regenerate step for the edit to take effect.</p>
+          <button class="btn" type="submit" style="margin-top:6px;">Save this week</button>
+        </form>
+      </details>
     </div>
   {% endfor %}
 {% endif %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Admin: Feedback - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Admin: Feedback</h1>
+
+<div class="stats-strip">
+  <a href="/admin/feedback" class="stat-pill" style="text-decoration:none;">
+    <span class="stat-value">{{ counts.new + counts.acknowledged + counts.planned + counts.done + counts.declined }}</span> total
+  </a>
+  {% for s in ["new", "acknowledged", "planned", "done", "declined"] %}
+    <a href="/admin/feedback?status={{ s }}" class="stat-pill" style="text-decoration:none;{% if current_status == s %}border-color:var(--accent);{% endif %}">
+      <span class="stat-value">{{ counts[s] }}</span> {{ s }}
+    </a>
+  {% endfor %}
+</div>
+
+{% if not entries %}
+  <div class="card"><p class="muted">Nothing here{% if current_status %} with status "{{ current_status }}"{% endif %}.</p></div>
+{% endif %}
+
+{% for f in entries %}
+  <div class="card">
+    <div class="list-item" style="border-bottom:none;padding-bottom:0;">
+      <span>
+        <span class="badge badge-{{ 'released' if f.status == 'done' else 'needs_review' if f.status in ('new','acknowledged','planned') else 'failed' }}">{{ f.status }}</span>
+        <span class="muted"> — {{ f.category.replace('_', ' ') }} — from {{ f.teacher.name if f.teacher else 'unknown' }}
+        — {{ f.created_at.strftime('%d %b %Y %H:%M') if f.created_at else '' }}</span>
+      </span>
+    </div>
+    <p style="margin-top:10px;white-space:pre-wrap;">{{ f.message }}</p>
+    {% if f.page_context %}<p class="muted">From: {{ f.page_context }}</p>{% endif %}
+
+    <form method="post" action="/admin/feedback/{{ f.id }}/update" style="margin-top:12px;">
+      <div class="field-grid">
+        <div>
+          <label>Status</label>
+          <select name="status">
+            {% for s in ["new", "acknowledged", "planned", "done", "declined"] %}
+              <option value="{{ s }}" {% if f.status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Response back to them (optional)</label>
+          <input type="text" name="admin_response" value="{{ f.admin_response or '' }}">
+        </div>
+      </div>
+      <button class="btn btn-secondary" type="submit">Save</button>
+    </form>
+  </div>
+{% endfor %}
+{% endblock %}

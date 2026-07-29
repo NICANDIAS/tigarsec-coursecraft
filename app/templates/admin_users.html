@@ -39,7 +39,7 @@ active status can't be changed, by anyone, including other admins.</p>
 
     {% if not user.is_primary_admin %}
       <details style="margin:6px 0 14px 0;">
-        <summary class="muted">Reset this user's password</summary>
+        <summary>Reset this user's password</summary>
         <form method="post" action="/admin/users/{{ user.id }}/reset-password" style="margin-top:8px;max-width:320px;">
           <label>New password</label>
           <input type="password" name="new_password" required minlength="8">

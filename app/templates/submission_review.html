@@ -27,6 +27,13 @@
   </div>
 {% endif %}
 
+{% if submission.marking_run and submission.marking_run.pii_redactions_applied %}
+  <p class="muted" style="margin-top:-8px;">🔒 Before marking, the following were automatically redacted
+  from the submission text sent to the AI provider: {{ submission.marking_run.pii_redactions_applied|join(", ") }}.
+  This covers the enrolled student's own name plus email/phone patterns - it does not redact other people's
+  names that might appear in the document.</p>
+{% endif %}
+
 {% if submission.detected_scoring_mechanism %}
   <div class="section-card">
     <div class="section-header">
@@ -151,7 +158,7 @@
           <iframe src="/submission-files/{{ fv.id }}/view" style="width:100%;height:500px;border:1px solid var(--border);border-radius:6px;margin-top:10px;"></iframe>
         {% endif %}
         <details style="margin-top:10px;">
-          <summary style="cursor:pointer;color:var(--accent);">View extracted text (exactly what was given to the AI)</summary>
+          <summary>View extracted text (exactly what was given to the AI)</summary>
           <pre style="white-space:pre-wrap;max-height:400px;overflow-y:auto;background:var(--bg);padding:12px;border-radius:6px;margin-top:8px;font-size:0.85rem;">{{ fv.text }}</pre>
         </details>
       </div>
@@ -245,6 +252,12 @@
         {% if mark.descriptor_ambiguous %}
           <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
             <strong>⚠ Descriptor ambiguous — human judgement needed:</strong> {{ mark.ambiguity_note or "The rubric's own wording for this band could support more than one reading of this response." }}
+          </div>
+        {% endif %}
+
+        {% if mark.criterion_fully_addressed is not none and not mark.criterion_fully_addressed %}
+          <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
+            <strong>⚠ Only part of this criterion is addressed here:</strong> {{ mark.coverage_note or "The full spec wording for this criterion isn't fully evidenced in this submission - check whether the rest is covered elsewhere." }}
           </div>
         {% endif %}
 

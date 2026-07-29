@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Shared with me - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Shared with me</h1>
+<p class="muted">Lesson resources colleagues have sent you directly - e.g. for cover during an absence.</p>
+
+{% if not shares %}
+  <div class="card"><p class="muted">Nothing has been shared with you yet.</p></div>
+{% else %}
+  {% for s in shares %}
+    <div class="card">
+      <div class="list-item" style="border-bottom:none;padding-bottom:0;">
+        <span>
+          <strong>{{ s.lesson_deck.title if s.lesson_deck else "(deck no longer exists)" }}</strong><br>
+          <span class="muted">From {{ s.shared_by_teacher.name if s.shared_by_teacher else "a colleague" }}
+          {% if s.note %} — "{{ s.note }}"{% endif %}</span>
+        </span>
+        {% if s.lesson_deck %}
+          <a class="btn btn-secondary" href="/lesson-decks/{{ s.lesson_deck.id }}">Open</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

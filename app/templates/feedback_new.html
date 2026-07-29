@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Feedback - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Feedback &amp; feature requests</h1>
+<p class="muted">Spotted a bug, or wish CourseCraft did something it doesn't yet? Tell us here -
+takes a minute, and you can see below what's happened with anything you've raised before.</p>
+
+{% if request.query_params.get("submitted") %}
+  <div class="card" style="border-color:var(--success);">
+    <p style="color:var(--success);margin:0;">✓ Thanks - that's been recorded.</p>
+  </div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/feedback">
+    <label>What's this about?</label>
+    <select name="category">
+      <option value="bug">Something's broken</option>
+      <option value="feature_request">A feature I'd like</option>
+      <option value="general" selected>General feedback</option>
+    </select>
+
+    <label>Tell us more</label>
+    <textarea name="message" required placeholder="Be as specific as you can - e.g. which page, what you expected, what happened instead."></textarea>
+
+    <input type="hidden" name="page_context" value="{{ request.headers.get('referer', '') }}">
+    <button class="btn" type="submit" style="margin-top:8px;">Send feedback</button>
+  </form>
+</div>
+
+{% if my_feedback %}
+  <h2 style="margin-top:24px;">Your previous feedback</h2>
+  {% for f in my_feedback %}
+    <div class="card">
+      <div class="list-item" style="border-bottom:none;padding-bottom:0;">
+        <span class="badge badge-{{ 'released' if f.status == 'done' else 'needs_review' if f.status in ('new','acknowledged','planned') else 'failed' }}">{{ f.status }}</span>
+        <span class="muted">{{ f.created_at.strftime('%d %b %Y') if f.created_at else '' }}</span>
+      </div>
+      <p style="margin-top:8px;white-space:pre-wrap;">{{ f.message }}</p>
+      {% if f.admin_response %}
+        <p class="muted" style="border-left:3px solid var(--accent);padding-left:10px;margin-top:8px;">{{ f.admin_response }}</p>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

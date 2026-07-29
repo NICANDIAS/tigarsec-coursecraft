@@ -48,6 +48,12 @@
 
     <label>Marking scheme / rubric (optional)</label>
     <textarea name="marking_scheme_notes" placeholder="If this course uses something other than Met/Partly met/Not met - e.g. a numeric or lettered rubric - describe it here. e.g. 'Score each criterion 2 (below expectations), 5 (approaching), 7 (meets expectations), or 10 (exceeds expectations), with a one-line justification for the score.' Leave blank for standard Met/Partly met/Not met marking."></textarea>
+
+    <label>Assignment brief / task set to students (optional)</label>
+    <textarea name="assignment_brief_text" placeholder="Paste the actual task/brief students were given. A single assignment doesn't have to cover the whole of every criterion - if you give the brief, the AI won't mark down a criterion for parts the brief never actually asked students to address."></textarea>
+    <p class="muted" style="margin-top:-4px;">Without this, criteria are marked against their full spec
+    wording regardless of what this specific task asked for - fine if the assignment is meant to be
+    fully synoptic, but worth adding if it's only meant to cover part of a criterion.</p>
     <input type="file" name="marking_scheme_file" accept=".docx,.pdf,.txt">
     <p class="muted" style="margin-top:-4px;">Or upload a rubric document instead/as well - its content
     is combined with any notes above and used as the actual scale the AI marks against.</p>

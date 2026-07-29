@@ -6,6 +6,7 @@
 {% if delete_error %}<div class="error-box">{{ delete_error }}</div>{% endif %}
 
 {% set active_students = course.students|selectattr("is_active")|list %}
+{% set archived_students = course.students|rejectattr("is_active")|list %}
 {% set ready_decks = course.spec_version and course.schemes_of_work %}
 <div class="stats-strip">
   <div class="stat-pill">
@@ -138,6 +139,22 @@
     {% endfor %}
   {% else %}
     <p class="muted">No students added yet.</p>
+  {% endif %}
+
+  {% if archived_students %}
+    <details style="margin-top:14px;">
+      <summary>Archived students ({{ archived_students|length }})</summary>
+      <div style="margin-top:10px;">
+        {% for student in archived_students %}
+          <div class="list-item">
+            <a href="/courses/{{ course.id }}/students/{{ student.id }}">{{ student.name }}</a>
+            <span class="muted">{{ student.submissions|length }} submission(s) — archived</span>
+          </div>
+        {% endfor %}
+      </div>
+      <p class="muted" style="margin-top:8px;">Open an archived student to reactivate them - the same
+      button just switches from "Archive student" to "Reactivate student" once they're archived.</p>
+    </details>
   {% endif %}
   <form method="post" action="/courses/{{ course.id }}/students/create" style="margin-top:14px;">
     <label>Student name</label>

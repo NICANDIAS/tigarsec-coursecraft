@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Share {{ deck.title }} - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/lesson-decks/{{ deck.id }}">&larr; {{ deck.title }}</a></p>
+<h1>Share for cover</h1>
+<p class="muted">Sends this week's resources (PowerPoint, activities, and anything else generated
+for it) to a named colleague - e.g. if you're off and need someone to cover the lesson. They can
+view, present, and download it, but can't share it on to anyone else.</p>
+
+<div class="card">
+  <form method="post" action="/lesson-decks/{{ deck.id }}/share">
+    <label>Share with</label>
+    <select name="shared_with_teacher_id" required>
+      <option value="">-- choose a colleague --</option>
+      {% for t in other_teachers %}
+        <option value="{{ t.id }}">{{ t.name }} ({{ t.email }})</option>
+      {% endfor %}
+    </select>
+
+    <label>Note (optional)</label>
+    <input type="text" name="note" placeholder="e.g. Off sick Tuesday - could you cover this one?">
+
+    <button class="btn" type="submit" style="margin-top:10px;">Share</button>
+  </form>
+</div>
+
+{% if shares %}
+  <div class="card">
+    <h2>Already shared with</h2>
+    {% for s in shares %}
+      <div class="list-item">
+        <span>
+          {{ s.shared_with_teacher.name if s.shared_with_teacher else "Unknown teacher" }}
+          {% if s.note %}<span class="muted"> — "{{ s.note }}"</span>{% endif %}
+        </span>
+        <form method="post" action="/lesson-decks/{{ deck.id }}/share/{{ s.id }}/revoke"
+              onsubmit="return confirm('Revoke this colleague\'s access to this deck?');">
+          <button class="btn btn-secondary" type="submit">Revoke</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

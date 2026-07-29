@@ -17,6 +17,7 @@ class MarkingTemplate(Base):
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
     name = Column(String(255), nullable=False)
     marking_scheme_notes = Column(Text, nullable=True)
+    assignment_brief_text = Column(Text, nullable=True)  # the actual task set to students for this assignment - lets the AI tell "the brief never asked for this part of the criterion" apart from "the student missed it", reused across every submission for the same assignment
     pass_threshold_pct = Column(Float, nullable=True)
     part_weightings = Column(JSON, nullable=True)  # e.g. {"MCQ": 45, "Longform": 55} - marker-supplied weighting of each assessment part toward the weighted overall %, reused on every submission that selects this template. Never assumed/hardcoded - null means "not specified", and the app falls back to an explicitly-flagged equal weighting rather than guessing a split.
     rubric_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded rubric file - filled in place, never rebuilt as a new document
@@ -174,6 +175,7 @@ class Submission(Base):
     section_results = Column(JSON, nullable=True)  # computed after marking: {"MCQ": {"total":.., "max":.., "pct":.., "passed":..}, ...} plus "overall_passed", "weighted_overall_pct", "weighted_overall_passed", "weighting_source", "criteria_below_threshold"
     rubric_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded rubric file - filled in place, never rebuilt as a new document
     similarity_warning = Column(Text, nullable=True)  # set automatically at upload time if this matches another student's submission for the same assignment above the threshold
+    assignment_brief_text = Column(Text, nullable=True)  # the actual task/brief set to students, if given - lets the AI distinguish "this response doesn't cover part of a criterion because the TASK never asked for it" from "the student missed it". Without this, a criterion is marked against its full spec wording regardless of what the assignment actually asked for.
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     student = relationship("Student", back_populates="submissions")
@@ -190,6 +192,7 @@ class MarkingRun(Base):
     status = Column(String(50), default="queued")
     overall_summary = Column(Text, nullable=True)
     error_detail = Column(Text, nullable=True)
+    pii_redactions_applied = Column(JSON, nullable=True)  # e.g. ["student name", "email address"] - what was found and redacted from the submission text BEFORE it was sent to the AI provider for marking, shown to the teacher rather than done silently. Empty/null if nothing matched.
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 
@@ -222,6 +225,8 @@ class CriterionMark(Base):
     near_band_boundary = Column(Boolean, nullable=True)  # concrete confidence factor: is the response genuinely near a boundary between two rubric bands?
     source_unreadable_or_missing = Column(Boolean, nullable=True)  # concrete confidence factor: was any part of the source material unreadable or missing?
     review_priority = Column(String(20), nullable=True)  # "low"/"medium"/"high" - computed deterministically in code from the four factors above (see compute_review_priority in submissions.py), never trusted as a bare self-reported percentage
+    criterion_fully_addressed = Column(Boolean, nullable=True)  # false if this ONE submission's evidence (and, if given, the assignment brief) only covers PART of the criterion's full spec wording - not a fail on its own, since a criterion can legitimately be built up across multiple assessment opportunities, but it must be surfaced rather than silently marked as if fully met
+    coverage_note = Column(Text, nullable=True)  # only set when criterion_fully_addressed is false: specifically which part of the criterion wasn't addressed, and whether that's because the brief never asked for it or because the response just didn't cover it
     final_mark = Column(String(100), nullable=True)
     final_comment = Column(Text, nullable=True)
     overridden = Column(Boolean, default=False)
@@ -350,6 +355,49 @@ class LessonDeck(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     course = relationship("Course")
+
+
+class ResourceShare(Base):
+    """
+    A deliberate, tracked grant of access to one lesson deck for another named teacher -
+    e.g. sending a week's PowerPoint/activities to a colleague covering an absence. This
+    is a real access grant, not just a link: viewing/downloading a deck now checks
+    ownership OR an active share here (see _can_access_deck in routers/presentations.py) -
+    previously any authenticated teacher could open any deck by ID with no check at all,
+    which this closes while also making sharing an explicit, visible, revocable action
+    rather than an accident of missing authorization.
+    """
+    __tablename__ = "resource_shares"
+    id = Column(Integer, primary_key=True)
+    lesson_deck_id = Column(Integer, ForeignKey("lesson_decks.id"), nullable=False)
+    shared_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    shared_with_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    note = Column(Text, nullable=True)  # e.g. "Off sick Tuesday - could you cover this one?"
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    lesson_deck = relationship("LessonDeck")
+    shared_by_teacher = relationship("Teacher", foreign_keys=[shared_by_teacher_id])
+    shared_with_teacher = relationship("Teacher", foreign_keys=[shared_with_teacher_id])
+
+
+class Feedback(Base):
+    """
+    In-app feedback/feature-request box - deliberately simple (one free-text message plus
+    a category) so it's a low-friction thing to fill in during or right after using a
+    feature, rather than a formal form that discourages quick "this would help" notes.
+    """
+    __tablename__ = "feedback"
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    category = Column(String(50), default="general", nullable=False)  # "bug" | "feature_request" | "general"
+    message = Column(Text, nullable=False)
+    page_context = Column(String(500), nullable=True)  # the page they were on when they submitted it, captured automatically
+    status = Column(String(50), default="new", nullable=False)  # "new" | "acknowledged" | "planned" | "done" | "declined"
+    admin_response = Column(Text, nullable=True)  # optional note back, shown to the person who submitted it
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, nullable=True)
+
+    teacher = relationship("Teacher")
 
 
 class DiscoveredSpecFormat(Base):

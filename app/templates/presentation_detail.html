@@ -6,6 +6,10 @@
 <p class="muted">{{ deck.content_area_name }} — {{ deck.duration_minutes }} minutes</p>
 <p><span class="badge badge-{{ 'released' if deck.status == 'ready' else 'needs_review' if deck.status in ('generating','queued') else 'failed' }}" id="status-badge">{{ deck.status }}</span></p>
 
+{% if not is_owner %}
+  <p class="muted">🔗 Shared with you by a colleague for cover - you can view/download this, but not share it further.</p>
+{% endif %}
+
 {% if deck.status in ("generating", "queued") %}
   <div class="card" id="gen-status-card" data-deck-id="{{ deck.id }}">
     <p>Generating your lesson PowerPoint — this writes the lesson plan first, then builds
@@ -63,6 +67,9 @@
       <a class="btn btn-secondary" href="/lesson-decks/{{ deck.id }}/present" target="_blank">Present in browser</a>
       {% if resource_count > 0 %}
         <a class="btn btn-secondary" href="/lesson-decks/{{ deck.id }}/resources">Download activity resources ({{ resource_count }})</a>
+      {% endif %}
+      {% if is_owner %}
+        <a class="btn btn-secondary" href="/lesson-decks/{{ deck.id }}/share">Share for cover</a>
       {% endif %}
     {% else %}
       <p class="muted">Marked as ready, but no file was recorded - this shouldn't happen. Try generating again.</p>

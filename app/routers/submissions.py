@@ -120,6 +120,58 @@ def _parse_weightings_text(text: str) -> dict | None:
     return result or None
 
 
+def _redact_student_pii(text: str, student_name: str | None) -> tuple[str, list[str]]:
+    """
+    Standing mitigation (raised as a real data-protection concern): student submissions
+    are sent to a third-party AI provider for marking, and often carry the student's own
+    name in a header/footer/filename-in-text, plus sometimes an email or phone number in
+    a signature block. This redacts what can be redacted RELIABLY before that text is
+    sent anywhere:
+    - The enrolled student's own name (and first/last name individually, case-insensitive,
+      word-boundary matched) - we have ground truth for this from the Student record, so
+      it's a precise, low-false-positive redaction, not a guess.
+    - Email addresses and UK-style phone numbers via pattern matching - both have a
+      well-defined shape, so this is reliable too.
+
+    What this does NOT do, and should not be assumed to do: redact OTHER people's names
+    mentioned in the document (a group-work partner, a case-study name, a signed-off
+    manager) - general name detection without a known-good list is unreliable (misses
+    unusual names, false-positives on ordinary words), so it isn't attempted here. This is
+    a partial mitigation for the enrolled student's own identity, not a general PII scrub -
+    treat it as one control among several, not a substitute for a proper data protection
+    impact assessment on this feature.
+    """
+    redacted_types = []
+
+    # Emails/phones FIRST - a college email address is very often firstname.lastname@...,
+    # so redacting the name first would shred it mid-address before the email pattern
+    # gets a chance to match the whole thing cleanly.
+    email_pattern = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
+    if email_pattern.search(text):
+        text = email_pattern.sub("[EMAIL REDACTED]", text)
+        redacted_types.append("email address")
+
+    phone_pattern = re.compile(r'(?<!\d)(?:\+44\s?|0)(?:\d[\s-]?){9,10}(?!\d)')
+    if phone_pattern.search(text):
+        text = phone_pattern.sub("[PHONE REDACTED]", text)
+        redacted_types.append("phone number")
+
+    if student_name:
+        name_parts = [p for p in re.split(r"\s+", student_name.strip()) if p]
+        candidates = set(name_parts)
+        if len(name_parts) > 1:
+            candidates.add(student_name.strip())
+        for candidate in sorted(candidates, key=len, reverse=True):
+            if len(candidate) < 2:
+                continue  # skip single-letter fragments (e.g. a middle initial) - too high a false-positive risk
+            pattern = re.compile(r'(?<![A-Za-z])' + re.escape(candidate) + r'(?![A-Za-z])', re.IGNORECASE)
+            if pattern.search(text):
+                text = pattern.sub("[STUDENT NAME REDACTED]", text)
+                redacted_types.append("student name")
+
+    return text, sorted(set(redacted_types))
+
+
 def compute_review_priority(evidence_on_topic, covers_all_subparts, near_band_boundary, source_unreadable_or_missing) -> str:
     """
     Standing fix (per marker feedback): a bare self-reported confidence percentage from the
@@ -231,6 +283,20 @@ so explicitly. In your "comment", wrap the exact command word(s) from the spec i
 (e.g. **explain**, **justify**) wherever you reference them, so the teacher can see precisely which
 required command word drove the judgement.
 
+STEP 3 - A SINGLE ASSESSMENT DOES NOT HAVE TO COVER THE WHOLE OF A CRITERION: a spec criterion (e.g.
+"1.1 Understand W, X, Y and Z") can legitimately be built up in full across several assessment
+opportunities over a course, rather than every single assignment addressing every aspect of it in one
+go. If an ASSIGNMENT BRIEF is given below, compare it against the criterion's full spec wording first -
+if the brief genuinely never asked students to address part of the criterion (e.g. it only asked about
+W and X, not Y or Z), you must NOT mark down for the untested parts, and you must NOT invent evidence
+for them either. Whether or not a brief is given, always compare the response against the criterion's
+FULL spec wording, and if any part of it isn't evidenced in this submission, set "criterion_fully_addressed"
+to false and use "coverage_note" to say exactly which part(s) weren't addressed and, if a brief was given,
+whether that's because the brief didn't ask for it (task-scope limit - not the student's fault) or the
+response simply didn't cover something the brief did ask for (a real gap). This is informational, not an
+automatic fail - the mark itself should still reflect fair judgement of what WAS actually assessed here,
+but the gap must be visible to the teacher rather than silently treated as if the whole criterion is done.
+
 Return ONLY raw JSON (no markdown fences, no commentary) matching exactly this shape:
 {{
   "detected_scoring_mechanism": "string - state which scoring vocabulary/vocabularies you found in the \
@@ -252,6 +318,10 @@ descriptor text was given for this criterion (e.g. plain Met/Partly met/Not met 
       "descriptor_ambiguous": false,
       "ambiguity_note": "string - ONLY set if descriptor_ambiguous is true: explain the two readings \
 the descriptor could support and why you couldn't resolve it from the rubric text alone.",
+      "criterion_fully_addressed": true,
+      "coverage_note": "string - ONLY set if criterion_fully_addressed is false (see STEP 3): exactly \
+which part of the criterion's full spec wording isn't evidenced in this submission, and whether that's \
+a task-scope limit (the brief never asked for it) or a genuine gap in the response. Empty string otherwise.",
       "evidence_text": "string - a short (under 15 words) exact quote from the submission that most \
 supports this judgement, so it can be anchored as a comment. Empty string if no clear single quote applies.",
       "source_file": "string - the filename this evidence came from, e.g. 'presentation.pptx'. Empty string if not applicable/no marks yet.",
@@ -336,6 +406,7 @@ async def create_marking_template(
     request: Request,
     name: str = Form(...),
     marking_scheme_notes: str = Form(""),
+    assignment_brief_text: str = Form(""),
     marking_scheme_file: UploadFile = File(None),
     pass_threshold_pct: str = Form(""),
     part_weightings_text: str = Form(""),
@@ -377,6 +448,7 @@ async def create_marking_template(
         course_id=course_id,
         name=name.strip(),
         marking_scheme_notes="\n\n".join(combined_notes_parts) or None,
+        assignment_brief_text=assignment_brief_text.strip() or None,
         pass_threshold_pct=parsed_pass_threshold,
         part_weightings=_parse_weightings_text(part_weightings_text),
         rubric_file_path=rubric_file_path,
@@ -431,6 +503,7 @@ async def upload_submission(
     target_unit_name: str = Form(""),
     submitted_at: str = Form(""),
     marking_scheme_notes: str = Form(""),
+    assignment_brief_text: str = Form(""),
     marking_scheme_file: UploadFile = File(None),
     marking_template_id: str = Form(""),
     pass_threshold_pct: str = Form(""),
@@ -498,6 +571,7 @@ async def upload_submission(
         except Exception:
             pass  # a bad rubric file shouldn't block the whole upload
     combined_scheme_notes = "\n\n".join(combined_scheme_notes_parts) or None
+    combined_assignment_brief = assignment_brief_text.strip() or None
 
     # A saved marking template, if selected, supplies the base rubric/threshold/table
     # structure - so the teacher doesn't have to re-paste or re-upload the same rubric for
@@ -511,6 +585,8 @@ async def upload_submission(
             combined_scheme_notes = "\n\n".join(
                 p for p in [selected_template.marking_scheme_notes, combined_scheme_notes] if p
             )
+        if selected_template.assignment_brief_text and not combined_assignment_brief:
+            combined_assignment_brief = selected_template.assignment_brief_text
         if parsed_pass_threshold is None and selected_template.pass_threshold_pct is not None:
             parsed_pass_threshold = selected_template.pass_threshold_pct
         if parsed_part_weightings is None and selected_template.part_weightings:
@@ -575,6 +651,7 @@ async def upload_submission(
         content_hash=content_hash,
         submitted_at=parsed_submitted_at or datetime.date.today(),
         marking_scheme_notes=combined_scheme_notes,
+        assignment_brief_text=combined_assignment_brief,
         pregraded_components=all_pregraded_components or None,
         pass_threshold_pct=parsed_pass_threshold,
         part_weightings=parsed_part_weightings,
@@ -719,6 +796,15 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
             else:
                 raise RuntimeError("This submission has no files attached to mark.")
 
+            # Standing mitigation: redact the enrolled student's own name and any email/
+            # phone patterns from the text BEFORE it's sent to the AI provider - see
+            # _redact_student_pii's own docstring for exactly what this does and doesn't
+            # cover. Recorded on the run (not applied silently) so it's visible to the
+            # teacher and auditable.
+            student_name = submission.student.name if submission.student else None
+            submission_text, redacted_types = _redact_student_pii(submission_text, student_name)
+            run.pii_redactions_applied = redacted_types or None
+
             style_profile = teacher.style_profile or (
                 "No specific style sample provided - use a clear, encouraging, constructive UK FE marking tone."
             )
@@ -757,6 +843,12 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
                     f"CUSTOM MARKING SCHEME (overrides the default Met/Partly met/Not met scale - use "
                     f"THIS scale/rubric for the \"mark\" field instead, applying it per criterion exactly "
                     f"as described):\n{submission.marking_scheme_notes[:4000]}"
+                )
+            if submission.assignment_brief_text:
+                prompt_parts.append(
+                    f"ASSIGNMENT BRIEF (the actual task set to students - see STEP 3 above: if this "
+                    f"brief didn't ask for part of a criterion, don't mark down for it, and note the "
+                    f"task-scope limit in coverage_note instead):\n{submission.assignment_brief_text[:4000]}"
                 )
             if submission.pregraded_components:
                 pregraded_text = "\n".join(
@@ -849,6 +941,8 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
                     matched_descriptor_quote=m.get("matched_descriptor_quote") or None,
                     descriptor_ambiguous=bool(m.get("descriptor_ambiguous", False)),
                     ambiguity_note=m.get("ambiguity_note") or None,
+                    criterion_fully_addressed=m.get("criterion_fully_addressed", True),
+                    coverage_note=m.get("coverage_note") or None,
                     evidence_on_topic=evidence_on_topic,
                     covers_all_subparts=covers_all_subparts,
                     near_band_boundary=near_band_boundary,

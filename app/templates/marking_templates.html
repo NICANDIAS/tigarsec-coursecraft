@@ -17,6 +17,7 @@ re-upload it every time.</p>
           {% if t.part_weightings %}<p class="muted">Part weightings: {% for k, v in t.part_weightings.items() %}{{ k }}: {{ v }}%{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
           {% if t.rubric_file_path %}<p class="muted">Includes the original rubric file (filled-in-place export available).</p>{% endif %}
           {% if t.marking_scheme_notes %}<p style="white-space:pre-wrap;max-height:150px;overflow-y:auto;">{{ t.marking_scheme_notes[:500] }}{% if t.marking_scheme_notes|length > 500 %}...{% endif %}</p>{% endif %}
+          {% if t.assignment_brief_text %}<p class="muted">Has an assignment brief attached ({{ t.assignment_brief_text|length }} chars).</p>{% endif %}
         </div>
         <form method="post" action="/marking-templates/{{ t.id }}/delete" onsubmit="return confirm('Delete this template? Submissions already using it keep their own copy of the scheme.');">
           <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete</button>
@@ -36,6 +37,9 @@ re-upload it every time.</p>
 
     <label>Marking scheme / rubric</label>
     <textarea name="marking_scheme_notes" placeholder="Paste the rubric/marking scheme text here."></textarea>
+
+    <label>Assignment brief / task set to students (optional)</label>
+    <textarea name="assignment_brief_text" placeholder="Paste the actual task students were given for this assignment - lets the AI avoid marking down a criterion for parts this specific task never asked for."></textarea>
     <input type="file" name="marking_scheme_file" accept=".docx,.pdf,.txt">
     <p class="muted" style="margin-top:-4px;">Upload as .docx specifically if you want a
     "Download filled rubric" export later - only docx tables can be reliably preserved.</p>

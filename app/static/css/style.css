@@ -11,6 +11,8 @@ html[data-theme="light"] {
   --warning: #b8860b;
   --danger: #c93838;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --btn-secondary-bg: rgba(0, 0, 0, 0.045);
+  --btn-secondary-bg-hover: rgba(0, 0, 0, 0.09);
 }
 
 html[data-theme="dark"] {
@@ -25,6 +27,8 @@ html[data-theme="dark"] {
   --warning: #e0b23a;
   --danger: #ef5c5c;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --btn-secondary-bg: rgba(255, 255, 255, 0.07);
+  --btn-secondary-bg-hover: rgba(255, 255, 255, 0.12);
 }
 
 * { box-sizing: border-box; }
@@ -123,11 +127,12 @@ input:focus, textarea:focus, select:focus {
 .btn:hover { opacity: 0.88; }
 .btn:active { transform: translateY(1px); }
 .btn-secondary {
-  background: transparent;
+  background: var(--btn-secondary-bg);
   border: 1px solid var(--border);
   color: var(--text);
+  font-weight: 600;
 }
-.btn-secondary:hover { background: var(--bg); border-color: var(--accent); opacity: 1; }
+.btn-secondary:hover { background: var(--btn-secondary-bg-hover); border-color: var(--accent); color: var(--accent); opacity: 1; }
 
 .badge {
   display: inline-block;
@@ -251,6 +256,90 @@ html, body { height: 100%; margin: 0; }
 .sidebar-nav a.active { background: var(--accent); color: var(--accent-text); }
 .sidebar-nav a.soon-link { color: var(--text-muted); cursor: pointer; }
 .sidebar-divider { height: 1px; background: var(--border); margin: 8px 6px; }
+
+/* Collapsible nav group (currently used for Admin) - one entry point that expands to its
+   sub-links, instead of every sub-link sitting flat in the main list. Built as a single
+   flat group for now (four items doesn't yet need sub-categories of its own - that would
+   be structure decorating nothing real); .sidebar-group-items > .sidebar-group-heading
+   is there so a genuine subdivision (e.g. "System" vs "People") can be dropped in later
+   without restructuring anything, once there's enough in the group to actually warrant it. */
+.sidebar-group-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 7px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.sidebar-group-toggle:hover { background: var(--bg); }
+.sidebar-group-toggle.has-active-child { color: var(--accent); font-weight: 600; }
+.sidebar-group-toggle .chevron { transition: transform 0.15s ease; flex-shrink: 0; }
+.sidebar-group-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+
+.sidebar-group-items {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.18s ease;
+}
+.sidebar-group-items[data-expanded="true"] { grid-template-rows: 1fr; }
+.sidebar-group-items > div { overflow: hidden; }
+.sidebar-group-items a {
+  padding-left: 30px;
+  font-size: 0.87rem;
+}
+.sidebar-group-heading {
+  padding: 10px 12px 2px 30px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Every <details><summary> in this app is the same pattern - click to reveal a form or
+   extra content below (Delete this scheme of work, Reset this user's password, Edit this
+   week, etc). The browser's default disclosure triangle plus muted text reads as plain
+   text rather than a control - the same defect as the flat .btn-secondary bug, just via a
+   different element, so it needs the same fix rather than being patched per-instance. */
+summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 14px;
+  border-radius: 7px;
+  background: var(--btn-secondary-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.88rem;
+  user-select: none;
+  width: fit-content;
+}
+summary::-webkit-details-marker { display: none; }
+summary::marker { content: ""; }
+summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+summary:hover { background: var(--btn-secondary-bg-hover); border-color: var(--accent); color: var(--accent); }
+details[open] > summary::after { transform: rotate(45deg); }
+details[open] > summary { margin-bottom: 10px; }
 
 .main-area {
   flex: 1;

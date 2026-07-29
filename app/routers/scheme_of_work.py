@@ -68,7 +68,7 @@ Return ONLY raw JSON (no markdown fences, no commentary) matching exactly this s
     {
       "week": 1,
       "title": "string - short lesson/topic title",
-      "learning_outcomes": ["LO codes covered this week, e.g. Unit 3 LO1"],
+      "learning_outcomes": ["the exact criterion/LO code(s) as given in the spec below, e.g. '2.1' or 'P2' - not a descriptive label built around it (e.g. NOT 'Unit LO general-2 (2.1)') since a coverage-tracking feature matches on this code directly"],
       "activities": ["short bullet strings describing planned activities"],
       "practical": "string - a hands-on practical exercise for this week, or empty string if none requested/appropriate this week",
       "assignment": {
@@ -448,6 +448,66 @@ def retry_sow(
         background_tasks.add_task(_run_sow_generation, sow.id)
 
     return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
+
+
+@router.post("/courses/{course_id}/scheme-of-work/{sow_id}/weeks/{week_number}")
+async def update_sow_week(
+    course_id: int,
+    sow_id: int,
+    week_number: int,
+    request: Request,
+    title: str = Form(""),
+    learning_outcomes: str = Form(""),
+    activities: str = Form(""),
+    practical: str = Form(""),
+    notes: str = Form(""),
+    has_assignment: str = Form(""),
+    assignment_title: str = Form(""),
+    assignment_brief: str = Form(""),
+    assignment_criteria_covered: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Edits ONE week of an already-generated scheme of work in place - e.g. adding a test,
+    an extra activity, or a note - without touching any other week or re-running the AI at
+    all. Because "Download" and PowerPoint generation both read directly from
+    weeks_json every time, this takes effect on the very next download - there's no
+    separate "regenerate the document" step needed.
+    """
+    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    if not sow or not sow.weeks_json:
+        return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
+
+    weeks = list(sow.weeks_json)  # copy so SQLAlchemy sees a genuinely new JSON value to persist
+    target_index = next((i for i, w in enumerate(weeks) if w.get("week") == week_number), None)
+    if target_index is None:
+        return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
+
+    updated_week = dict(weeks[target_index])
+    updated_week["title"] = title.strip() or updated_week.get("title", "")
+    updated_week["learning_outcomes"] = [p.strip() for p in learning_outcomes.split(",") if p.strip()]
+    updated_week["activities"] = [line.strip() for line in activities.splitlines() if line.strip()]
+    updated_week["practical"] = practical.strip() or None
+    updated_week["notes"] = notes.strip() or None
+    if has_assignment and assignment_title.strip():
+        updated_week["assignment"] = {
+            "title": assignment_title.strip(),
+            "brief": assignment_brief.strip(),
+            "criteria_covered": [p.strip() for p in assignment_criteria_covered.split(",") if p.strip()],
+        }
+    else:
+        updated_week["assignment"] = None
+
+    weeks[target_index] = updated_week
+    sow.weeks_json = weeks
+    # Editing a week by hand invalidates any stale "last download" warnings from before the
+    # edit (e.g. an overflow warning about a week count that's now changed) - clear them
+    # rather than show a note that might no longer apply.
+    sow.last_download_warnings = None
+    db.commit()
+
+    return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}#week-{week_number}", status_code=303)
 
 
 @router.post("/courses/{course_id}/scheme-of-work/{sow_id}/delete")

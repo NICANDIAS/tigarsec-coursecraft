@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from ..database import get_db, SessionLocal
-from ..models import Teacher, Course, LessonDeck, LessonImage, SchemeOfWork
+from ..models import Teacher, Course, LessonDeck, LessonImage, SchemeOfWork, ResourceShare
 from ..auth import get_current_teacher
 from ..pptx_generator import generate_lesson_outline, render_lesson_pptx, test_unsplash_connection, resolve_slide_image, pick_palette
 from ..resource_export import render_resources_docx, extract_resources
@@ -231,6 +231,25 @@ def _run_generation_job(deck_id: int, content_text: str, duration_minutes: int, 
         db.close()
 
 
+def _can_access_deck(deck: LessonDeck, teacher: Teacher, db: Session) -> bool:
+    """
+    Standing fix: every deck route below previously had NO ownership check at all - any
+    authenticated teacher could open, download, or present ANY other teacher's lesson deck
+    just by knowing/guessing its numeric ID. Access is now the deck's own creator, OR
+    someone it's been explicitly shared with via ResourceShare (see the sharing routes
+    below) - sharing is a deliberate, visible, revocable grant, not an accident of a
+    missing check.
+    """
+    if not deck:
+        return False
+    if deck.teacher_id == teacher.id:
+        return True
+    return db.query(ResourceShare).filter(
+        ResourceShare.lesson_deck_id == deck.id,
+        ResourceShare.shared_with_teacher_id == teacher.id,
+    ).first() is not None
+
+
 @router.get("/lesson-decks/{deck_id}", response_class=HTMLResponse)
 def view_deck(
     deck_id: int,
@@ -239,10 +258,15 @@ def view_deck(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     deck = db.get(LessonDeck, deck_id)
+    if not _can_access_deck(deck, teacher, db):
+        return RedirectResponse(url="/", status_code=303)
     resource_count = len(extract_resources(deck.outline_json)) if deck and deck.outline_json else 0
+    shares = db.query(ResourceShare).filter(ResourceShare.lesson_deck_id == deck_id).all() if deck.teacher_id == teacher.id else []
+    is_owner = deck.teacher_id == teacher.id
     return templates.TemplateResponse(
         "presentation_detail.html",
-        {"request": request, "teacher": teacher, "deck": deck, "resource_count": resource_count},
+        {"request": request, "teacher": teacher, "deck": deck, "resource_count": resource_count,
+         "shares": shares, "is_owner": is_owner},
     )
 
 
@@ -253,7 +277,7 @@ def deck_status(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     deck = db.get(LessonDeck, deck_id)
-    if not deck:
+    if not _can_access_deck(deck, teacher, db):
         return JSONResponse({"error": "not found"}, status_code=404)
     return {"status": deck.status, "error_detail": deck.error_detail}
 
@@ -265,7 +289,9 @@ def download_deck(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     deck = db.get(LessonDeck, deck_id)
-    if not deck or not deck.pptx_path or not os.path.exists(deck.pptx_path):
+    if not _can_access_deck(deck, teacher, db):
+        return RedirectResponse(url="/", status_code=303)
+    if not deck.pptx_path or not os.path.exists(deck.pptx_path):
         return RedirectResponse(url=f"/lesson-decks/{deck_id}", status_code=303)
     return FileResponse(
         deck.pptx_path,
@@ -286,7 +312,9 @@ def download_deck_resources(
     without needing to regenerate the lesson at all.
     """
     deck = db.get(LessonDeck, deck_id)
-    if not deck or not deck.outline_json:
+    if not _can_access_deck(deck, teacher, db):
+        return RedirectResponse(url="/", status_code=303)
+    if not deck.outline_json:
         return RedirectResponse(url=f"/lesson-decks/{deck_id}", status_code=303)
 
     output_path = os.path.join(PPTX_DIR, f"{uuid.uuid4().hex}_resources.docx")
@@ -313,7 +341,9 @@ def deck_slide_image(
     real image the PowerPoint uses - reads the path already resolved and stored at
     generation time, never re-resolves (that would risk a different photo each visit)."""
     deck = db.get(LessonDeck, deck_id)
-    if not deck or not deck.outline_json:
+    if not _can_access_deck(deck, teacher, db):
+        return RedirectResponse(url="/", status_code=303)
+    if not deck.outline_json:
         return RedirectResponse(url="/", status_code=303)
     slides = deck.outline_json.get("slides", [])
     if slide_index < 0 or slide_index >= len(slides):
@@ -338,9 +368,97 @@ def present_deck(
     but the content and structure are identical.
     """
     deck = db.get(LessonDeck, deck_id)
-    if not deck or not deck.outline_json:
+    if not _can_access_deck(deck, teacher, db):
+        return RedirectResponse(url="/", status_code=303)
+    if not deck.outline_json:
         return RedirectResponse(url=f"/lesson-decks/{deck_id}", status_code=303)
     return templates.TemplateResponse("presentation_present.html", {"request": request, "teacher": teacher, "deck": deck})
+
+
+# --- Cover/absence resource sharing ---
+
+@router.get("/lesson-decks/{deck_id}/share", response_class=HTMLResponse)
+def share_deck_page(
+    deck_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """Send this week's PowerPoint/activities to a named colleague - e.g. for cover during
+    an absence. Only the deck's own creator can share it (a shared recipient can view/
+    download but not re-share further, keeping the grant list auditable back to one owner)."""
+    deck = db.get(LessonDeck, deck_id)
+    if not deck or deck.teacher_id != teacher.id:
+        return RedirectResponse(url="/", status_code=303)
+    other_teachers = db.query(Teacher).filter(Teacher.id != teacher.id, Teacher.is_active == True).order_by(Teacher.name).all()
+    shares = db.query(ResourceShare).filter(ResourceShare.lesson_deck_id == deck_id).all()
+    return templates.TemplateResponse(
+        "presentation_share.html",
+        {"request": request, "teacher": teacher, "deck": deck, "other_teachers": other_teachers, "shares": shares},
+    )
+
+
+@router.post("/lesson-decks/{deck_id}/share")
+def share_deck(
+    deck_id: int,
+    shared_with_teacher_id: int = Form(...),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    deck = db.get(LessonDeck, deck_id)
+    if not deck or deck.teacher_id != teacher.id:
+        return RedirectResponse(url="/", status_code=303)
+    target = db.get(Teacher, shared_with_teacher_id)
+    if not target or target.id == teacher.id:
+        return RedirectResponse(url=f"/lesson-decks/{deck_id}/share", status_code=303)
+
+    existing = db.query(ResourceShare).filter(
+        ResourceShare.lesson_deck_id == deck_id, ResourceShare.shared_with_teacher_id == target.id
+    ).first()
+    if not existing:
+        db.add(ResourceShare(
+            lesson_deck_id=deck_id, shared_by_teacher_id=teacher.id,
+            shared_with_teacher_id=target.id, note=note.strip() or None,
+        ))
+        db.commit()
+    return RedirectResponse(url=f"/lesson-decks/{deck_id}/share", status_code=303)
+
+
+@router.post("/lesson-decks/{deck_id}/share/{share_id}/revoke")
+def revoke_deck_share(
+    deck_id: int,
+    share_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    deck = db.get(LessonDeck, deck_id)
+    if not deck or deck.teacher_id != teacher.id:
+        return RedirectResponse(url="/", status_code=303)
+    share = db.query(ResourceShare).filter(ResourceShare.id == share_id, ResourceShare.lesson_deck_id == deck_id).first()
+    if share:
+        db.delete(share)
+        db.commit()
+    return RedirectResponse(url=f"/lesson-decks/{deck_id}/share", status_code=303)
+
+
+@router.get("/shared-with-me", response_class=HTMLResponse)
+def shared_with_me(
+    request: Request,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """Everything a colleague has explicitly sent this teacher - e.g. cover resources for
+    an absence - regardless of which course it belongs to."""
+    shares = (
+        db.query(ResourceShare)
+        .filter(ResourceShare.shared_with_teacher_id == teacher.id)
+        .order_by(ResourceShare.created_at.desc())
+        .all()
+    )
+    return templates.TemplateResponse(
+        "shared_with_me.html", {"request": request, "teacher": teacher, "shares": shares},
+    )
 
 
 # --- Shared image library ---

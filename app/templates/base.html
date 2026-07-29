@@ -29,14 +29,25 @@
         <a href="/analytics" class="{{ 'active' if request.url.path == '/analytics' }}">Analytics</a>
         <a href="/iv" class="{{ 'active' if request.url.path.startswith('/iv') }}">Internal Verification</a>
         <a href="/media-library" class="{{ 'active' if request.url.path == '/media-library' }}">Media Library</a>
+        <a href="/shared-with-me" class="{{ 'active' if request.url.path == '/shared-with-me' }}">Shared with me</a>
+        <a href="/feedback" class="{{ 'active' if request.url.path == '/feedback' }}">Feedback</a>
         <a href="/tasks" class="{{ 'active' if request.url.path == '/tasks' }}">Tasks <span class="badge badge-needs_review" id="tasks-badge" style="display:none;"></span></a>
         <a href="/coming-soon?feature=Timetabling" class="soon-link">Timetabling <span class="badge badge-uploaded">Soon</span></a>
         <a href="/coming-soon?feature=Teams%20integration" class="soon-link">Teams integration <span class="badge badge-uploaded">Soon</span></a>
         {% if teacher.role == "admin" %}
           <div class="sidebar-divider"></div>
-          <a href="/admin/users" class="{{ 'active' if request.url.path == '/admin/users' }}">Admin: Users</a>
-          <a href="/admin/logs" class="{{ 'active' if request.url.path == '/admin/logs' }}">Admin: Audit Log</a>
-          <a href="/admin/schema-check" class="{{ 'active' if request.url.path == '/admin/schema-check' }}">Admin: Schema Check</a>
+          <button class="sidebar-group-toggle" id="admin-nav-toggle" type="button" aria-expanded="false" aria-controls="admin-nav-items">
+            <span>Admin</span>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="sidebar-group-items" id="admin-nav-items" data-expanded="false">
+            <div>
+              <a href="/admin/users" class="{{ 'active' if request.url.path == '/admin/users' }}">Users</a>
+              <a href="/admin/logs" class="{{ 'active' if request.url.path == '/admin/logs' }}">Audit Log</a>
+              <a href="/admin/schema-check" class="{{ 'active' if request.url.path == '/admin/schema-check' }}">Schema Check</a>
+              <a href="/admin/feedback" class="{{ 'active' if request.url.path == '/admin/feedback' }}">Feedback</a>
+            </div>
+          </div>
         {% endif %}
         <div class="sidebar-divider"></div>
         <a href="/settings" class="{{ 'active' if request.url.path == '/settings' }}">Settings</a>
@@ -56,6 +67,7 @@
   </div>
   <div id="toast-container" style="position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;"></div>
   <script src="/static/js/theme.js"></script>
+  <script src="/static/js/sidebar.js"></script>
   <script src="/static/js/tasks.js"></script>
 </body>
 </html>

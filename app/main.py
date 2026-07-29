@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 
 from .database import engine, Base
 from .auth import NotAuthenticated, NotAuthorized, get_current_teacher
-from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks
+from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks, feedback
 
 # Schema creation/updates are now handled by Alembic (run automatically on container
 # startup via docker-entrypoint.sh) instead of create_all() here - this is what lets
@@ -43,3 +43,4 @@ app.include_router(analytics.router)
 app.include_router(iv.router)
 app.include_router(presentations.router)
 app.include_router(tasks.router)
+app.include_router(feedback.router)

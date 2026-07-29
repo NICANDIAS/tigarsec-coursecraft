@@ -2,10 +2,35 @@
 Pure logic for computing curriculum coverage gaps - deliberately has zero DB dependency,
 so it can be tested thoroughly with mock data before ever touching a real route/template.
 """
+import re
 
 
 def _normalize(code):
     return (code or "").strip().lower()
+
+
+def _code_appears_in(code, label) -> bool:
+    """
+    Standing fix: a scheme of work's own "learning_outcomes" field isn't always the
+    spec's clean criterion code alone - confirmed as a real problem for specs with no
+    named LO layer (a flat content area like "2.1, 2.2, ... 2.25" with no "LO1/LO2"
+    grouping above it), where the AI's own week-by-week label style tends to look like
+    "Unit LO general-2 (2.1)" rather than just "2.1". An exact match against that whole
+    string was silently marking genuinely-taught criteria as "not taught".
+
+    This checks whether the code appears as a whole token inside the label instead (word-
+    boundary matched, the same technique used for the P1/P10 rubric-matching collision) -
+    so "2.1" is found inside "Unit LO general-2 (2.1)", but "2.1" is NOT wrongly matched
+    inside "2.10" or "12.1".
+    """
+    code = _normalize(code)
+    label = _normalize(label)
+    if not code or not label:
+        return False
+    if code == label:
+        return True
+    pattern = re.compile(r'(?<![a-z0-9.])' + re.escape(code) + r'(?![a-z0-9.])')
+    return pattern.search(label) is not None
 
 
 def classify_mark(final_mark):
@@ -24,27 +49,30 @@ def classify_mark(final_mark):
     return "unclear"
 
 
-def _build_taught_lo_codes(units_by_name, schemes_of_work):
+def _build_taught_lo_labels(units_by_name, schemes_of_work):
     """
-    Returns: {unit_name: set_of_normalized_codes_taught}
+    Returns: {unit_name: [raw_learning_outcome_label, ...]}
     Only considers READY (successfully generated) schemes of work. A scheme scoped to
-    specific units (selected_unit_names) only contributes its LO codes to THOSE units -
+    specific units (selected_unit_names) only contributes its LO labels to THOSE units -
     this is what avoids one unit's SOW accidentally "covering" a same-named LO in another.
     An unscoped scheme (selected_unit_names empty/None) is treated as potentially covering
-    ANY unit, since we have no better information to narrow it down.
+    ANY unit, since we have no better information to narrow it down. Labels are kept as
+    the AI actually wrote them (not reduced to a normalized code) - see _code_appears_in
+    for why an exact-match set isn't reliable here.
     """
-    taught = {name: set() for name in units_by_name}
+    taught = {name: [] for name in units_by_name}
     for sow in schemes_of_work:
         if sow.get("status") != "ready" or not sow.get("weeks_json"):
             continue
         scoped_units = sow.get("selected_unit_names") or list(units_by_name.keys())
-        codes_this_sow = set()
+        labels_this_sow = []
         for week in sow["weeks_json"]:
-            for lo_code in week.get("learning_outcomes", []):
-                codes_this_sow.add(_normalize(lo_code))
+            for lo_label in week.get("learning_outcomes", []):
+                if lo_label:
+                    labels_this_sow.append(lo_label)
         for unit_name in scoped_units:
             if unit_name in taught:
-                taught[unit_name] |= codes_this_sow
+                taught[unit_name].extend(labels_this_sow)
     return taught
 
 
@@ -86,18 +114,32 @@ def compute_coverage(units, schemes_of_work, marks):
       - "assessed": has marks - includes classification counts
     """
     units_by_name = {u["name"]: u for u in units}
-    taught_lo_codes = _build_taught_lo_codes(units_by_name, schemes_of_work)
+    taught_lo_labels = _build_taught_lo_labels(units_by_name, schemes_of_work)
     assessment_index = _build_assessment_index(units_by_name, marks)
 
     report = []
     for unit in units:
         unit_name = unit["name"]
         criteria_report = []
+        unit_labels = taught_lo_labels.get(unit_name, [])
         for lo in unit.get("learning_outcomes", []):
-            lo_taught = _normalize(lo.get("code")) in taught_lo_codes.get(unit_name, set())
+            lo_code = lo.get("code") or ""
+            # A real named LO (e.g. "LO2") genuinely groups criteria taught together, so
+            # the whole LO being referenced is good evidence every criterion under it was
+            # covered. The synthetic "general-N" placeholder (see spec_parser.py) is NOT
+            # that - it's just a bucket holding many otherwise-ungrouped criteria, and the
+            # AI's own week labels often mention it by name incidentally (e.g. "Unit LO
+            # general-2 (2.1)") without that implying every OTHER criterion in the bucket
+            # was also taught. Confirmed as a real false-positive risk via testing - a
+            # criterion never taught was showing as taught purely because a sibling
+            # criterion's label happened to mention the shared bucket name.
+            lo_taught = (
+                not lo_code.startswith("general-")
+                and any(_code_appears_in(lo_code, label) for label in unit_labels)
+            )
             for crit in lo.get("criteria", []):
                 crit_code = crit.get("code", "")
-                crit_taught = lo_taught or _normalize(crit_code) in taught_lo_codes.get(unit_name, set())
+                crit_taught = lo_taught or any(_code_appears_in(crit_code, label) for label in unit_labels)
                 key = (unit_name, _normalize(crit_code))
                 classifications = assessment_index.get(key, [])
 
