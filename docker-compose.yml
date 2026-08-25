@@ -26,6 +26,22 @@ services:
     cpus: 4
     mem_limit: 10g
 
+  # Free, self-contained SMTP testing - same idea as bundling Ollama so AI features can be
+  # tested with zero external account/cost. MailHog accepts any email sent to it (no real
+  # account, no real recipient, nothing actually delivered anywhere) and shows every one in
+  # a web UI at http://localhost:8025 - lets you test the full two-factor login flow (code
+  # generation, delivery, the auto-disable and admin-bypass paths) without needing real
+  # institutional SMTP credentials yet. Point Admin: System Settings (or .env) at:
+  #   SMTP_HOST=mailhog, SMTP_PORT=1025, SMTP_USER=, SMTP_PASSWORD=, SMTP_USE_TLS=false
+  # Swap this out for your college's real mail relay whenever you're ready - nothing else
+  # in the app needs to change, since email_sender.py just talks to whatever SMTP_HOST is.
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "8025:8025"   # web UI - open this in your browser to see "sent" emails
+      - "1025:1025"   # SMTP port the app actually sends to
+    restart: unless-stopped
+
   app:
     build: .
     ports:
@@ -39,6 +55,7 @@ services:
       - ./storage:/app/storage
     depends_on:
       - ollama
+      - mailhog
     restart: unless-stopped
     cpus: 2
     mem_limit: 2g

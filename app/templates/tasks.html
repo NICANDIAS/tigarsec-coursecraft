@@ -50,28 +50,56 @@ track of a PowerPoint, scheme of work, marking run, or spec parse you started ea
     <div class="list-item">
       <span><a href="/spec-library/{{ spec.id }}">Spec: {{ spec.label }}</a>
         <span class="muted" style="font-size:0.8rem;"> — {{ spec.created_at.strftime("%d %b, %H:%M") }}</span></span>
-      <span class="badge badge-{{ 'released' if spec.parse_status == 'parsed' else 'failed' }}">{{ spec.parse_status }}</span>
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="badge badge-{{ 'released' if spec.parse_status == 'parsed' else 'failed' }}">{{ spec.parse_status }}</span>
+        {% if spec.parse_status == "failed" %}
+          <form method="post" action="/spec-library/{{ spec.id }}/reparse">
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Retry</button>
+          </form>
+        {% endif %}
+      </span>
     </div>
   {% endfor %}
   {% for sub in submissions_recent %}
     <div class="list-item">
       <span><a href="/submissions/{{ sub.id }}/review">{{ sub.original_filename }} ({{ sub.student.name }})</a>
         <span class="muted" style="font-size:0.8rem;"> — {{ sub.created_at.strftime("%d %b, %H:%M") }}</span></span>
-      <span class="badge badge-{{ 'released' if sub.status in ('needs_review','released') else 'failed' }}">{{ sub.status }}</span>
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="badge badge-{{ 'released' if sub.status in ('needs_review','released') else 'failed' }}">{{ sub.status }}</span>
+        {% if sub.status == "failed" %}
+          <form method="post" action="/submissions/{{ sub.id }}/mark">
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Retry</button>
+          </form>
+        {% endif %}
+      </span>
     </div>
   {% endfor %}
   {% for sow in sow_recent %}
     <div class="list-item">
       <span><a href="/courses/{{ sow.course_id }}/scheme-of-work/{{ sow.id }}">{{ sow.title }}</a>
         <span class="muted" style="font-size:0.8rem;"> — {{ sow.created_at.strftime("%d %b, %H:%M") }}</span></span>
-      <span class="badge badge-{{ 'released' if sow.status == 'ready' else 'failed' }}">{{ sow.status }}</span>
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="badge badge-{{ 'released' if sow.status == 'ready' else 'failed' }}">{{ sow.status }}</span>
+        {% if sow.status == "failed" %}
+          <form method="post" action="/courses/{{ sow.course_id }}/scheme-of-work/{{ sow.id }}/retry">
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Retry</button>
+          </form>
+        {% endif %}
+      </span>
     </div>
   {% endfor %}
   {% for deck in decks_recent %}
     <div class="list-item">
       <span><a href="/lesson-decks/{{ deck.id }}">{{ deck.title }}</a>
         <span class="muted" style="font-size:0.8rem;"> — {{ deck.created_at.strftime("%d %b, %H:%M") }}</span></span>
-      <span class="badge badge-{{ 'released' if deck.status == 'ready' else 'failed' }}">{{ deck.status }}</span>
+      <span style="display:flex;align-items:center;gap:10px;">
+        <span class="badge badge-{{ 'released' if deck.status == 'ready' else 'failed' }}">{{ deck.status }}</span>
+        {% if deck.status == "failed" %}
+          <form method="post" action="/lesson-decks/{{ deck.id }}/regenerate">
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Retry</button>
+          </form>
+        {% endif %}
+      </span>
     </div>
   {% endfor %}
 

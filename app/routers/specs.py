@@ -13,6 +13,7 @@ from ..database import get_db, SessionLocal
 from ..models import Teacher, SpecVersion, Course, Submission, DiscoveredSpecFormat
 from ..auth import get_current_teacher, require_spec_uploader
 from ..docx_annotator import extract_text
+from ..llm_gateway import get_effective_provider
 from ..spec_parser import parse_spec_hybrid
 from ..web_fetch import fetch_spec_from_url, UnsafeURLError
 
@@ -150,6 +151,12 @@ def _run_parse_job(spec_id: int):
             ai_calls_used = result.get("ai_calls_used", 0)
             ai_call_budget = result.get("ai_call_budget", 0)
             failed_labels = result.get("failed_sections")
+
+            # Only meaningful if AI was actually used - this is a hybrid rule-based + AI
+            # fallback pipeline, and plenty of specs parse entirely via rules with zero AI
+            # calls, where recording a "provider" would be misleading (none was used at all).
+            if ai_calls_used > 0:
+                spec.generated_by_provider = get_effective_provider(for_spec_parsing=True)
 
             if result.get("was_cancelled"):
                 spec.parse_status = "cancelled"

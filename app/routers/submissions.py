@@ -895,6 +895,7 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
                     continue
             if result is None:
                 raise last_error
+            run.generated_by_provider = get_effective_provider()
 
             marks_data = result.get("marks", [])
             if not marks_data:

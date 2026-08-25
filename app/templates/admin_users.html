@@ -47,6 +47,12 @@ active status can't be changed, by anyone, including other admins.</p>
         </form>
       </details>
     {% endif %}
+    {% if user.two_factor_enabled %}
+      <form method="post" action="/admin/users/{{ user.id }}/disable-two-factor" style="margin:6px 0 14px 0;"
+            onsubmit="return confirm('Disable two-factor login for ' + '{{ user.name }}' + '? Use this if they are locked out because email isn\'t working.');">
+        <button class="btn btn-secondary" type="submit">Disable two-factor login</button>
+      </form>
+    {% endif %}
   {% endfor %}
 </div>
 

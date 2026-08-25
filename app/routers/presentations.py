@@ -11,6 +11,7 @@ from ..models import Teacher, Course, LessonDeck, LessonImage, SchemeOfWork, Res
 from ..auth import get_current_teacher
 from ..pptx_generator import generate_lesson_outline, render_lesson_pptx, test_unsplash_connection, resolve_slide_image, pick_palette
 from ..resource_export import render_resources_docx, extract_resources
+from ..llm_gateway import get_effective_provider
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -186,6 +187,51 @@ async def generate_presentation(
     return RedirectResponse(url=f"/lesson-decks/{deck.id}", status_code=303)
 
 
+@router.post("/lesson-decks/{deck_id}/regenerate")
+def regenerate_deck(
+    deck_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Standing fix: generating a PowerPoint had no retry at all - a failure meant going back
+    to "New presentation" and re-entering everything (unit, LOs, duration, context) from
+    scratch. Every parameter needed to regenerate is already stored on the deck's own row
+    (unit_index, selected_lo_indices, duration_minutes, previous_lesson_context,
+    include_practicals) - this re-derives content_text exactly as the original generation
+    did and re-queues the same job on the SAME deck row, so the deck keeps its one
+    permanent URL rather than spawning a duplicate.
+    """
+    deck = db.get(LessonDeck, deck_id)
+    if not deck or not _can_access_deck(deck, teacher, db):
+        return RedirectResponse(url="/", status_code=303)
+
+    course = db.get(Course, deck.course_id)
+    if not course or not course.spec_version or not course.spec_version.structured_json:
+        return RedirectResponse(url=f"/lesson-decks/{deck_id}", status_code=303)
+    units = course.spec_version.structured_json.get("units", [])
+    if deck.unit_index is None or deck.unit_index < 0 or deck.unit_index >= len(units):
+        deck.status = "failed"
+        deck.error_detail = "Can't regenerate - the course specification has changed since this deck was first generated, so its original unit no longer exists. Generate a new one from the course page instead."
+        db.commit()
+        return RedirectResponse(url=f"/lesson-decks/{deck_id}", status_code=303)
+
+    unit = units[deck.unit_index]
+    content_text = _unit_content_text(unit, deck.selected_lo_indices or [])
+
+    deck.status = "generating"
+    deck.error_detail = None
+    db.commit()
+
+    background_tasks.add_task(
+        _run_generation_job, deck.id, content_text, deck.duration_minutes,
+        deck.previous_lesson_context or "", bool(deck.include_practicals),
+    )
+
+    return RedirectResponse(url=f"/lesson-decks/{deck_id}", status_code=303)
+
+
 def _run_generation_job(deck_id: int, content_text: str, duration_minutes: int, previous_lesson_context: str, include_practicals: bool):
     db = SessionLocal()
     try:
@@ -194,6 +240,7 @@ def _run_generation_job(deck_id: int, content_text: str, duration_minutes: int, 
             return
         try:
             outline = generate_lesson_outline(content_text, duration_minutes, previous_lesson_context, include_practicals)
+            deck.generated_by_provider = get_effective_provider(for_draft_generation=True)
 
             # Resolve images and the colour palette ONCE, here, and store both in
             # outline_json - both the .pptx renderer and the "Present in browser" view

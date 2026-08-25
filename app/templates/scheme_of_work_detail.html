@@ -7,6 +7,10 @@
 {% if sow.content_area %}<p class="muted">Content area: {{ sow.content_area }}</p>{% endif %}
 {% if sow.tutor_names %}<p class="muted">Tutor(s): {{ sow.tutor_names }}</p>{% endif %}
 {% if sow.start_date and sow.end_date %}<p class="muted">{{ sow.start_date }} to {{ sow.end_date }}</p>{% endif %}
+{% if teacher.role == "admin" and sow.generated_by_provider %}
+  {% set provider_names = {"anthropic": "Anthropic", "ollama": "Ollama (free/local)", "azure_openai": "Azure OpenAI", "openai_compatible": "an OpenAI-compatible endpoint"} %}
+  <p class="muted">Generated using: <strong>{{ provider_names.get(sow.generated_by_provider, sow.generated_by_provider) }}</strong>.</p>
+{% endif %}
 {% if sow.planned_assessments %}
   <p class="muted">Planned assessment weeks: {% for a in sow.planned_assessments %}Week {{ a.week }} ({{ a.label }}){% if not loop.last %}, {% endif %}{% endfor %}</p>
 {% endif %}

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Admin: AI Provider - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Admin: AI Provider</h1>
+<p class="muted">Configure which AI service marking, scheme-of-work generation, and lesson
+generation actually use - from here, not from the server's .env file, so switching (e.g. if
+one service is blocked on your network, or you want to try a free option) doesn't need a
+redeploy. Only one configuration is active at a time.</p>
+<p class="muted"><strong>Marking</strong> and <strong>spec parsing</strong> use whichever provider is
+active here. <strong>Scheme-of-work and lesson generation are different</strong> - these are drafts
+you review/edit before use, so they default to Ollama (free) automatically, even once a paid
+provider is active for marking - activating a paid provider here never silently starts charging for
+these too. Override this specifically with "Use for draft generation" below if you genuinely want it
+on a paid provider as well.</p>
+<p class="muted">Use "Test connection" on any saved provider to check reachability and
+credentials from THIS server, without needing to try a real generation task first - useful
+for confirming whether a service is actually reachable on your network (e.g. if a college
+firewall blocks a specific domain) before relying on it.</p>
+
+<div class="card">
+  <h2>Add a provider</h2>
+  <form method="post" action="/admin/ai-providers/create">
+    <label>Provider</label>
+    <select name="provider_type" id="provider-type-select">
+      {% for value, display_name in provider_types %}
+        <option value="{{ value }}">{{ display_name }}</option>
+      {% endfor %}
+    </select>
+
+    <label>Label</label>
+    <input type="text" name="label" placeholder="e.g. 'College Azure OpenAI' or 'Anthropic - main'">
+
+    <div id="fields-anthropic" class="provider-fields">
+      <label>API key</label>
+      <input type="password" name="api_key" placeholder="sk-ant-...">
+      <label>Model (optional - leave blank for the default)</label>
+      <input type="text" name="model_name" placeholder="e.g. claude-sonnet-5">
+    </div>
+
+    <div id="fields-ollama" class="provider-fields" style="display:none;">
+      <label>Ollama host</label>
+      <input type="text" name="base_url" placeholder="http://host.docker.internal:11434">
+      <label>Model</label>
+      <input type="text" name="model_name" placeholder="e.g. llama3.1:8b">
+      <p class="muted" style="margin-top:-4px;">Free and local, but treat it as "does the plumbing
+      work", not "ready to mark real grades" - a small local model's judgement is rougher than a
+      hosted frontier model. See the note below.</p>
+    </div>
+
+    <div id="fields-azure_openai" class="provider-fields" style="display:none;">
+      <label>Endpoint</label>
+      <input type="text" name="base_url" placeholder="https://your-resource.openai.azure.com">
+      <label>API key</label>
+      <input type="password" name="api_key">
+      <label>Deployment name</label>
+      <input type="text" name="model_name" placeholder="e.g. gpt4o-deployment">
+      <label>API version</label>
+      <input type="text" name="api_version" placeholder="2024-10-21">
+      <p class="muted" style="margin-top:-4px;">Needs Azure OpenAI Service access specifically -
+      a Microsoft 365 Copilot seat licence or GitHub Copilot licence is a different product and
+      won't work here. Check with your Microsoft/IT contact if you're not sure which you have.</p>
+    </div>
+
+    <div id="fields-openai_compatible" class="provider-fields" style="display:none;">
+      <label>Base URL</label>
+      <input type="text" name="base_url" placeholder="e.g. https://api.openai.com/v1">
+      <label>API key (optional - some local servers don't need one)</label>
+      <input type="password" name="api_key">
+      <label>Model</label>
+      <input type="text" name="model_name" placeholder="e.g. gpt-4o-mini">
+      <p class="muted" style="margin-top:-4px;">Any server that speaks the standard OpenAI
+      chat-completions API shape - OpenAI itself, or a self-hosted server such as LocalAI or vLLM.</p>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">
+      <input type="checkbox" name="make_active" value="yes" style="width:auto;margin:0;">
+      Make this the active provider immediately
+    </label>
+
+    <button class="btn" type="submit" style="margin-top:10px;">Save</button>
+  </form>
+</div>
+
+<script>
+  (function () {
+    var select = document.getElementById('provider-type-select');
+    function updateFields() {
+      document.querySelectorAll('.provider-fields').forEach(function (el) { el.style.display = 'none'; });
+      var target = document.getElementById('fields-' + select.value);
+      if (target) target.style.display = 'block';
+    }
+    select.addEventListener('change', updateFields);
+    updateFields();
+  })();
+</script>
+
+{% if configs %}
+  <div class="card">
+    <h2>Saved providers</h2>
+    {% for c in configs %}
+      <div class="list-item" style="flex-direction:column;align-items:flex-start;gap:8px;">
+        <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+          <span>
+            <strong>{{ c.label }}</strong>
+            <span class="muted"> — {{ dict(provider_types).get(c.provider_type, c.provider_type) }}</span>
+            {% if c.is_active %}<span class="badge badge-released">Active</span>{% endif %}
+            {% if c.is_active_for_spec_parsing %}<span class="badge badge-needs_review">Active for spec parsing</span>{% endif %}
+            {% if c.is_active_for_draft_generation %}<span class="badge badge-needs_review">Active for draft generation</span>{% endif %}
+          </span>
+        </div>
+        <p class="muted" style="margin:0;">
+          {% if c.base_url %}Endpoint/host: {{ c.base_url }}<br>{% endif %}
+          {% if c.model_name %}Model/deployment: {{ c.model_name }}<br>{% endif %}
+          API key: {{ mask_key(c.api_key) }}
+        </p>
+        {% if test_result_id == c.id %}
+          <div class="error-box" style="{% if test_result_status == 'ok' %}border-color:var(--success);color:var(--success);{% else %}border-color:var(--danger);color:var(--danger);{% endif %}width:100%;">
+            {% if test_result_status == 'ok' %}✓{% else %}✗{% endif %} {{ test_result_message }}
+          </div>
+        {% endif %}
+        <div style="display:flex;gap:8px;">
+          <form method="post" action="/admin/ai-providers/{{ c.id }}/test">
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Test connection</button>
+          </form>
+          {% if not c.is_active %}
+            <form method="post" action="/admin/ai-providers/{{ c.id }}/activate">
+              <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Make active</button>
+            </form>
+          {% endif %}
+          {% if not c.is_active_for_spec_parsing %}
+            <form method="post" action="/admin/ai-providers/{{ c.id }}/activate-for-spec-parsing">
+              <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Use for spec parsing</button>
+            </form>
+          {% else %}
+            <form method="post" action="/admin/ai-providers/0/activate-for-spec-parsing">
+              <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Stop using for spec parsing</button>
+            </form>
+          {% endif %}
+          {% if not c.is_active_for_draft_generation %}
+            <form method="post" action="/admin/ai-providers/{{ c.id }}/activate-for-draft-generation">
+              <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Use for draft generation</button>
+            </form>
+          {% else %}
+            <form method="post" action="/admin/ai-providers/0/activate-for-draft-generation">
+              <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Stop using for draft generation</button>
+            </form>
+          {% endif %}
+          <form method="post" action="/admin/ai-providers/{{ c.id }}/delete" onsubmit="return confirm('Delete this saved provider?');">
+            <button class="btn" style="background:var(--danger);padding:4px 12px;font-size:0.82rem;" type="submit">Delete</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card"><p class="muted">No providers configured yet - the app is using whatever's set
+  in the server's .env file (LLM_PROVIDER) until you add one here.</p></div>
+{% endif %}
+{% endblock %}

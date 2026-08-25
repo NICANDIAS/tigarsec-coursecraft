@@ -9,6 +9,9 @@
     allocate roles (lecturer, curriculum lead, curriculum manager) to everyone who registers after you.</p>
   {% endif %}
   {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+  {% if allowed_domains and not is_first_account %}
+    <p class="muted">Only {% for d in allowed_domains %}<strong>@{{ d }}</strong>{% if not loop.last %}, {% endif %}{% endfor %} email addresses can register here.</p>
+  {% endif %}
   <form method="post" action="/register">
     <label>Name</label>
     <input type="text" name="name" required>

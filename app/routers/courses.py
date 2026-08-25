@@ -12,6 +12,8 @@ from ..models import (
 )
 from ..coverage import compute_coverage, summarize_coverage
 from ..auth import get_current_teacher, verify_password, hash_password, require_admin
+from ..system_settings import get_system_settings
+from ..email_sender import is_configured as email_is_configured
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -196,13 +198,37 @@ def settings_page(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     custom_feedback_styles = db.query(FeedbackStyleTemplate).order_by(FeedbackStyleTemplate.name).all()
+    system_settings = get_system_settings(db)
     return templates.TemplateResponse(
         "settings.html",
         {
             "request": request, "teacher": teacher, "password_error": None, "password_success": False,
             "custom_feedback_styles": custom_feedback_styles,
+            "system_two_factor_mandatory": system_settings.two_factor_mandatory,
         },
     )
+
+
+@router.post("/settings/two-factor")
+def update_two_factor(
+    two_factor_enabled: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    wants_enabled = bool(two_factor_enabled)
+    # Standing fix, after a real lockout: turning this on when the server can't actually
+    # send the code either strands the person immediately, or (with the fail-open fix in
+    # login) silently weakens their own security without them realising why. Refuse at the
+    # point of enabling instead, with a clear reason, rather than letting either happen.
+    if wants_enabled and not email_is_configured():
+        return RedirectResponse(url="/settings?error=smtp_not_configured", status_code=303)
+    teacher.two_factor_enabled = wants_enabled
+    db.add(AuditLogEntry(
+        actor=teacher.email, action="two_factor_enabled" if wants_enabled else "two_factor_disabled",
+        detail=f"{teacher.email} turned two-factor login {'on' if wants_enabled else 'off'} for their own account.",
+    ))
+    db.commit()
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 @router.post("/settings/style-profile")
@@ -250,24 +276,28 @@ def change_password(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     custom_feedback_styles = db.query(FeedbackStyleTemplate).order_by(FeedbackStyleTemplate.name).all()
+    system_two_factor_mandatory = get_system_settings(db).two_factor_mandatory
 
     if not verify_password(current_password, teacher.hashed_password):
         return templates.TemplateResponse(
             "settings.html",
             {"request": request, "teacher": teacher, "password_error": "Current password is incorrect.",
-             "password_success": False, "custom_feedback_styles": custom_feedback_styles},
+             "password_success": False, "custom_feedback_styles": custom_feedback_styles,
+             "system_two_factor_mandatory": system_two_factor_mandatory},
         )
     if new_password != confirm_password:
         return templates.TemplateResponse(
             "settings.html",
             {"request": request, "teacher": teacher, "password_error": "New passwords don't match.",
-             "password_success": False, "custom_feedback_styles": custom_feedback_styles},
+             "password_success": False, "custom_feedback_styles": custom_feedback_styles,
+             "system_two_factor_mandatory": system_two_factor_mandatory},
         )
     if len(new_password) < 8:
         return templates.TemplateResponse(
             "settings.html",
             {"request": request, "teacher": teacher, "password_error": "New password must be at least 8 characters.",
-             "password_success": False, "custom_feedback_styles": custom_feedback_styles},
+             "password_success": False, "custom_feedback_styles": custom_feedback_styles,
+             "system_two_factor_mandatory": system_two_factor_mandatory},
         )
 
     teacher.hashed_password = hash_password(new_password)
@@ -275,7 +305,8 @@ def change_password(
     return templates.TemplateResponse(
         "settings.html",
         {"request": request, "teacher": teacher, "password_error": None, "password_success": True,
-         "custom_feedback_styles": custom_feedback_styles},
+         "custom_feedback_styles": custom_feedback_styles,
+         "system_two_factor_mandatory": system_two_factor_mandatory},
     )
 
 

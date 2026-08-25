@@ -46,6 +46,8 @@
               <a href="/admin/logs" class="{{ 'active' if request.url.path == '/admin/logs' }}">Audit Log</a>
               <a href="/admin/schema-check" class="{{ 'active' if request.url.path == '/admin/schema-check' }}">Schema Check</a>
               <a href="/admin/feedback" class="{{ 'active' if request.url.path == '/admin/feedback' }}">Feedback</a>
+              <a href="/admin/ai-providers" class="{{ 'active' if request.url.path == '/admin/ai-providers' }}">AI Provider</a>
+              <a href="/admin/system-settings" class="{{ 'active' if request.url.path == '/admin/system-settings' }}">System Settings</a>
             </div>
           </div>
         {% endif %}
@@ -58,6 +60,23 @@
 
     <div class="main-area">
       <div class="main-content">
+        {% if request.query_params.get("two_factor_admin_bypass") %}
+          <div class="error-box" style="border-color:var(--danger);color:var(--danger);margin-bottom:16px;">
+            ⚠ You logged in on your password alone via the admin emergency bypass - two-factor
+            is mandatory for everyone, but the verification code couldn't be sent. Mandatory
+            two-factor has NOT been changed - every other login will hit the same wall until
+            you fix email sending, or turn mandatory two-factor off, from
+            <a href="/admin/system-settings">Admin: System Settings</a>.
+          </div>
+        {% endif %}
+        {% if request.query_params.get("two_factor_auto_disabled") %}
+          <div class="error-box" style="border-color:var(--warning);color:var(--warning);margin-bottom:16px;">
+            ⚠ Two-factor login has been turned OFF for your account. The verification code
+            couldn't be sent (email sending isn't configured or working on this server), so
+            you were logged in on your password alone this one time - your account will stay
+            password-only until you turn two-factor back on from Settings, once email is working.
+          </div>
+        {% endif %}
         {% block content %}{% endblock %}
       </div>
       <footer class="app-footer">

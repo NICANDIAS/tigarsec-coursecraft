@@ -50,6 +50,7 @@ class Teacher(Base):
     role = Column(String(50), default="lecturer", nullable=False)
     is_primary_admin = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    two_factor_enabled = Column(Boolean, default=False, nullable=False)  # personal opt-in from Settings; can also be forced on for everyone via SystemSettings.two_factor_mandatory
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     courses = relationship("Course", back_populates="teacher")
@@ -90,6 +91,7 @@ class SpecVersion(Base):
     parse_progress = Column(String(255), nullable=True)
     parse_progress_updated_at = Column(DateTime, nullable=True)  # heartbeat - if this stops moving, it's actually stuck, not just slow
     cancel_requested = Column(Boolean, default=False, nullable=False)
+    generated_by_provider = Column(String(50), nullable=True)  # which AI provider actually parsed this - spec parsing has its own optional override slot (Admin: AI Provider), separate from marking/drafts
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
@@ -120,6 +122,7 @@ class SchemeOfWork(Base):
     weeks_json = Column(JSON, nullable=True)
     status = Column(String(50), default="generating", nullable=False)  # generating, ready, failed
     error_detail = Column(Text, nullable=True)
+    generated_by_provider = Column(String(50), nullable=True)  # which AI provider actually generated this - drafts default to Ollama unless overridden, so this is the only way to confirm which one actually ran for a given scheme
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     course = relationship("Course", back_populates="schemes_of_work")
@@ -193,6 +196,7 @@ class MarkingRun(Base):
     overall_summary = Column(Text, nullable=True)
     error_detail = Column(Text, nullable=True)
     pii_redactions_applied = Column(JSON, nullable=True)  # e.g. ["student name", "email address"] - what was found and redacted from the submission text BEFORE it was sent to the AI provider for marking, shown to the teacher rather than done silently. Empty/null if nothing matched.
+    generated_by_provider = Column(String(50), nullable=True)  # which AI provider actually marked this ("anthropic"/"ollama"/"azure_openai"/"openai_compatible") - previously only ever surfaced in failure-path error messages, never recorded against successful runs, so there was no way to check after the fact which provider produced a given result
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 
@@ -352,6 +356,7 @@ class LessonDeck(Base):
     pptx_path = Column(String(1000), nullable=True)
     status = Column(String(50), default="queued", nullable=False)  # queued, generating, ready, failed
     error_detail = Column(Text, nullable=True)
+    generated_by_provider = Column(String(50), nullable=True)  # which AI provider actually generated this deck - drafts default to Ollama unless overridden
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     course = relationship("Course")
@@ -398,6 +403,91 @@ class Feedback(Base):
     updated_at = Column(DateTime, nullable=True)
 
     teacher = relationship("Teacher")
+
+
+class SystemSettings(Base):
+    """
+    A single-row settings table (always id=1) for deployment-wide configuration that an
+    admin controls, not something baked into code or a .env file a non-technical admin
+    can't reach.
+    - allowed_email_domains: which email domain(s) can self-register, so a DIFFERENT
+      college adopting this same software configures it for THEIR OWN domain (e.g.
+      wlv.ac.uk) without needing a code change or my involvement - comma-separated so one
+      deployment can allow more than one real domain (e.g. staff + student subdomains).
+      Empty/null means no restriction (the original, permissive default).
+    - two_factor_mandatory: forces 2FA on for every account, overriding each person's own
+      opt-in in Settings - an admin-level decision, not a per-user one.
+    - smtp_*: same reasoning as AI provider settings - configurable here so email sending
+      can be fixed from the UI, not only by editing .env on the server. If smtp_host here
+      is empty, email_sender.py falls back to the .env values, so nothing breaks for a
+      deployment that only ever configured this via .env.
+    """
+    __tablename__ = "system_settings"
+    id = Column(Integer, primary_key=True)
+    allowed_email_domains = Column(Text, nullable=True)
+    two_factor_mandatory = Column(Boolean, default=False, nullable=False)
+    smtp_host = Column(String(255), nullable=True)
+    smtp_port = Column(Integer, nullable=True)
+    smtp_user = Column(String(255), nullable=True)
+    smtp_password = Column(Text, nullable=True)
+    smtp_from = Column(String(255), nullable=True)
+    smtp_use_tls = Column(Boolean, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
+    updated_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
+
+
+class AIProviderConfig(Base):
+    """
+    A saved, reusable AI provider configuration - lets an admin configure Anthropic,
+    Ollama, Azure OpenAI, or any other OpenAI-compatible endpoint (a local server, a
+    different vendor entirely, whatever's actually available on a given college's
+    network) from the UI, with their own API key/endpoint, rather than only through
+    .env + a server restart. Several can be saved at once (e.g. both Ollama for testing
+    and Anthropic for real use) and switched between with one click.
+
+    THREE task categories, each independently configurable, so activating a paid
+    provider for marking doesn't silently switch everything else onto it too:
+    - is_active: marking, and anything without a more specific category below.
+    - is_active_for_spec_parsing: spec parsing specifically (defaults to is_active if unset).
+    - is_active_for_draft_generation: scheme-of-work and lesson-plan generation - these
+      are drafts a teacher reviews/edits before use, so cost matters more than for marking.
+      Confirmed as a real requirement: this one does NOT fall back to is_active if unset -
+      it defaults straight to Ollama (free/local), so activating a paid provider for
+      marking never silently starts charging for draft generation too. An admin can still
+      point this category at a paid provider explicitly if they want to.
+    """
+    __tablename__ = "ai_provider_configs"
+    id = Column(Integer, primary_key=True)
+    provider_type = Column(String(50), nullable=False)  # "anthropic" | "ollama" | "azure_openai" | "openai_compatible"
+    label = Column(String(255), nullable=False)  # a friendly name the admin picks, e.g. "College Azure OpenAI"
+    api_key = Column(Text, nullable=True)  # never re-rendered in the UI once saved - see the router's masking helper
+    base_url = Column(String(500), nullable=True)  # Ollama host / Azure endpoint / OpenAI-compatible base URL
+    model_name = Column(String(255), nullable=True)  # model string / Ollama model / Azure deployment name
+    api_version = Column(String(50), nullable=True)  # Azure OpenAI specific (e.g. "2024-10-21")
+    is_active = Column(Boolean, default=False, nullable=False)  # the provider used for marking (the highest-stakes task) and anything without a more specific category
+    is_active_for_spec_parsing = Column(Boolean, default=False, nullable=False)  # optional separate override, same idea as the old SPEC_PARSING_LLM_PROVIDER env var
+    is_active_for_draft_generation = Column(Boolean, default=False, nullable=False)  # optional override for scheme-of-work/lesson DRAFT generation - see llm_gateway.py's DRAFT_GENERATION_DEFAULT_PROVIDER for why this category defaults to Ollama even once a paid provider is active for marking
+    created_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, nullable=True)
+
+
+class LoginOTP(Base):
+    """
+    A short-lived one-time code emailed at login when 2FA applies (personal opt-in via
+    Settings, or forced on by SystemSettings.two_factor_mandatory). Only the HASH of the
+    code is stored, the same principle as a password - if the database were ever read
+    directly, no valid code should be recoverable from it. Expired/used rows are cleaned
+    up lazily (see auth logic) rather than needing a separate scheduled job.
+    """
+    __tablename__ = "login_otps"
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    code_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)  # locks the code out after too many wrong guesses - see otp.py
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 class DiscoveredSpecFormat(Base):

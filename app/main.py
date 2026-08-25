@@ -5,7 +5,8 @@ from fastapi.templating import Jinja2Templates
 
 from .database import engine, Base
 from .auth import NotAuthenticated, NotAuthorized, get_current_teacher
-from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks, feedback
+from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks, feedback, ai_providers
+from .schema_check import diff_schema, apply_schema_fix
 
 # Schema creation/updates are now handled by Alembic (run automatically on container
 # startup via docker-entrypoint.sh) instead of create_all() here - this is what lets
@@ -15,6 +16,35 @@ app = FastAPI(title="TIGARSEC CourseCraft")
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+
+@app.on_event("startup")
+def sync_schema_on_startup():
+    """
+    Standing fix, added after a real deployment lockout: an update added a new column that
+    the LOGIN flow itself needs (Teacher.two_factor_enabled - SQLAlchemy selects every
+    mapped column on any query for a Teacher, so a missing column breaks login outright,
+    not just the 2FA feature specifically). Fixing it needed Admin: Schema Check - which
+    needs being logged in as admin - which needed the very column that was missing. No
+    manual step can escape that loop on its own.
+
+    Runs the same purely-additive sync as Admin: Schema Check (create missing tables, add
+    missing columns - never drops or modifies anything existing) automatically, before the
+    app starts accepting requests. Admin: Schema Check remains for manually reviewing what
+    changed, but is no longer a REQUIRED step to unblock the app after an update.
+    """
+    try:
+        diff = diff_schema(engine, Base)
+        report = apply_schema_fix(engine, Base, diff)
+        if report:
+            print(f"[startup] Schema sync applied: {'; '.join(report)}", flush=True)
+        else:
+            print("[startup] Schema sync: nothing to do, already up to date.", flush=True)
+    except Exception as e:
+        # Never let a schema-sync problem stop the app from starting at all - worst case,
+        # Admin: Schema Check is still there as a manual fallback for anything this couldn't
+        # fix itself, and the server keeps running for everything unaffected by the gap.
+        print(f"[startup] Schema sync failed (non-fatal, app is still starting): {e}", flush=True)
 
 
 @app.exception_handler(NotAuthenticated)
@@ -44,3 +74,4 @@ app.include_router(iv.router)
 app.include_router(presentations.router)
 app.include_router(tasks.router)
 app.include_router(feedback.router)
+app.include_router(ai_providers.router)

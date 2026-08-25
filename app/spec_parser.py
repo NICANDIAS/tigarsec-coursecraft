@@ -21,7 +21,7 @@ parse for a breakdown of how much was caught by rules vs sent to AI.
 """
 import os
 import re
-from .llm_gateway import complete_json, SPEC_PARSING_LLM_PROVIDER
+from .llm_gateway import complete_json
 
 # Hard ceiling on total AI calls per document during parsing (across discovery + all
 # per-section fallback chunks combined). This is the actual fix for "parsing took hours" -
@@ -496,7 +496,7 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
                     budget.use_one()
                 result = complete_json(
                     system=SPEC_CHUNK_SYSTEM_PROMPT, prompt=f"This excerpt is from: {label}\n\nExcerpt {i} of {len(chunks)}:\n\n{chunk}",
-                    max_tokens=4000, provider_override=SPEC_PARSING_LLM_PROVIDER,
+                    max_tokens=4000, for_spec_parsing=True,
                 )
                 break
             except Exception as e:
@@ -558,7 +558,7 @@ def discover_pattern_via_ai(sample_text: str, progress_callback=None, budget: "C
             system=DISCOVER_PATTERN_SYSTEM_PROMPT,
             prompt=f"Document excerpt:\n\n{sample_text[:12000]}",
             max_tokens=1500,
-            provider_override=SPEC_PARSING_LLM_PROVIDER,
+            for_spec_parsing=True,
         )
     except Exception:
         return None

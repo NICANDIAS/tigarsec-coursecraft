@@ -5,6 +5,10 @@
 <h1>{{ deck.title }}</h1>
 <p class="muted">{{ deck.content_area_name }} — {{ deck.duration_minutes }} minutes</p>
 <p><span class="badge badge-{{ 'released' if deck.status == 'ready' else 'needs_review' if deck.status in ('generating','queued') else 'failed' }}" id="status-badge">{{ deck.status }}</span></p>
+{% if teacher.role == "admin" and deck.generated_by_provider %}
+  {% set provider_names = {"anthropic": "Anthropic", "ollama": "Ollama (free/local)", "azure_openai": "Azure OpenAI", "openai_compatible": "an OpenAI-compatible endpoint"} %}
+  <p class="muted">Generated using: <strong>{{ provider_names.get(deck.generated_by_provider, deck.generated_by_provider) }}</strong>.</p>
+{% endif %}
 
 {% if not is_owner %}
   <p class="muted">🔗 Shared with you by a colleague for cover - you can view/download this, but not share it further.</p>
@@ -40,7 +44,12 @@
 
 {% elif deck.status == "failed" %}
   <div class="error-box">Generation failed: {{ deck.error_detail or "No error detail was recorded." }}</div>
-  <p class="muted">You'll need to go back to the course and try generating again.</p>
+  {% if is_owner %}
+    <form method="post" action="/lesson-decks/{{ deck.id }}/regenerate" style="margin-top:12px;">
+      <button class="btn" type="submit">Regenerate</button>
+    </form>
+    <p class="muted" style="margin-top:8px;">Tries again with the same unit, learning outcomes, duration, and settings - no need to re-enter anything.</p>
+  {% endif %}
 
 {% elif deck.status == "ready" %}
   {% if deck.fits_in_requested_time == false %}

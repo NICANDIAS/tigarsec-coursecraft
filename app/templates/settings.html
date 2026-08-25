@@ -24,6 +24,29 @@
 </div>
 
 <div class="card">
+  <h2>Two-factor login</h2>
+  {% if request.query_params.get("error") == "smtp_not_configured" %}
+    <div class="error-box">Can't turn this on - this server doesn't have email sending
+    configured yet (SMTP_HOST missing from .env), so a login code could never actually
+    reach you. Ask your admin to configure it first.</div>
+  {% endif %}
+  {% if system_two_factor_mandatory %}
+    <p class="muted">Your admin has made this mandatory for every account - a code is emailed
+    to you each time you log in, regardless of this setting.</p>
+  {% else %}
+    <p class="muted">When on, logging in needs both your password and a one-time code emailed
+    to your account. Off by default - turn it on if you'd like the extra step.</p>
+    <form method="post" action="/settings/two-factor">
+      <label style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" name="two_factor_enabled" value="yes" {% if teacher.two_factor_enabled %}checked{% endif %} style="width:auto;margin:0;">
+        Email me a code every time I log in
+      </label>
+      <button class="btn" type="submit" style="margin-top:10px;">Save</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>Your feedback style</h2>
   <p class="muted">Paste 3-5 examples of feedback you've written before. The AI uses this to match your tone in generated comments.</p>
   <form method="post" action="/settings/style-profile">

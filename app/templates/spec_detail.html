@@ -10,6 +10,14 @@
   <div id="status-display">
     {% if spec.parse_status == "parsed" %}
       <p><span class="badge badge-released">Parsed</span> — <span id="unit-count">{{ spec.structured_json.units|length }}</span> unit(s) found.</p>
+      {% if teacher.role == "admin" %}
+        {% if spec.generated_by_provider %}
+          {% set provider_names = {"anthropic": "Anthropic", "ollama": "Ollama (free/local)", "azure_openai": "Azure OpenAI", "openai_compatible": "an OpenAI-compatible endpoint"} %}
+          <p class="muted">AI-assisted sections parsed using: <strong>{{ provider_names.get(spec.generated_by_provider, spec.generated_by_provider) }}</strong>.</p>
+        {% else %}
+          <p class="muted">Parsed entirely via rule-based matching - no AI was needed for this document.</p>
+        {% endif %}
+      {% endif %}
       {% if spec.parse_progress and ("skipped" in spec.parse_progress or "safety limit" in spec.parse_progress) %}
         <div class="error-box" style="border-color:var(--warning);color:var(--warning);">{{ spec.parse_progress }}</div>
       {% endif %}

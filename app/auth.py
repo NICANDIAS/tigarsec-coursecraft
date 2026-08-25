@@ -68,6 +68,34 @@ def create_access_token(teacher_id: int) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
+PENDING_2FA_EXPIRE_MINUTES = 10
+
+
+def create_pending_2fa_token(teacher_id: int) -> str:
+    """
+    Issued right after a correct password but BEFORE the OTP is verified - deliberately
+    uses a different claim ("pending_2fa" rather than "sub") than the real session token,
+    so get_current_teacher (which only ever reads "sub") can never be tricked into
+    accepting a pending token as a real logged-in session, even if it ended up in the
+    wrong cookie by mistake. Short-lived (10 minutes) since it exists only to survive the
+    one redirect to the code-entry page.
+    """
+    expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=PENDING_2FA_EXPIRE_MINUTES)
+    payload = {"pending_2fa": str(teacher_id), "exp": expire}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def read_pending_2fa_token(token: str | None) -> int | None:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        teacher_id = payload.get("pending_2fa")
+        return int(teacher_id) if teacher_id is not None else None
+    except jwt.PyJWTError:
+        return None
+
+
 def get_current_teacher(request: Request, db: Session = Depends(get_db)) -> Teacher:
     token = request.cookies.get("access_token")
     if not token:

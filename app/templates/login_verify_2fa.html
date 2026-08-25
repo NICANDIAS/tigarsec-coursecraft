@@ -1,0 +1,16 @@
+{% extends "base_auth.html" %}
+{% block title %}Verify code - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<div class="card" style="max-width:400px;margin:60px auto;">
+  <h1>Enter your login code</h1>
+  <p class="muted">We've emailed a 6-digit code to your account's email address. It expires in
+  10 minutes.</p>
+  {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+  <form method="post" action="/login/verify-2fa">
+    <label>Code</label>
+    <input type="text" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autofocus required>
+    <button class="btn" type="submit" style="margin-top:10px;">Verify</button>
+  </form>
+  <p class="muted" style="margin-top:14px;">Didn't get it, or it expired? <a href="/login">Go back and log in again</a> to get a new code.</p>
+</div>
+{% endblock %}

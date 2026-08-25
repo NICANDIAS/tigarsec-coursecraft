@@ -154,7 +154,7 @@ def generate_lesson_outline(
         f"Content area / spec criteria to build this lesson from:\n{content_area_text}"
     )
     max_tokens = _estimate_outline_max_tokens(duration_minutes, include_practicals)
-    return complete_json(system=LESSON_OUTLINE_SYSTEM_PROMPT, prompt=prompt, max_tokens=max_tokens)
+    return complete_json(system=LESSON_OUTLINE_SYSTEM_PROMPT, prompt=prompt, max_tokens=max_tokens, for_draft_generation=True)
 
 
 # ---------------------------------------------------------------------------

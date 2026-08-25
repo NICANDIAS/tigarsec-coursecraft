@@ -34,6 +34,11 @@
   names that might appear in the document.</p>
 {% endif %}
 
+{% if teacher.role == "admin" and submission.marking_run and submission.marking_run.generated_by_provider %}
+  {% set provider_names = {"anthropic": "Anthropic", "ollama": "Ollama (free/local)", "azure_openai": "Azure OpenAI", "openai_compatible": "an OpenAI-compatible endpoint"} %}
+  <p class="muted" style="margin-top:-8px;">Marked using: <strong>{{ provider_names.get(submission.marking_run.generated_by_provider, submission.marking_run.generated_by_provider) }}</strong>.</p>
+{% endif %}
+
 {% if submission.detected_scoring_mechanism %}
   <div class="section-card">
     <div class="section-header">

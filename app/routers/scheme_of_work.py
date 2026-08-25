@@ -681,17 +681,24 @@ def _run_sow_generation(sow_id: int):
                     # No hard week cap anymore, so a genuinely large request needs real
                     # headroom here - if this still isn't enough for very long schemes,
                     # that's the next thing to raise.
-                    result = complete_json(system=SOW_SYSTEM_PROMPT, prompt=prompt, max_tokens=16000)
+                    result = complete_json(system=SOW_SYSTEM_PROMPT, prompt=prompt, max_tokens=16000, for_draft_generation=True)
                     break
                 except Exception as e:
                     last_error = e
                     continue
             if result is None:
                 raise last_error
+            sow.generated_by_provider = get_effective_provider(for_draft_generation=True)
 
             weeks_data = result.get("weeks", [])
             if not weeks_data:
-                provider_used = get_effective_provider()
+                provider_used = get_effective_provider(for_draft_generation=True)
+                # Standing fix: this was previously called without for_draft_generation,
+                # meaning it could report the WRONG provider in the error - draft
+                # generation resolves independently of the everyday/marking provider (that
+                # is the whole point of the category split), so omitting the flag here
+                # checked a different, possibly different-valued category than the one
+                # that actually ran.
                 # Distinguish the two genuinely different failure modes we've now seen:
                 # the model either didn't use the "weeks" key at all (wrong schema/task
                 # entirely - it built an outline instead of a calendar), or it used the

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Admin: System Settings - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Admin: System Settings</h1>
+
+<div class="card">
+  <h2>Who can register</h2>
+  <p class="muted">Restricts self-registration to specific email domains - useful the moment
+  more than one institution might use this deployment. Each college configures its own list
+  independently; this has no effect on anyone else's install.</p>
+  <form method="post" action="/admin/system-settings">
+    <label>Allowed email domains (comma-separated, optional)</label>
+    <input type="text" name="allowed_email_domains" value="{{ settings.allowed_email_domains or '' }}"
+           placeholder="e.g. dudleycol.ac.uk, wlv.ac.uk">
+    <p class="muted" style="margin-top:-4px;">Leave blank to allow any email address to register
+    (the original, permissive default).
+    {% if parsed_domains %}
+      Currently restricted to: {% for d in parsed_domains %}<strong>@{{ d }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}.
+    {% else %}
+      Currently unrestricted - anyone can self-register.
+    {% endif %}
+    </p>
+
+    <h2 style="margin-top:24px;">Two-factor authentication</h2>
+    {% if request.query_params.get("error") == "smtp_not_configured" %}
+      <div class="error-box">Can't make this mandatory - email sending isn't configured yet
+      (neither below nor in .env). Making it mandatory now would lock out every account, not
+      just one. Configure SMTP in the card below first.</div>
+    {% endif %}
+    <p class="muted">Each person can turn this on for their own account from their own
+    Settings page. Turning it on here makes it mandatory for EVERYONE, overriding their
+    individual choice.</p>
+    <label style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" name="two_factor_mandatory" value="yes" {% if settings.two_factor_mandatory %}checked{% endif %} style="width:auto;margin:0;">
+      Require two-factor authentication for every account
+    </label>
+    <p class="muted" style="margin-top:6px;">Requires email sending to be configured (below,
+    or in .env) - without it, anyone who needs a code to log in will be unable to. Check this
+    works for at least one account with 2FA turned on personally before making it mandatory.</p>
+
+    <button class="btn" type="submit" style="margin-top:14px;">Save</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Email sending (SMTP)</h2>
+  <p class="muted">Powers two-factor login codes and any other emails this app sends.
+  Configuring it here (rather than only in the server's .env file) means it can be fixed
+  from inside the app if it ever breaks - including by an admin who used the emergency
+  bypass to get in after mandatory two-factor got stuck on broken email. Ask your IT/email
+  admin which mail relay to use - any standard SMTP server works.</p>
+  {% if request.query_params.get("error") == "smtp_not_configured" %}
+    <div class="error-box">Set this up before making two-factor mandatory above.</div>
+  {% endif %}
+  <form method="post" action="/admin/system-settings/smtp">
+    <div class="field-grid">
+      <div>
+        <label>SMTP host</label>
+        <input type="text" name="smtp_host" value="{{ settings.smtp_host or '' }}" placeholder="smtp.yourcollege.ac.uk">
+      </div>
+      <div>
+        <label>Port</label>
+        <input type="text" name="smtp_port" value="{{ settings.smtp_port or '587' }}">
+      </div>
+    </div>
+    <div class="field-grid">
+      <div>
+        <label>Username</label>
+        <input type="text" name="smtp_user" value="{{ settings.smtp_user or '' }}">
+      </div>
+      <div>
+        <label>Password {% if settings.smtp_password %}(already set - leave blank to keep it){% endif %}</label>
+        <input type="password" name="smtp_password" placeholder="{% if settings.smtp_password %}••••••••{% else %}•••{% endif %}">
+      </div>
+    </div>
+    <label>"From" address (optional - defaults to the username above)</label>
+    <input type="text" name="smtp_from" value="{{ settings.smtp_from or '' }}" placeholder="coursecraft@yourcollege.ac.uk">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+      <input type="checkbox" name="smtp_use_tls" value="yes" {% if settings.smtp_use_tls is none or settings.smtp_use_tls %}checked{% endif %} style="width:auto;margin:0;">
+      Use STARTTLS (leave on unless your mail relay specifically doesn't support it)
+    </label>
+    <p class="muted" style="margin-top:8px;">
+      {% if settings.smtp_host %}
+        Configured here (this takes priority over .env). Currently: <strong>{{ settings.smtp_host }}</strong>.
+      {% else %}
+        Not set here - currently falling back to whatever's in the server's .env file, if anything.
+      {% endif %}
+    </p>
+    <button class="btn" type="submit" style="margin-top:10px;">Save SMTP settings</button>
+  </form>
+</div>
+{% endblock %}

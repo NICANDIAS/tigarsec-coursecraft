@@ -22,10 +22,23 @@ def _teacher_course_ids(db: Session, teacher: Teacher) -> list[int]:
 def _gather_tasks(db: Session, teacher: Teacher) -> dict:
     course_ids = _teacher_course_ids(db, teacher)
 
-    specs_parsing = db.query(SpecVersion).filter(SpecVersion.parse_status == "parsing").all()
+    # Standing fix: these two queries had no teacher filter at all - every teacher's Tasks
+    # page showed EVERY teacher's spec-parsing activity, institution-wide. The spec
+    # library's own browsing page is deliberately shared (any teacher can pick from any
+    # parsed spec) - but a personal Tasks page is "things I started", not a global
+    # activity feed, and showing someone else's in-progress or failed parse there is
+    # exactly the kind of cross-user leak this page must never have. Scoped to who
+    # actually uploaded each spec, the same way every other task type below is already
+    # scoped to the current teacher's own courses.
+    specs_parsing = db.query(SpecVersion).filter(
+        SpecVersion.parse_status == "parsing", SpecVersion.uploaded_by_teacher_id == teacher.id
+    ).all()
     specs_recent = (
         db.query(SpecVersion)
-        .filter(SpecVersion.parse_status.in_(["parsed", "failed", "cancelled"]))
+        .filter(
+            SpecVersion.parse_status.in_(["parsed", "failed", "cancelled"]),
+            SpecVersion.uploaded_by_teacher_id == teacher.id,
+        )
         .order_by(SpecVersion.id.desc()).limit(TASKS_RECENT_LIMIT).all()
     )
 
