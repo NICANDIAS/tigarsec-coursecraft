@@ -13,6 +13,25 @@ level of detail a scheme of work records.</p>
   can be calculated. <a href="/courses/{{ course.id }}">Go back and attach one.</a></div>
 
 {% else %}
+  <div class="card" style="margin-bottom:16px;">
+    <form method="post" action="/courses/{{ course.id }}/start-date" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+      <div>
+        <label>Course start date</label>
+        <input type="date" name="start_date" value="{{ course.start_date or '' }}">
+      </div>
+      <button class="btn btn-secondary" type="submit">Save</button>
+    </form>
+    {% if not course.start_date %}
+      <p class="muted" style="margin-top:8px;">Not set - every planned week currently
+      counts as "taught" below, regardless of whether it's actually happened yet. Set this
+      once for accurate week-by-week tracking - a week will then only count as taught once
+      its own final day has passed, not just because the week has started.</p>
+    {% else %}
+      <p class="muted" style="margin-top:8px;">A week only counts as taught below once its
+      own final day has passed - not just because the week has started.</p>
+    {% endif %}
+  </div>
+
   <div class="card" style="display:flex;gap:30px;flex-wrap:wrap;">
     <div><div class="muted">Total criteria</div><h2>{{ summary.total_criteria }}</h2></div>
     <div><div class="muted">Assessed</div><h2>{{ summary.totals.assessed }}</h2></div>

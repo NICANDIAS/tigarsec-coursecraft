@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Sessions - Timetabling - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/timetabling">&larr; Timetabling</a></p>
+<h1>Sessions</h1>
+{% if edit_error %}
+  <div class="card" style="border-color:var(--danger);">
+    <p style="margin:0;color:var(--danger);">⚠ {{ edit_error }}</p>
+  </div>
+{% endif %}
+<p class="muted">A session is a recurring weekly slot (day + time), not a specific date -
+it repeats the same pattern across the whole term. Not yet checked here: one-off staff
+unavailability (needs each course's own date range to know which occurrences it actually
+affects) and room type/equipment matching (no unit-level "needs a computer lab" data
+exists yet) - both real, deliberately deferred pieces of work, not oversights.</p>
+
+{% if clashes %}
+  <div class="card" style="border-color:var(--danger);">
+    <h2 style="color:var(--danger);">⚠ {{ clashes|length }} clash(es) found</h2>
+    {% for c in clashes %}
+      <p style="margin:6px 0;">{{ c.message }}</p>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card" style="border-color:var(--success);">
+    <p style="color:var(--success);margin:0;">✓ No clashes detected across {{ sessions|length }} session(s).</p>
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>Add a session</h2>
+  <form method="post" action="/timetabling/sessions/create" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+    <div>
+      <label>Course</label>
+      <select name="course_id" required>
+        {% for c in courses %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Day</label>
+      <select name="day_of_week" required>
+        {% for d in weekdays %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Start</label>
+      <input type="time" name="start_time" required>
+    </div>
+    <div>
+      <label>End</label>
+      <input type="time" name="end_time" required>
+    </div>
+    <div>
+      <label>Staff (optional)</label>
+      <select name="teacher_id">
+        <option value="">-- unassigned --</option>
+        {% for t in staff %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Room (optional)</label>
+      <select name="room_id">
+        <option value="">-- unassigned --</option>
+        {% for r in rooms %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Unit (optional)</label>
+      <input type="text" name="unit_name" placeholder="e.g. Content area 2" style="min-width:180px;">
+    </div>
+    <div>
+      <label>Label (optional)</label>
+      <input type="text" name="label" style="min-width:150px;">
+    </div>
+    <button class="btn" type="submit">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h2 style="margin:0;">Timetable</h2>
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-secondary" id="tt-view-grid-btn" onclick="ttShowSessionsView('grid')">Grid</button>
+      <button type="button" class="btn btn-secondary" id="tt-view-list-btn" onclick="ttShowSessionsView('list')">List</button>
+    </div>
+  </div>
+  <div id="tt-view-grid">
+    {% include "_timetable_grid.html" %}
+  </div>
+  <div id="tt-view-list" style="display:none;">
+  {% if not sessions %}
+    <p class="muted">None added yet.</p>
+  {% endif %}
+  {% for s in sessions %}
+    <details style="{{ 'border:1px solid var(--danger);border-radius:8px;padding:8px;margin-bottom:8px;' if s.id in clashed_session_ids }}">
+      <summary>
+        {% if s.id in clashed_session_ids %}⚠ {% endif %}
+        <strong>{{ s.day_of_week }} {{ s.start_time }}-{{ s.end_time }}</strong> —
+        {{ s.course.name if s.course else "?" }}{% if s.label %} ({{ s.label }}){% endif %}
+        <span class="muted">
+          {% if s.teacher %} · {{ s.teacher.name }}{% else %} · unassigned staff{% endif %}
+          {% if s.room %} · {{ s.room.name }}{% else %} · unassigned room{% endif %}
+        </span>
+      </summary>
+      <form method="post" action="/timetabling/sessions/{{ s.id }}/edit" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;">
+        <div>
+          <label>Course</label>
+          <select name="course_id" required>
+            {% for c in courses %}<option value="{{ c.id }}" {% if c.id == s.course_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Day</label>
+          <select name="day_of_week" required>
+            {% for d in weekdays %}<option value="{{ d }}" {% if d == s.day_of_week %}selected{% endif %}>{{ d }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Start</label>
+          <input type="time" name="start_time" value="{{ s.start_time }}" required>
+        </div>
+        <div>
+          <label>End</label>
+          <input type="time" name="end_time" value="{{ s.end_time }}" required>
+        </div>
+        <div>
+          <label>Staff</label>
+          <select name="teacher_id">
+            <option value="">-- unassigned --</option>
+            {% for t in staff %}<option value="{{ t.id }}" {% if s.teacher_id == t.id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Room</label>
+          <select name="room_id">
+            <option value="">-- unassigned --</option>
+            {% for r in rooms %}<option value="{{ r.id }}" {% if s.room_id == r.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Unit</label>
+          <input type="text" name="unit_name" value="{{ s.unit_name or '' }}" style="min-width:180px;">
+        </div>
+        <div>
+          <label>Label</label>
+          <input type="text" name="label" value="{{ s.label or '' }}" style="min-width:150px;">
+        </div>
+        <button class="btn btn-secondary" type="submit">Save</button>
+      </form>
+      <form method="post" action="/timetabling/sessions/{{ s.id }}/delete" style="margin-top:8px;"
+            onsubmit="return confirm('Remove this session?');">
+        <button class="btn" style="background:var(--danger);" type="submit">Delete</button>
+      </form>
+    </details>
+  {% endfor %}
+  </div>
+</div>
+<script>
+function ttShowSessionsView(view) {
+  document.getElementById('tt-view-grid').style.display = view === 'grid' ? '' : 'none';
+  document.getElementById('tt-view-list').style.display = view === 'list' ? '' : 'none';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Admin: Scheme of Work Templates - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Admin: Scheme of Work Templates</h1>
+<p class="muted">Shared templates every lecturer can pick from when generating a scheme of
+work, so nobody needs their own copy of the same college template. A lecturer can still
+attach a one-off template for a single generation instead if they need something different
+for that particular course - this list doesn't replace that, it just means most people
+won't need to.</p>
+
+{% if error %}
+  <div class="error-box">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <h2>Add a template</h2>
+  <form method="post" action="/admin/sow-templates/upload" enctype="multipart/form-data">
+    <label>Name (shown to lecturers when choosing a template)</label>
+    <input type="text" name="label" required placeholder="e.g. T-Level SOW Template">
+    <label>Template file (.docx only)</label>
+    <input type="file" name="template_file" accept=".docx" required>
+    <button class="btn" type="submit" style="margin-top:10px;">Add template</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Current templates</h2>
+  {% if not sow_templates %}
+    <p class="muted">None added yet - lecturers will only see the option to upload their own
+    one-off template until at least one is added here.</p>
+  {% endif %}
+  {% for t in sow_templates %}
+    <div class="list-item">
+      <span>
+        <strong>{{ t.label }}</strong>
+        <span class="muted"> — {{ t.original_filename }}</span>
+      </span>
+      <form method="post" action="/admin/sow-templates/{{ t.id }}/delete"
+            onsubmit="return confirm('Remove ' + '{{ t.label }}' + '? Schemes already generated with it keep their own copy and are unaffected - this only stops it being offered for new generations.');">
+        <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Remove</button>
+      </form>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -9,20 +9,37 @@
     {% for course in courses %}
       <div class="list-item">
         <a href="/courses/{{ course.id }}">{{ course.name }}</a>
-        <span class="muted">{{ course.students|length }} student(s)</span>
+        <span>
+          <span class="muted">{{ course.students|length }} student(s)</span>
+          <form method="post" action="/courses/{{ course.id }}/leave" style="display:inline;"
+                onsubmit="return confirm('Stop managing this course? You will lose access until you rejoin it.');">
+            <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">Leave</button>
+          </form>
+        </span>
       </div>
     {% endfor %}
   {% else %}
-    <p class="muted">No courses yet — create one below to get started.</p>
+    <p class="muted">You're not managing any courses yet - join one below.</p>
   {% endif %}
 </div>
 
 <div class="card">
-  <h2>Create a course</h2>
-  <form method="post" action="/courses/create">
-    <label>Course name (e.g. "T-Level Digital Production, Design and Development - Year 2")</label>
-    <input type="text" name="name" required>
-    <button class="btn" type="submit">Create course</button>
-  </form>
+  <h2>Join a course</h2>
+  <p class="muted">Courses are set up by an admin or curriculum manager - pick the one(s)
+  you're actually teaching. You can be on more than one, even ones sharing the same spec
+  (e.g. different years of the same programme).</p>
+  {% if joinable_courses %}
+    <form method="post" action="/courses/join" style="display:flex;gap:10px;">
+      <select name="course_id" required style="flex:1;">
+        {% for course in joinable_courses %}
+          <option value="{{ course.id }}">{{ course.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn" type="submit">Join</button>
+    </form>
+  {% else %}
+    <p class="muted">No other courses to join right now. If a course you teach isn't
+    listed at all, ask an admin or curriculum manager to set it up.</p>
+  {% endif %}
 </div>
 {% endblock %}

@@ -17,7 +17,7 @@ PROVIDER_TYPES = [
     ("anthropic", "Anthropic (Claude)"),
     ("ollama", "Ollama (free, local)"),
     ("azure_openai", "Azure OpenAI Service"),
-    ("openai_compatible", "OpenAI-compatible endpoint"),
+    ("openai_compatible", "Other / any OpenAI-compatible provider"),
 ]
 
 

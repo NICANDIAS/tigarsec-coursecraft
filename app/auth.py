@@ -131,3 +131,53 @@ def require_spec_uploader(teacher: Teacher = Depends(get_current_teacher)) -> Te
     if teacher.role not in SPEC_UPLOADER_ROLES:
         raise NotAuthorized()
     return teacher
+
+
+# Course creation moved here from any teacher self-serving their own course record -
+# confirmed as a real, necessary change: two teachers covering different content areas of
+# the same real cohort were each creating their own separate course, splitting students
+# and progress tracking across disconnected copies of what should be one course. Same two
+# roles as SPEC_UPLOADER_ROLES today, kept as its own named constant rather than reusing
+# that one directly - these are conceptually distinct permissions (creating a course vs
+# uploading a spec) even though they happen to share the same role set right now.
+COURSE_MANAGER_ROLES = {"admin", "curriculum_manager"}
+
+
+def require_course_manager(teacher: Teacher = Depends(get_current_teacher)) -> Teacher:
+    if teacher.role not in COURSE_MANAGER_ROLES:
+        raise NotAuthorized()
+    return teacher
+
+
+# Known in-development features that can be granted to a specific person early, while
+# still showing "Coming Soon" to everyone else - a fixed, code-defined set (not
+# admin-creatable) since each key needs an actual route/page decision behind it, same
+# reasoning as RETENTION_CATEGORIES and PURGE_FUNCTIONS in retention.py. Add a new entry
+# here when starting real work on a "Soon" item, then gate that feature's real route with
+# has_early_access() - the nav link swap alone is not access control by itself, a direct
+# URL guess must be blocked at the route too.
+EARLY_ACCESS_FEATURES = {
+    "timetabling": "Timetabling",
+    "teams_integration": "Teams integration",
+}
+
+
+def has_early_access(teacher: Teacher, feature_key: str) -> bool:
+    """Whether this specific person has been granted early access to an in-development
+    feature. Deliberately per-person (checking the teacher's own granted list), not
+    per-role - the point is inviting a specific reviewer in, not opening it to everyone
+    who happens to share that role."""
+    return feature_key in (teacher.early_access_features or [])
+
+
+def require_timetabling_access(teacher: Teacher = Depends(get_current_teacher)) -> Teacher:
+    """
+    Admin always has access to manage an in-development feature they're actively
+    building, regardless of early-access grants (gating the builder out of their own
+    work-in-progress would be self-defeating) - plus anyone specifically granted early
+    access via EARLY_ACCESS_FEATURES/has_early_access above (e.g. a curriculum manager
+    reviewing progress).
+    """
+    if teacher.role == "admin" or has_early_access(teacher, "timetabling"):
+        return teacher
+    raise NotAuthorized()

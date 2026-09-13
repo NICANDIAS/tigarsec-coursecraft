@@ -110,6 +110,51 @@ def build_run(text_lines: list[str], rpr_template):
     return run
 
 
+def build_mixed_runs(lines, rpr_template) -> list:
+    """
+    Like build_run, but each entry in `lines` may be a plain string OR a (bold_prefix,
+    rest) tuple - e.g. ("Practical: ", "Students will..."). The bold prefix renders as
+    its own bold run, the rest continues in the normal (rpr_template) formatting - a
+    labelled sub-section reading distinctly from a plain bullet line, not another "- "
+    item indistinguishable from the ones around it.
+
+    Returns a LIST of run elements to append in order (a bold segment and a normal
+    segment can't share one <w:r>, unlike build_run's single-run case) - deliberately a
+    separate function rather than changing build_run itself, since build_run's existing
+    callers (rubric_fill.py, replace_paragraph_text) expect a single element back.
+    """
+    bold_rpr = etree.fromstring(etree.tostring(rpr_template)) if rpr_template is not None else etree.Element(qn("w:rPr"))
+    if bold_rpr.find(qn("w:b")) is None:
+        etree.SubElement(bold_rpr, qn("w:b"))
+
+    def _text_run(text, rpr, preserve_space=True):
+        r = etree.Element(qn("w:r"))
+        if rpr is not None:
+            r.append(etree.fromstring(etree.tostring(rpr)))
+        t = etree.SubElement(r, qn("w:t"))
+        if preserve_space:
+            t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        t.text = text
+        return r
+
+    runs = []
+    for i, line in enumerate(lines):
+        if i > 0:
+            br_run = etree.Element(qn("w:r"))
+            if rpr_template is not None:
+                br_run.append(etree.fromstring(etree.tostring(rpr_template)))
+            etree.SubElement(br_run, qn("w:br"))
+            runs.append(br_run)
+        if isinstance(line, tuple):
+            bold_prefix, rest = line
+            runs.append(_text_run(bold_prefix, bold_rpr))
+            if rest:
+                runs.append(_text_run(rest, rpr_template))
+        else:
+            runs.append(_text_run(line, rpr_template))
+    return runs
+
+
 def replace_paragraph_text(paragraph, text_lines: list[str]) -> None:
     """
     Replaces a paragraph's existing content with new text, reusing the FIRST existing

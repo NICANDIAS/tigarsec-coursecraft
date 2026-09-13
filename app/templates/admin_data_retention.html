@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Admin: Data Retention - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Admin: Data Retention</h1>
+<p class="muted">Disabled by default for every category - nothing is ever auto-deleted until
+you turn a category on below. Set the number of days to whatever your exam office/awarding
+body actually requires - this varies by college and by qualification, so it's deliberately
+not built in as a fixed number.</p>
+
+{% for category, info in categories.items() %}
+  {% set policy = policies[category] %}
+  <div class="card">
+    <h2>{{ info.label }}</h2>
+    <p class="muted">{{ info.description }}</p>
+    <form method="post" action="/admin/data-retention/{{ category }}">
+      <div class="field-grid">
+        <div>
+          <label>Retention period (days before eligible for deletion)</label>
+          <input type="text" name="retention_days" value="{{ policy.retention_days or '' }}" placeholder="e.g. 365">
+        </div>
+        <div>
+          <label>Grace period (days between marked and actually purged)</label>
+          <input type="text" name="grace_period_days" value="{{ policy.grace_period_days }}">
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+        <input type="checkbox" name="enabled" value="yes" {% if policy.enabled %}checked{% endif %} style="width:auto;margin:0;">
+        Enable this policy
+      </label>
+      <button class="btn btn-secondary" type="submit" style="margin-top:10px;">Save</button>
+    </form>
+  </div>
+{% endfor %}
+
+<div class="card">
+  <h2>Scheduled for deletion</h2>
+  <p class="muted">Marked items purge automatically once their grace period elapses. Daily
+  reminder <strong>emails</strong> go to every admin starting 7 days before each purge date -
+  a summary count only (e.g. "3 submission files scheduled"), never filenames or student
+  references, since email has weaker access control than the app itself. The actual detail
+  is only ever shown here, to a logged-in admin. Exempt anything below that shouldn't go
+  (e.g. an appeal in progress).</p>
+  {% set has_any_pending = pending.values() | map('length') | sum > 0 %}
+  {% if not has_any_pending %}
+    <p class="muted">Nothing currently scheduled.</p>
+  {% endif %}
+  {% for category, items in pending.items() %}
+    {% for row, purge_date in items %}
+      <div class="list-item">
+        <span>
+          {% if category == "submission_files" %}
+            Submission #{{ row.id }} ({{ row.original_filename }})
+          {% else %}
+            Lesson deck "{{ row.title }}"
+          {% endif %}
+          <span class="muted"> — purges {{ purge_date.strftime("%d %b %Y") }}</span>
+        </span>
+        <form method="post" action="/admin/data-retention/{{ category }}/{{ row.id }}/exempt">
+          <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Keep this (exempt)</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% endfor %}
+</div>
+
+{% set has_any_exempt = exempted.values() | map('length') | sum > 0 %}
+{% if has_any_exempt %}
+  <div class="card">
+    <h2>Exempted from retention</h2>
+    <p class="muted">Permanently excluded from being marked for deletion until removed here.</p>
+    {% for category, items in exempted.items() %}
+      {% for row in items %}
+        <div class="list-item">
+          <span>
+            {% if category == "submission_files" %}
+              Submission #{{ row.id }} ({{ row.original_filename }})
+            {% else %}
+              Lesson deck "{{ row.title }}"
+            {% endif %}
+          </span>
+          <form method="post" action="/admin/data-retention/{{ category }}/{{ row.id }}/un-exempt">
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Remove exemption</button>
+          </form>
+        </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>Run a check now</h2>
+  <p class="muted">Normally runs automatically once a day. Use this to test a policy you've
+  just configured without waiting.</p>
+  <form method="post" action="/admin/data-retention/run-now">
+    <button class="btn btn-secondary" type="submit">Run retention check now</button>
+  </form>
+</div>
+{% endblock %}

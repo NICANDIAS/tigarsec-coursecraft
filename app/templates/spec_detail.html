@@ -59,6 +59,56 @@
   <div class="error-box">{{ delete_error }}</div>
 {% endif %}
 
+{% if can_upload and spec.structured_json %}
+  <div class="card">
+    <h2>Exam Exemplars for this spec</h2>
+    <p class="muted">Real exam/Occupational Specialism task materials, so scheme-of-work
+    generation can pick up requirements the spec doesn't itemise as its own criterion (e.g.
+    a Gantt chart that's part of a real task but not listed as a spec criterion). One
+    exemplar can cover several units at once - a synoptic OS assessment often does.</p>
+
+    {% if request.query_params.get("exemplar_error") %}
+      <div class="error-box">{{ request.query_params.get("exemplar_error") }}</div>
+    {% endif %}
+
+    {% if not exemplars %}
+      <p class="muted">None added yet - scheme-of-work generation for this spec's units
+      will use the spec alone until at least one is added.</p>
+    {% endif %}
+    {% for e in exemplars %}
+      <div class="list-item">
+        <span>
+          <strong>{{ e.label }}</strong>
+          <span class="muted"> — {{ e.unit_names|join(", ") }} ({{ e.original_filename }})</span>
+        </span>
+        <form method="post" action="/exam-exemplars/{{ e.id }}/delete"
+              onsubmit="return confirm('Remove ' + '{{ e.label }}' + '? Schemes already generated with it keep the content already baked in - this only stops it being used for new/regenerated ones.');">
+          <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Remove</button>
+        </form>
+      </div>
+    {% endfor %}
+
+    <h3 style="margin-top:16px;">Add an exemplar</h3>
+    <form method="post" action="/spec-library/{{ spec.id }}/exam-exemplars/upload" enctype="multipart/form-data" style="margin-top:6px;">
+      <label>Name (shown in the list above)</label>
+      <input type="text" name="label" required placeholder="e.g. Sample ESP Task 1 brief 2025">
+      <label>Unit(s) this exemplar covers - tick all that apply</label>
+      <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
+        {% for unit in spec.structured_json.units %}
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;font-weight:normal;color:var(--text);margin:0 0 8px;">
+            <input type="checkbox" name="unit_names" value="{{ unit.name }}" style="width:auto;margin:0;">
+            {{ unit.name }}
+          </label>
+        {% endfor %}
+      </div>
+      <label>File(s) - select all that share the same name/units above (e.g. every task
+      brief and model answer for one synoptic assessment)</label>
+      <input type="file" name="exemplar_files" multiple required>
+      <button class="btn" type="submit" style="margin-top:10px;">Add exemplar(s)</button>
+    </form>
+  </div>
+{% endif %}
+
 {% if spec.structured_json %}
   <div class="card">
     <h2>Content areas</h2>

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Rooms - Timetabling - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/timetabling">&larr; Timetabling</a></p>
+<h1>Rooms</h1>
+{% if delete_error %}
+  <div class="card" style="border-color:var(--warning);">
+    <p style="margin:0;color:var(--warning);">⚠ {{ delete_error }}</p>
+  </div>
+{% endif %}
+<p class="muted">Room TYPE matters, not just capacity - a room being big enough isn't the
+same as being suitable (a cyber security practical needs a computer lab, not any room
+that happens to fit the group).</p>
+
+<div class="card">
+  <h2>Sites / buildings</h2>
+  <p class="muted">Add every real site, building, or floor your college actually has -
+  rooms and course requirements both pick from this list, so "Middle floor" always means
+  the same thing everywhere rather than being typed slightly differently each time.</p>
+  {% if not sites %}
+    <p class="muted">None added yet.</p>
+  {% endif %}
+  {% for s in sites %}
+    <div class="list-item">
+      <span>{{ s.name }}</span>
+      <form method="post" action="/timetabling/sites/{{ s.id }}/remove">
+        <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">Remove</button>
+      </form>
+    </div>
+  {% endfor %}
+  <form method="post" action="/timetabling/sites/add" style="display:flex;gap:10px;margin-top:8px;">
+    <input type="text" name="name" placeholder="e.g. Ground floor, Main campus" required style="flex:1;">
+    <button class="btn btn-secondary" type="submit">Add site</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Add a room</h2>
+  <form method="post" action="/timetabling/rooms/create">
+    <label>Name(s)</label>
+    <p class="muted" style="margin:2px 0 6px;font-size:0.85rem;">Add several at once by
+    separating them with commas or new lines - they'll all get the same capacity, type,
+    and building set below.</p>
+    <input type="text" name="name" required placeholder="e.g. DI212, DI214, DI216">
+    <label>Capacity</label>
+    <input type="number" name="capacity" required min="1">
+    <label>Room type</label>
+    <select name="room_type">
+      {% for key, label in room_types %}
+        <option value="{{ key }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label>Building/location (optional)</label>
+    <select name="building">
+      <option value="">-- none --</option>
+      {% for s in sites %}<option value="{{ s.name }}">{{ s.name }}</option>{% endfor %}
+    </select>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:normal;">
+      <input type="checkbox" name="supports_isolated_network" value="1" style="width:auto;margin:0;">
+      Supports the isolated/sandboxed network setup (e.g. for cyber range practicals)
+    </label>
+    <label>Accessibility features (optional)</label>
+    <input type="text" name="accessibility_features" placeholder="e.g. step-free access, hearing loop">
+    <button class="btn" type="submit" style="margin-top:10px;">Add room</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All rooms</h2>
+  {% if not rooms %}
+    <p class="muted">No rooms added yet.</p>
+  {% endif %}
+  {% for room in rooms %}
+    <div class="list-item" style="{{ 'opacity:0.5;' if not room.is_active }}">
+      <span>
+        <strong>{{ room.name }}</strong>
+        <span class="muted"> — capacity {{ room.capacity }}, {{ dict(room_types).get(room.room_type, room.room_type) }}{% if room.building %}, {{ room.building }}{% endif %}{% if room.supports_isolated_network %}, isolated network{% endif %}{% if not room.is_active %} (inactive){% endif %}</span>
+      </span>
+      <span style="display:flex;gap:8px;">
+        <details style="display:inline-block;">
+          <summary class="btn btn-secondary" style="padding:4px 12px;font-size:0.82rem;display:inline;cursor:pointer;">Edit</summary>
+          <form method="post" action="/timetabling/rooms/{{ room.id }}/edit" style="margin-top:10px;min-width:260px;">
+            <label>Name</label>
+            <input type="text" name="name" required value="{{ room.name }}">
+            <label>Capacity</label>
+            <input type="number" name="capacity" required min="1" value="{{ room.capacity }}">
+            <label>Room type</label>
+            <select name="room_type">
+              {% for key, label in room_types %}
+                <option value="{{ key }}" {% if key == room.room_type %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <label>Building/location (optional)</label>
+            <select name="building">
+              <option value="">-- none --</option>
+              {% for s in sites %}<option value="{{ s.name }}" {% if s.name == room.building %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+              {% if room.building and room.building not in sites|map(attribute="name")|list %}
+                <option value="{{ room.building }}" selected>{{ room.building }} (not in your sites list)</option>
+              {% endif %}
+            </select>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:normal;">
+              <input type="checkbox" name="supports_isolated_network" value="1" style="width:auto;margin:0;" {% if room.supports_isolated_network %}checked{% endif %}>
+              Supports the isolated/sandboxed network setup
+            </label>
+            <label>Accessibility features (optional)</label>
+            <input type="text" name="accessibility_features" value="{{ room.accessibility_features or '' }}">
+            <button class="btn" type="submit" style="margin-top:10px;padding:4px 12px;font-size:0.82rem;">Save</button>
+          </form>
+        </details>
+        <form method="post" action="/timetabling/rooms/{{ room.id }}/toggle-active" style="display:inline;">
+          <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">
+            {% if room.is_active %}Deactivate{% else %}Reactivate{% endif %}
+          </button>
+        </form>
+        <form method="post" action="/timetabling/rooms/{{ room.id }}/delete" style="display:inline;"
+              onsubmit="return confirm('Delete this room? Only possible if no sessions use it - this can\'t be undone.');">
+          <button class="btn" style="background:var(--danger);padding:4px 12px;font-size:0.82rem;" type="submit">Delete</button>
+        </form>
+      </span>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

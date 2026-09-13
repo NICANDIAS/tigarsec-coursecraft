@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Course Requirements - Timetabling - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/timetabling">&larr; Timetabling</a></p>
+<h1>Course Requirements</h1>
+{% if save_warning %}
+  <div class="card" style="border-color:var(--warning);">
+    <p style="margin:0;color:var(--warning);">⚠ {{ save_warning }}</p>
+  </div>
+{% endif %}
+<p class="muted">What each unit within a course actually needs to be scheduled - hours per
+week, how to spread them, and what kind of room. This is the input an automated generator
+would use; right now it's what makes the difference between "guessing where to put
+things" and knowing what's actually required.</p>
+
+<div class="card" style="{{ 'border-color:var(--danger);' if capacity_known and total_hours_needed > total_teaching_capacity }}">
+  <h2>Capacity check</h2>
+  {% if not capacity_known %}
+    <p class="muted">No staff have both contracted hours and a teaching-hours band set yet -
+    add those in Staff Availability to see a real capacity comparison here.</p>
+  {% else %}
+    <p style="margin:0;{{ 'color:var(--danger);' if total_hours_needed > total_teaching_capacity }}">
+      {{ total_hours_needed }} hours/week needed across all requirements vs
+      {{ total_teaching_capacity }} hours/week of available teaching capacity.
+      {% if total_hours_needed > total_teaching_capacity %}
+        ⚠ This is more than the available staff can cover - some requirements won't be
+        placeable until more capacity is added, or requirements are reduced.
+      {% else %}
+        ✓ Within available capacity.
+      {% endif %}
+    </p>
+    <details style="margin-top:10px;">
+      <summary class="muted">Which course(s) need those hours?</summary>
+      {% for course in courses %}
+        {% if hours_needed_by_course.get(course.id) %}
+          <div class="list-item"><span>{{ course.name }}</span><span>{{ hours_needed_by_course[course.id] }} hrs/week</span></div>
+        {% endif %}
+      {% endfor %}
+    </details>
+    <details style="margin-top:6px;">
+      <summary class="muted">Where does the {{ total_teaching_capacity }} hours of capacity come from?</summary>
+      {% for c in capacity_by_staff %}
+        <div class="list-item">
+          <span>{{ c.name }} — {{ c.contracted_hours }} contracted hours</span>
+          <span>{{ c.teaching_hours }} teaching hrs{% if c.is_estimate %} <span style="color:var(--warning);">(estimated - outside your defined bands, see Staff Availability)</span>{% endif %}</span>
+        </div>
+      {% endfor %}
+    </details>
+  {% endif %}
+</div>
+
+{% for course in courses %}
+  {% set course_rows = [{"unit_name": None, "row_label": "Whole course / no specific unit"}] %}
+  {% for u in unit_options_by_course.get(course.id, []) %}
+    {% set _ = course_rows.append({"unit_name": u, "row_label": u}) %}
+  {% endfor %}
+  <div class="card" id="course-{{ course.id }}">
+    <details>
+      <summary><strong>{{ course.name }}</strong> <span class="muted">— {{ course_rows|length - 1 }} unit(s)</span></summary>
+      <p class="muted" style="margin-top:8px;">Fill in hours for whichever units actually need a
+      requirement - leave a row blank to skip it, or clear it later to remove one that's no
+      longer needed. Each unit can have its own preferred day(s) - e.g. one content area
+      blocked entirely into a single day because that's the only day its teacher is in,
+      while others spread across the week.</p>
+      <form method="post" action="/timetabling/requirements/save" style="margin-top:10px;">
+        <input type="hidden" name="course_id" value="{{ course.id }}">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="text-align:left;border-bottom:1px solid var(--border);">
+              <th style="padding:6px 8px;position:sticky;top:0;background:var(--bg-elevated);z-index:1;">Unit</th>
+              <th style="padding:6px 8px;position:sticky;top:0;background:var(--bg-elevated);z-index:1;">Hours/week</th>
+              <th style="padding:6px 8px;position:sticky;top:0;background:var(--bg-elevated);z-index:1;">Spread (days)</th>
+              <th style="padding:6px 8px;position:sticky;top:0;background:var(--bg-elevated);z-index:1;">Preferred days</th>
+              <th style="padding:6px 8px;position:sticky;top:0;background:var(--bg-elevated);z-index:1;">Room type</th>
+              <th style="padding:6px 8px;position:sticky;top:0;background:var(--bg-elevated);z-index:1;">Building</th>
+              <th style="padding:6px 8px;position:sticky;top:0;background:var(--bg-elevated);z-index:1;">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in course_rows %}
+              {% set row_index = loop.index0 %}
+              {% set existing = requirement_by_key.get((course.id, row.unit_name)) %}
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:6px 8px;font-weight:{{ 'normal' if row.unit_name else 'bold' }};">{{ row.row_label }}</td>
+                <td style="padding:6px 8px;">
+                  <input type="number" step="0.5" min="0" name="hours_per_week_{{ row_index }}"
+                         value="{{ existing.hours_per_week if existing else '' }}" style="width:80px;">
+                </td>
+                <td style="padding:6px 8px;">
+                  <input type="number" min="1" max="5" name="preferred_days_count_{{ row_index }}"
+                         value="{{ existing.preferred_days_count if existing and existing.preferred_days_count else '' }}"
+                         placeholder="e.g. 1" style="width:70px;">
+                </td>
+                <td style="padding:6px 8px;">
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                    {% for d in weekdays %}
+                      <label style="display:flex;align-items:center;gap:3px;font-weight:normal;font-size:0.82rem;">
+                        <input type="checkbox" name="preferred_days_{{ row_index }}" value="{{ d }}" style="width:auto;margin:0;"
+                          {% if existing and existing.preferred_days and d in existing.preferred_days %}checked{% endif %}>{{ d[:3] }}
+                      </label>
+                    {% endfor %}
+                  </div>
+                </td>
+                <td style="padding:6px 8px;">
+                  <select name="preferred_room_type_{{ row_index }}" style="width:140px;">
+                    <option value="">-- any --</option>
+                    {% for key, label in room_types %}
+                      <option value="{{ key }}" {% if existing and existing.preferred_room_type == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td style="padding:6px 8px;">
+                  <select name="preferred_building_{{ row_index }}" style="width:110px;">
+                    <option value="">-- any --</option>
+                    {% for s in sites %}
+                      <option value="{{ s.name }}" {% if existing and existing.preferred_building == s.name %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                    {% if existing and existing.preferred_building and existing.preferred_building not in sites|map(attribute="name")|list %}
+                      <option value="{{ existing.preferred_building }}" selected>{{ existing.preferred_building }} (not in your sites list)</option>
+                    {% endif %}
+                  </select>
+                </td>
+                <td style="padding:6px 8px;">
+                  <input type="text" name="notes_{{ row_index }}"
+                         value="{{ existing.notes if existing else '' }}" style="width:120px;">
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <button class="btn" type="submit" style="margin-top:10px;">Save all</button>
+      </form>
+    </details>
+  </div>
+{% endfor %}
+{% endblock %}

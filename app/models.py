@@ -51,20 +51,66 @@ class Teacher(Base):
     is_primary_admin = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     two_factor_enabled = Column(Boolean, default=False, nullable=False)  # personal opt-in from Settings; can also be forced on for everyone via SystemSettings.two_factor_mandatory
+    early_access_features = Column(JSON, nullable=True)  # list of feature keys this specific person has been granted access to while still "Coming Soon" for everyone else - deliberately per-person, not per-role, since the point is inviting a specific reviewer in (e.g. a curriculum manager checking progress on something being built), not opening it to a whole role
+    contracted_hours_per_week = Column(Float, nullable=True)  # timetabling hard ceiling - a session can never push someone past this
+    non_teaching_days = Column(JSON, nullable=True)  # list of weekday names (e.g. ["Wednesday"]) - a recurring, fixed pattern, distinct from one-off StaffUnavailability entries below
+    is_dummy = Column(Boolean, nullable=False, default=False)  # bulk-generated test data for exercising the timetable generator at scale - flagged explicitly rather than identified by name, so a "clear all dummy data" action can never risk touching a real teacher
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     courses = relationship("Course", back_populates="teacher")
 
 
+class CourseTeacher(Base):
+    """
+    Which teachers manage which course - many-to-many, replacing single-owner
+    Course.teacher_id as the real access-control mechanism. Confirmed as a real,
+    necessary change: two teachers covering different content areas of the same real
+    cohort (e.g. one teaching Year 1's ESP component, another Year 2's OS component) were
+    each creating their OWN separate "Course" record for what is conceptually the same
+    programme, since a course could only ever have one owner - splitting students,
+    schemes of work, and progress tracking across disconnected copies of the same cohort.
+
+    No role/tier distinction (e.g. owner vs contributor) - confirmed as a deliberate
+    choice: every teacher assigned to a course has equal access to it, and a teacher not
+    assigned has none at all, full stop, including admins with no membership row of their
+    own - this matches the strict ownership-based access already used everywhere else in
+    the app (submissions, students, schemes of work all currently check exact ownership
+    with no admin-override case), so this preserves that same model rather than quietly
+    introducing a broader one.
+
+    Course.teacher_id itself is left in place, unchanged, rather than migrated away from -
+    altering an existing NOT NULL column's meaning or nullability is a real schema-
+    migration risk this doesn't need to take on. It now means "who the record was
+    originally created by" for audit/history purposes only; every real access check goes
+    through this table instead. See the startup backfill in main.py, which gives every
+    pre-existing course's original teacher_id a matching row here automatically, so
+    nobody loses access to their own course the moment this ships.
+    """
+    __tablename__ = "course_teachers"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    course = relationship("Course")
+    teacher = relationship("Teacher")
+
+
 class Course(Base):
     __tablename__ = "courses"
     id = Column(Integer, primary_key=True)
+    # No longer the access-control source (see CourseTeacher below) - kept as a plain audit
+    # trail of who originally registered this course record. Column is unchanged from
+    # before, so this is a pure meaning change, not a schema change - no risk to existing
+    # data. Set to the admin/curriculum_manager who creates the course going forward.
     teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
     name = Column(String(255), nullable=False)
     # A course attaches to ONE spec from the shared library at a time (can be changed).
     # This replaces v1's per-course spec upload - specs are now uploaded once, centrally,
     # and any teacher selects from the library rather than re-uploading the same document.
     spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=True)
+    is_dummy = Column(Boolean, nullable=False, default=False)  # same reasoning as Teacher.is_dummy - lets a dummy course, and everything scoped under it (its requirements, generated sessions), be cleared completely and safely
+    start_date = Column(Date, nullable=True)  # when teaching actually begins - distinct from created_at (when the record was set up in the system). Needed to map a Scheme of Work's week numbers to real calendar dates, so "taught" can reflect what's actually happened, not just what's been planned
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     teacher = relationship("Teacher", back_populates="courses")
@@ -106,6 +152,8 @@ class SchemeOfWork(Base):
     format_sample = Column(Text, nullable=True)  # extracted text, used only as an AI style-reference (unchanged behaviour)
     format_sample_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded template file, kept on disk so it can be filled in place - separate from the extracted text above, and independently replaceable/removable
     format_sample_original_filename = Column(String(500), nullable=True)  # for display, and to check the extension is .docx before offering template-fill
+    sow_template_id = Column(Integer, ForeignKey("sow_templates.id"), nullable=True)  # which SHARED library template (if any) was used - the actual file gets copied into format_sample_file_path above at generation time, so an admin later replacing/removing the shared template never changes what an already-generated scheme downloads; this FK is purely for showing "generated using: [template name]" and is not itself read when filling
+    generated_without_exemplar = Column(Boolean, default=False, nullable=False)  # True if none of the selected units had a matching ExamExemplar at generation time - shown as a clear notice so the lecturer knows exam-specific requirements beyond the spec (e.g. a deliverable the spec doesn't itemize) may not be captured. Recomputed fresh on every regeneration, so adding an exemplar later and regenerating clears this automatically.
     tutor_names = Column(String(500), nullable=True)  # optional - if given, infilled into a template's "Tutor(s)" field; never guessed if left blank
     os_assessment_structure = Column(Text, nullable=True)  # teacher-supplied description of the REAL occupational specialism exam/project's task structure (e.g. "Task 1: Analysing a problem...") for THIS content area - assignment briefs are framed around this exact structure rather than a generic invented one. Per-scheme-of-work, since each content area maps to a different Performance Outcome.
     hours_per_week = Column(Float, nullable=True)  # teacher-supplied contact hours per week with this class - context for how much material can genuinely fit per week, not a hard constraint
@@ -120,6 +168,9 @@ class SchemeOfWork(Base):
     design_assignments = Column(Boolean, default=False, nullable=False)
     extra_notes = Column(Text, nullable=True)
     weeks_json = Column(JSON, nullable=True)
+    context_rationale = Column(Text, nullable=True)  # AI-generated answer to the template's own "Context for the unit/project and rationale for the order of topics" question - generated once, alongside the week plan, not re-computed on every download
+    intended_impact = Column(Text, nullable=True)  # AI-generated answer to the template's own "Intended impact of the unit/project" question
+    unit_outcomes_summary = Column(Text, nullable=True)  # AI-synthesized 2-4 sentence summary of what a student can do by the end of the unit - deliberately a genuine summary, not a per-criterion list (a flat, ungrouped spec can have a dozen+ individual criteria, which read as a bulky dump if shown verbatim). Falls back to the deterministic per-criterion listing at download time if this is None (older schemes generated before this existed, or the AI call failed - see the download route)
     status = Column(String(50), default="generating", nullable=False)  # generating, ready, failed
     error_detail = Column(Text, nullable=True)
     generated_by_provider = Column(String(50), nullable=True)  # which AI provider actually generated this - drafts default to Ollama unless overridden, so this is the only way to confirm which one actually ran for a given scheme
@@ -179,6 +230,9 @@ class Submission(Base):
     rubric_file_path = Column(String(1000), nullable=True)  # the ACTUAL uploaded rubric file - filled in place, never rebuilt as a new document
     similarity_warning = Column(Text, nullable=True)  # set automatically at upload time if this matches another student's submission for the same assignment above the threshold
     assignment_brief_text = Column(Text, nullable=True)  # the actual task/brief set to students, if given - lets the AI distinguish "this response doesn't cover part of a criterion because the TASK never asked for it" from "the student missed it". Without this, a criterion is marked against its full spec wording regardless of what the assignment actually asked for.
+    marked_for_deletion_at = Column(DateTime, nullable=True)  # retention policy grace-period countdown start - files are purged (not the row/marks) once this plus the category's grace_period_days has passed; null means not currently scheduled
+    purged_at = Column(DateTime, nullable=True)  # when the files were actually removed, if they have been - the row and marks are kept as the permanent record even after this
+    retention_exempt = Column(Boolean, default=False, nullable=False)  # an admin can mark a specific submission exempt (e.g. an appeal in progress) - stops it being auto-marked for deletion again regardless of age, until explicitly cleared
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     student = relationship("Student", back_populates="submissions")
@@ -321,6 +375,298 @@ class IVCriterionCheck(Base):
     iv_request = relationship("IVRequest", back_populates="checks")
 
 
+class SOWTemplate(Base):
+    """
+    A shared, institution-wide scheme-of-work template - same reasoning as SpecVersion:
+    only admin/curriculum_manager can upload (SPEC_UPLOADER_ROLES, reused here rather than
+    a new role list), everyone else picks from this list rather than each uploading their
+    own copy of the same college template. A lecturer can still attach a one-off template
+    for a single generation instead if they genuinely need to (SchemeOfWork.format_sample_*
+    already supports that, unchanged) - this is an additional, easier option, not a
+    replacement for it.
+    """
+    __tablename__ = "sow_templates"
+    id = Column(Integer, primary_key=True)
+    uploaded_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    label = Column(String(255), nullable=False)
+    file_path = Column(String(1000), nullable=False)
+    original_filename = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ExamExemplar(Base):
+    """
+    A shared, institution-wide reference document showing what a REAL exam/Occupational
+    Specialism task actually requires - built to close a real, confirmed gap: the spec
+    alone doesn't always cover everything needed to pass (a real example given: the spec
+    covers the core papers but doesn't itemize a Gantt chart requirement that's actually
+    part of an ESP task). Uploaded by admin/curriculum_manager (SPEC_UPLOADER_ROLES,
+    same gate as the spec library and SOW template library) - deliberately per UNIT, not
+    all-at-once, since a college may only be delivering some of a spec's content areas and
+    shouldn't need every exemplar uploaded before any of this is useful.
+
+    Scoped to an exact spec + unit name(s) (matched against that spec's own structured_json
+    unit names, not free text) so SOW generation can reliably find the right one(s) for
+    whatever units were selected - a mismatch here would silently mean the exemplar never
+    gets used, which matters enough to make it a real dropdown choice at upload time
+    rather than something to get slightly wrong by typing it.
+
+    unit_names is a LIST, not a single value - confirmed as a real requirement: a single
+    real exemplar (e.g. a synoptic Occupational Specialism assessment) can genuinely span
+    several content areas at once, not just one, so this needed to support several units
+    per upload from the start rather than forcing the same file to be uploaded repeatedly.
+    """
+    __tablename__ = "exam_exemplars"
+    id = Column(Integer, primary_key=True)
+    uploaded_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=False)
+    unit_names = Column(JSON, nullable=False)
+    label = Column(String(255), nullable=False)
+    file_path = Column(String(1000), nullable=False)
+    original_filename = Column(String(500), nullable=False)
+    extracted_text = Column(Text, nullable=True)  # extracted once at upload time, reused for every generation rather than re-extracting the same file repeatedly
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+ROOM_TYPES = [
+    ("general_classroom", "General classroom"),
+    ("computer_lab", "Computer lab"),
+    ("practical_workshop", "Practical workshop"),
+    ("lecture_hall", "Lecture hall"),
+    ("other", "Other"),
+]
+
+
+class TeachingHoursBand(Base):
+    """
+    College-defined policy points mapping contracted hours to maximum teaching (contact)
+    hours - deliberately a real, editable table rather than a fixed formula, since a real
+    example given directly contradicted a simple fixed percentage: 35 contracted hours ->
+    24 teaching hours (~68.6%) but 20 contracted hours -> 13 teaching hours (65%) - the
+    ratio itself genuinely shifts with contract size, most likely because some admin/prep
+    overhead doesn't shrink proportionally just because someone's contract does.
+
+    Used to calculate a specific teacher's max teaching hours from their own contracted
+    hours (see calculate_teaching_hours in the timetabling router) - exact matches use the
+    band directly, values between two defined bands are interpolated, and values outside
+    the whole defined range are extrapolated from the nearest band's own ratio and
+    flagged as an estimate, since no explicit college policy exists for that range yet.
+    """
+    __tablename__ = "teaching_hours_bands"
+    id = Column(Integer, primary_key=True)
+    contracted_hours = Column(Float, nullable=False)
+    max_teaching_hours = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class Site(Base):
+    """
+    An admin-managed list of real sites/buildings/floors at the college - added directly
+    from the UI, not hardcoded, since this genuinely varies per college and needs to be
+    addable without a code change every time.
+
+    Room.building and CourseUnitRequirement.preferred_building both stay as plain string
+    columns rather than a foreign key here - no schema change needed, and no risk to
+    existing data already saved as free text. What changes is the FORM: both now pick from
+    this list rather than typing freely, so new values are consistent (a room tagged
+    "Middle floor" here and a requirement preferring "Middle floor" there will actually
+    match, rather than drifting apart from small wording differences over time).
+    """
+    __tablename__ = "sites"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class Room(Base):
+    """
+    Timetabling foundation, Phase 1 (see the timetabling requirements analysis) - a shared,
+    institution-wide list of physical teaching spaces. Room TYPE is tracked separately from
+    capacity deliberately: a room being big enough is not the same as a room being SUITABLE
+    - a cyber security practical needs a computer_lab, not just any room that happens to fit
+    the group.
+
+    supports_isolated_network flags a room as capable of running the sandboxed/isolated
+    network setup the college cyber range project needs - a real, specific requirement
+    identified during the requirements analysis, not every computer_lab necessarily has this,
+    so it's tracked as its own flag rather than assumed from room_type alone.
+    """
+    __tablename__ = "rooms"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    capacity = Column(Integer, nullable=False)
+    room_type = Column(String(50), default="general_classroom", nullable=False)
+    building = Column(String(255), nullable=True)
+    supports_isolated_network = Column(Boolean, default=False, nullable=False)
+    accessibility_features = Column(Text, nullable=True)  # free text - step-free access, hearing loop, etc.
+    is_active = Column(Boolean, default=True, nullable=False)  # soft-disable a room (e.g. out of use for refurbishment) without losing its history
+    is_dummy = Column(Boolean, nullable=False, default=False)  # same reasoning as Teacher.is_dummy - explicit flag rather than name-matching, so bulk test data can be cleared with zero risk to a real room
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class StaffUnavailability(Base):
+    """
+    One-off, DATED unavailability - deliberately separate from Teacher.non_teaching_days
+    above, which is a recurring weekly pattern. This is for specific dates (a training day,
+    an appointment, planned leave), not a standing pattern.
+
+    V1 simplification, deliberate and worth knowing: entered directly by whoever has access
+    to this area (admin/curriculum_manager, via early access - see auth.py) on a staff
+    member's behalf, rather than a full self-service staff request + approval workflow.
+    The requirements analysis (see timetabling_requirements_analysis.md, section 8.2) notes
+    real institutions run this as request-then-approve - that's a real, deliberately
+    deferred refinement, not an oversight, since regular staff don't have UI access to this
+    area at all yet at this stage of the project.
+    """
+    __tablename__ = "staff_unavailability"
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    portion = Column(String(10), default="full_day", nullable=False)  # "full_day", "am", or "pm" - a morning-only absence still leaves the afternoon schedulable, a real distinction for timetabling even though it's a single date
+    reason = Column(String(500), nullable=True)
+    entered_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    teacher = relationship("Teacher", foreign_keys=[teacher_id])
+
+
+class TeacherUnitQualification(Base):
+    """
+    Which specific units a teacher is qualified/eligible to teach - the hard-constraint
+    ELIGIBILITY gate from the requirements analysis (section 3, item 6): a session can only
+    go to someone actually qualified for it. This is deliberately separate from the fuller
+    multi-factor skill-RANKING score described in section 4 of the analysis - that ranking
+    (qualification level, IV outcomes, CPD, etc.) is a later refinement; this table is just
+    the basic yes/no eligibility floor it will eventually sit on top of.
+
+    Scoped to an exact spec + unit name, same reasoning and same matching approach as
+    ExamExemplar above - matched against that spec's own real unit names, not free text.
+    """
+    __tablename__ = "teacher_unit_qualifications"
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=False)
+    status = Column(String(20), nullable=False, default="confirmed")  # "confirmed" (admin-set, or an admin-approved request) vs "pending" (teacher self-requested via the self-service page, not yet trusted for real generator placement decisions) vs "pending_removal" (teacher-requested removal of a confirmed qualification, awaiting admin review - still trusted for scheduling until then)
+    unit_name = Column(String(500), nullable=False)
+    years_experience = Column(Float, nullable=True)  # admin/self-entered - not derived from account age, since most staff taught for years before any digital system existed
+    admin_rating = Column(Integer, nullable=True)  # 1-5, deliberately simple and discretionary - the escape hatch for whatever a formula can't capture. Real HR-sensitive data: only ever shown to admin/curriculum-manager access, never to other teachers
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    teacher = relationship("Teacher", foreign_keys=[teacher_id])
+
+
+class TeacherCPDRecord(Base):
+    """
+    A single continuing-professional-development entry for a teacher, optionally scoped to
+    a specific unit/subject area. Kept as a log (a teacher accumulates many over time),
+    unlike years_experience/admin_rating above which are single values. Recency matters a
+    great deal for scoring - CPD from years ago counts for much less than CPD from this
+    year, especially in fast-moving vocational subjects - see skill_ranking.py for the
+    decay calculation. Deliberately not tied to a specific awarding body's own CPD
+    categories, since colleges work with many different ones.
+    """
+    __tablename__ = "teacher_cpd_records"
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=True)  # nullable - some CPD is general (e.g. assessment methods) rather than tied to one spec
+    unit_name = Column(String(500), nullable=True)  # nullable for the same reason
+    title = Column(String(300), nullable=False)
+    date = Column(Date, nullable=False)
+    note = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    teacher = relationship("Teacher", foreign_keys=[teacher_id])
+
+
+class TeacherIVOutcome(Base):
+    """
+    A single Internal Verification / quality-assurance sampling outcome for a teacher on a
+    unit. Deliberately normalised to a small, awarding-body-agnostic set of outcome levels
+    rather than each awarding body's own specific wording, since colleges work with many
+    different awarding bodies (Pearson, City & Guilds, NCFE, AQA, OCR, WJEC, and others)
+    whose own IV terminology differs even though the underlying meaning converges: were
+    standards met, or not. Recency matters here too - an old, since-resolved concern
+    shouldn't permanently follow someone, see skill_ranking.py for the decay calculation.
+    """
+    __tablename__ = "teacher_iv_outcomes"
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=False)
+    unit_name = Column(String(500), nullable=False)
+    date = Column(Date, nullable=False)
+    outcome_level = Column(String(30), nullable=False)  # "no_concerns", "minor_action", or "significant_concern" - see note above on why this is normalised rather than awarding-body-specific
+    note = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    teacher = relationship("Teacher", foreign_keys=[teacher_id])
+
+
+class SkillRankingWeights(Base):
+    """
+    One editable row per college describing how heavily each ranking factor counts, and
+    how quickly CPD/IV evidence decays with age - a real, college-owned policy table
+    rather than a fixed formula, exactly the same principle already used for
+    TeachingHoursBand. A college with no interest in a given factor sets its weight to 0
+    rather than the system silently assuming a default it never agreed to.
+
+    Singleton pattern (one row, id=1) exactly like TimetablingSettings - a college has one
+    set of ranking priorities, not several.
+    """
+    __tablename__ = "skill_ranking_weights"
+    id = Column(Integer, primary_key=True)
+    weight_experience = Column(Float, nullable=False, default=1.0)
+    weight_admin_rating = Column(Float, nullable=False, default=1.0)
+    weight_cpd = Column(Float, nullable=False, default=1.0)
+    weight_iv = Column(Float, nullable=False, default=1.0)
+    cpd_half_life_years = Column(Float, nullable=False, default=3.0)  # a CPD entry this many years old counts for half as much as a brand new one
+    iv_half_life_years = Column(Float, nullable=False, default=2.0)  # IV outcomes decay a bit faster than CPD by default - a resolved concern should stop mattering sooner than good CPD stops being relevant
+    updated_at = Column(DateTime, nullable=True)
+    updated_by = Column(String(200), nullable=True)
+
+
+DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+
+
+class TimetableSession(Base):
+    """
+    Timetabling, Phase 2 (see the requirements analysis and Phase 1's Room/staff-
+    availability foundation) - the actual schedule: a recurring weekly slot (day + time),
+    not a specific calendar date, since a real timetable repeats the same pattern across a
+    whole term rather than being entered occurrence by occurrence.
+
+    Named TimetableSession, not just Session, deliberately - SQLAlchemy's own Session type
+    is already imported by name in every router file in this app (the db dependency's
+    type hint), and reusing that name here would shadow it.
+
+    teacher_id and room_id are nullable deliberately - a session can exist "unassigned"
+    while a timetable is still being built (clash detection can still run against whatever
+    IS assigned so far), not just once every field is filled in.
+
+    unit_name is scoped to the course's own spec, same matching approach as
+    TeacherUnitQualification/ExamExemplar above - matched against real unit names from
+    that spec, not free text. Nullable since not every session necessarily maps to one
+    specific spec unit (a tutorial slot, a study session, etc).
+    """
+    __tablename__ = "timetable_sessions"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    day_of_week = Column(String(10), nullable=False)
+    start_time = Column(String(5), nullable=False)  # "HH:MM", 24-hour, zero-padded - chosen deliberately so plain string comparison (</>) already matches chronological order, verified directly rather than assumed
+    end_time = Column(String(5), nullable=False)
+    unit_name = Column(String(500), nullable=True)
+    label = Column(String(255), nullable=True)  # optional human label shown in listings, independent of whatever unit_name resolves to
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    course = relationship("Course")
+    teacher = relationship("Teacher", foreign_keys=[teacher_id])
+    room = relationship("Room")
+
+
+
 class LessonImage(Base):
     """
     A shared, tag-searchable image library any teacher can contribute to. Used as the
@@ -348,6 +694,7 @@ class LessonDeck(Base):
     include_practicals = Column(Boolean, default=True, nullable=False)
     unit_index = Column(Integer, nullable=True)  # which spec unit this deck was built from - lets a follow-up lesson reuse the same selection
     selected_lo_indices = Column(JSON, nullable=True)  # which LOs within that unit were selected
+    selected_criteria_by_lo = Column(JSON, nullable=True)  # {lo_index: [criterion_index, ...]} - selecting individual criteria within one flat/ungrouped LO rather than the whole thing (see presentations.py's _unit_content_text). Stored separately from selected_lo_indices above so "regenerate" can rebuild the exact same scoped content rather than falling back to the whole LO
     source_sow_id = Column(Integer, ForeignKey("schemes_of_work.id"), nullable=True)  # if generated from a specific scheme-of-work week, lets that week link straight back to this deck
     source_week = Column(Integer, nullable=True)
     fits_in_requested_time = Column(Boolean, nullable=True)  # the AI's own assessment - null until generation completes
@@ -357,6 +704,9 @@ class LessonDeck(Base):
     status = Column(String(50), default="queued", nullable=False)  # queued, generating, ready, failed
     error_detail = Column(Text, nullable=True)
     generated_by_provider = Column(String(50), nullable=True)  # which AI provider actually generated this deck - drafts default to Ollama unless overridden
+    marked_for_deletion_at = Column(DateTime, nullable=True)  # retention policy grace-period countdown start - see Submission's equivalent field for the full explanation
+    purged_at = Column(DateTime, nullable=True)
+    retention_exempt = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     course = relationship("Course")
@@ -436,6 +786,72 @@ class SystemSettings(Base):
     updated_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
 
 
+class CourseUnitRequirement(Base):
+    """
+    The missing input the automated generator needs: what a specific unit within a course
+    actually requires to be scheduled - hours per week, how many days to spread across (1
+    means blocked into a single day, matching the real "whole day for one thing" pattern
+    seen in an actual T-Level example timetable), which specific days are preferred if
+    any, and what kind of room it needs.
+
+    Scoped to a course + unit_name, not just a course - a real T-Level example showed
+    different units within the same course needing genuinely different treatment (one
+    blocked into a single day, another spread across two), so a single "this course needs
+    N hours" figure wouldn't be enough for the generator to actually place things
+    correctly. unit_name matched against the course's own spec, same approach as
+    TeacherUnitQualification/ExamExemplar/TimetableSession above - real unit names, not
+    free text. Nullable to also support a whole-course requirement (e.g. a tutorial slot
+    that isn't tied to any specific spec unit).
+    """
+    __tablename__ = "course_unit_requirements"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    unit_name = Column(String(500), nullable=True)
+    hours_per_week = Column(Float, nullable=False)
+    preferred_days_count = Column(Integer, nullable=True)  # how many DAYS to spread hours_per_week across - 1 = block into a single day
+    preferred_days = Column(JSON, nullable=True)  # specific weekday names, if particular days matter (not just how many)
+    preferred_room_type = Column(String(50), nullable=True)  # matches ROOM_TYPES
+    preferred_building = Column(String(255), nullable=True)  # free text, matched against Room.building - this is where a "keep DSS on the middle floor" preference plugs in
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    course = relationship("Course")
+
+
+class TimetablingSettings(Base):
+    """
+    A single-row settings table (always id=1), same pattern as SystemSettings above - kept
+    as its own table rather than added there, since that one already covers auth/email/SMTP
+    and this is a genuinely separate subject.
+
+    Deliberately a real, editable setting rather than a hardcoded assumption - confirmed as
+    a real requirement: working hours and whether there's even a fixed lunch block both
+    vary by college, and this needs to work for more than just the one college it started
+    with.
+
+    lunch_start/lunch_end are both nullable together - a college may have no fixed,
+    college-wide lunch block at all, which is a real, valid choice, not a gap to fill in.
+
+    min_break_minutes/break_after_hours: a real, described practice, not a legal-minimum
+    placeholder (min_break_minutes was defined earlier but never actually wired into
+    anything, so repurposing it here is safe) - any session of break_after_hours or more
+    gets a mid-session break of min_break_minutes, which extends the session's clock-time
+    span so it still delivers the full requested teaching hours (the same reasoning
+    already applied to a lunch-spanning session: a 3-hour lesson with a 15-minute break in
+    the middle needs 3 hours 15 minutes on the clock to still be 3 real teaching hours).
+    """
+    __tablename__ = "timetabling_settings"
+    id = Column(Integer, primary_key=True)
+    working_day_start = Column(String(5), nullable=False, default="09:00")
+    working_day_end = Column(String(5), nullable=False, default="17:00")
+    lunch_start = Column(String(5), nullable=True)
+    lunch_end = Column(String(5), nullable=True)
+    min_break_minutes = Column(Integer, nullable=False, default=15)
+    break_after_hours = Column(Float, nullable=False, default=3.0)
+    updated_at = Column(DateTime, nullable=True)
+    updated_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
+
+
 class AIProviderConfig(Base):
     """
     A saved, reusable AI provider configuration - lets an admin configure Anthropic,
@@ -488,6 +904,32 @@ class LoginOTP(Base):
     used = Column(Boolean, default=False, nullable=False)
     attempts = Column(Integer, default=0, nullable=False)  # locks the code out after too many wrong guesses - see otp.py
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class RetentionPolicy(Base):
+    """
+    One row per known data category (a fixed set defined in code, since each category
+    needs real purge logic written for it - not an arbitrary admin-created list). The
+    NUMBERS are what an admin configures here, matching the exam board / awarding body
+    retention period they've actually been told to use - which varies by college and by
+    qualification, so it was deliberately never hardcoded.
+
+    Deliberately safe by default: enabled=False until an admin turns each category on -
+    nothing is ever auto-deleted just because this table exists.
+
+    Two-stage soft delete: once something exceeds retention_days, it's marked (not yet
+    deleted) - grace_period_days later, it's actually purged, unless an admin exempted it
+    first. This is a real, meaningful gap between "eligible" and "gone" specifically so a
+    genuine mistake or an in-progress appeal can be caught before anything is irreversible.
+    """
+    __tablename__ = "retention_policies"
+    id = Column(Integer, primary_key=True)
+    category = Column(String(50), unique=True, nullable=False)  # "submission_files" | "lesson_decks" - see retention.py's RETENTION_CATEGORIES for what each one covers
+    retention_days = Column(Integer, nullable=True)  # age (from submission/generation) before something becomes eligible to be marked for deletion. Null/disabled means no policy active for this category yet.
+    grace_period_days = Column(Integer, default=7, nullable=False)  # days between being MARKED for deletion and actually PURGED - the window an admin can still exempt something in
+    enabled = Column(Boolean, default=False, nullable=False)
+    updated_at = Column(DateTime, nullable=True)
+    updated_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
 
 
 class DiscoveredSpecFormat(Base):

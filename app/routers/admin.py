@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 import datetime
 
 from ..database import get_db, engine, Base
-from ..models import Teacher, AuditLogEntry, Submission, Student, Course
-from ..auth import require_admin, hash_password, ROLES
+from ..models import Teacher, AuditLogEntry, Submission, Student, Course, CourseTeacher, SpecVersion
+from ..auth import require_admin, require_course_manager, hash_password, ROLES, EARLY_ACCESS_FEATURES
 from ..schema_check import diff_schema, apply_schema_fix
 from ..system_settings import get_system_settings, parse_allowed_domains
 from ..email_sender import is_configured as email_is_configured
@@ -51,6 +51,74 @@ def audit_logs(
     )
 
 
+@router.get("/admin/courses", response_class=HTMLResponse)
+def admin_list_courses(
+    request: Request,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_course_manager),
+):
+    """
+    Course creation and an all-courses view for admin/curriculum_manager, using the same
+    require_course_manager dependency already established in auth.py for exactly this
+    purpose.
+
+    This intentionally bypasses CourseTeacher membership - get_course_for_teacher() is
+    deliberately strict with no admin override (see course_access.py), so an admin
+    wouldn't otherwise be able to see or manage a course they haven't personally joined.
+    This page is that separate, explicit administrative view.
+    """
+    courses = db.query(Course).order_by(Course.name).all()
+    specs = db.query(SpecVersion).filter(SpecVersion.parse_status == "parsed").order_by(SpecVersion.label).all()
+    assignments = db.query(CourseTeacher).all()
+    teachers_by_course = {}
+    for a in assignments:
+        teachers_by_course.setdefault(a.course_id, []).append(a.teacher)
+    return templates.TemplateResponse(
+        "admin_courses.html",
+        {"request": request, "teacher": teacher, "courses": courses, "specs": specs,
+         "teachers_by_course": teachers_by_course},
+    )
+
+
+@router.post("/admin/courses/create")
+def admin_create_course(
+    name: str = Form(...),
+    spec_version_id: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_course_manager),
+):
+    name = name.strip()
+    if not name:
+        return RedirectResponse(url="/admin/courses", status_code=303)
+    course = Course(
+        name=name, teacher_id=teacher.id,
+        spec_version_id=int(spec_version_id) if spec_version_id.isdigit() else None,
+    )
+    db.add(course)
+    db.commit()
+    return RedirectResponse(url="/admin/courses", status_code=303)
+
+
+@router.post("/admin/courses/{course_id}/edit")
+def admin_edit_course(
+    course_id: int,
+    name: str = Form(...),
+    spec_version_id: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_course_manager),
+):
+    """Rename a course or change its spec - a real, needed gap: a course created with an
+    ambiguous name (e.g. no year specified) previously had no way to be corrected without
+    deleting and recreating it, which would have orphaned every teacher already on it."""
+    course = db.get(Course, course_id)
+    name = name.strip()
+    if course and name:
+        course.name = name
+        course.spec_version_id = int(spec_version_id) if spec_version_id.isdigit() else None
+        db.commit()
+    return RedirectResponse(url="/admin/courses", status_code=303)
+
+
 @router.get("/admin/users", response_class=HTMLResponse)
 def list_users(
     request: Request,
@@ -59,7 +127,9 @@ def list_users(
 ):
     users = db.query(Teacher).order_by(Teacher.id).all()
     return templates.TemplateResponse(
-        "admin_users.html", {"request": request, "teacher": admin, "users": users, "roles": ROLES}
+        "admin_users.html",
+        {"request": request, "teacher": admin, "users": users, "roles": ROLES,
+         "early_access_features": EARLY_ACCESS_FEATURES},
     )
 
 
@@ -129,6 +199,41 @@ def toggle_active(
         detail=f"{user.email} was {'deactivated' if not user.is_active else 'reactivated'}.",
     ))
     db.commit()
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.post("/admin/users/{user_id}/early-access")
+def admin_toggle_early_access(
+    user_id: int,
+    feature_key: str = Form(...),
+    db: Session = Depends(get_db),
+    admin: Teacher = Depends(require_admin),
+):
+    """
+    Grants or revokes ONE specific person's early access to an in-development feature
+    that's still showing "Coming Soon" for everyone else - e.g. letting a curriculum
+    manager review progress on something being built without opening it up more widely.
+    Toggles: granting if not currently present, revoking if it is. Reassigns the whole
+    list rather than mutating it in place, since SQLAlchemy does not reliably detect an
+    in-place mutation of a JSON column's Python list as a change to persist.
+    """
+    if feature_key not in EARLY_ACCESS_FEATURES:
+        return RedirectResponse(url="/admin/users", status_code=303)
+    user = db.query(Teacher).filter(Teacher.id == user_id).first()
+    if user:
+        current = list(user.early_access_features or [])
+        if feature_key in current:
+            current.remove(feature_key)
+            action, verb = "early_access_revoked", "revoked from"
+        else:
+            current.append(feature_key)
+            action, verb = "early_access_granted", "granted to"
+        user.early_access_features = current
+        db.add(AuditLogEntry(
+            actor=admin.email, action=action,
+            detail=f"Early access to '{EARLY_ACCESS_FEATURES[feature_key]}' {verb} {user.email} by {admin.email}.",
+        ))
+        db.commit()
     return RedirectResponse(url="/admin/users", status_code=303)
 
 

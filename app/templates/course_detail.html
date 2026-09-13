@@ -80,13 +80,21 @@
     {% for deck in recent_decks %}
       <div class="list-item">
         <a href="/lesson-decks/{{ deck.id }}">{{ deck.title }}</a>
-        {% if deck.status == "ready" %}
-          <span class="badge badge-released">Ready</span>
-        {% elif deck.status in ("generating", "queued") %}
-          <span class="badge badge-needs_review">Generating…</span>
-        {% elif deck.status == "failed" %}
-          <span class="badge badge-failed">Failed</span>
-        {% endif %}
+        <span>
+          {% if deck.status == "ready" %}
+            <span class="badge badge-released">Ready</span>
+          {% elif deck.status in ("generating", "queued") %}
+            <span class="badge badge-needs_review">Generating…</span>
+          {% elif deck.status == "failed" %}
+            <span class="badge badge-failed">Failed</span>
+          {% endif %}
+          {% if deck.teacher_id == teacher.id %}
+            <form method="post" action="/lesson-decks/{{ deck.id }}/delete" style="display:inline;"
+                  onsubmit="return confirm('Delete this PowerPoint? This can\'t be undone.');">
+              <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">Delete</button>
+            </form>
+          {% endif %}
+        </span>
       </div>
     {% endfor %}
   {% else %}

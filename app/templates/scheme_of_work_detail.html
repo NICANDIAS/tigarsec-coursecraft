@@ -3,13 +3,21 @@
 {% block content %}
 <p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
 <h1>{{ sow.title }}</h1>
-<p><a href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/edit">Edit parameters &amp; regenerate</a></p>
+<a class="btn btn-secondary" style="margin:8px 0 12px;" href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/edit">Edit parameters &amp; regenerate</a>
 {% if sow.content_area %}<p class="muted">Content area: {{ sow.content_area }}</p>{% endif %}
 {% if sow.tutor_names %}<p class="muted">Tutor(s): {{ sow.tutor_names }}</p>{% endif %}
 {% if sow.start_date and sow.end_date %}<p class="muted">{{ sow.start_date }} to {{ sow.end_date }}</p>{% endif %}
 {% if teacher.role == "admin" and sow.generated_by_provider %}
   {% set provider_names = {"anthropic": "Anthropic", "ollama": "Ollama (free/local)", "azure_openai": "Azure OpenAI", "openai_compatible": "an OpenAI-compatible endpoint"} %}
   <p class="muted">Generated using: <strong>{{ provider_names.get(sow.generated_by_provider, sow.generated_by_provider) }}</strong>.</p>
+{% endif %}
+{% if sow.generated_without_exemplar %}
+  <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
+    ⚠ No exam exemplar was available for this unit when this was generated - it's built from
+    the spec alone. If the real exam/OS task requires anything the spec doesn't itemise as
+    its own criterion (e.g. a specific deliverable or document type), it may not be covered
+    here. Ask an admin to add one in Exam Exemplars, then regenerate to pick it up.
+  </div>
 {% endif %}
 {% if sow.planned_assessments %}
   <p class="muted">Planned assessment weeks: {% for a in sow.planned_assessments %}Week {{ a.week }} ({{ a.label }}){% if not loop.last %}, {% endif %}{% endfor %}</p>
@@ -87,6 +95,17 @@
         {% if sow.format_sample_file_path %}Replace or remove template{% else %}Upload a template to fill{% endif %}
       </summary>
       <div style="margin-top:10px;">
+        {% if sow_templates %}
+          <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/template/use-shared" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+            <select name="sow_template_id" style="flex:1;min-width:200px;">
+              <option value="">Choose a shared template...</option>
+              {% for t in sow_templates %}
+                <option value="{{ t.id }}" {% if sow.sow_template_id == t.id %}selected{% endif %}>{{ t.label }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-secondary" type="submit">Use this template</button>
+          </form>
+        {% endif %}
         <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/template" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <input type="file" name="template_file" accept=".docx" required style="flex:1;min-width:200px;">
           <button class="btn btn-secondary" type="submit">{% if sow.format_sample_file_path %}Replace{% else %}Upload{% endif %}</button>

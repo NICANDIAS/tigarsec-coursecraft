@@ -257,6 +257,29 @@ def _complete_json_ollama(system: str, prompt: str, host: str | None, model: str
             f"If TIGARSEC Assess is running in Docker, the host usually needs to be "
             f"http://host.docker.internal:11434 rather than localhost - see README."
         ) from e
+    except requests.exceptions.HTTPError as e:
+        # Standing fix: a non-2xx response here means the connection to Ollama itself
+        # succeeded but Ollama rejected the request - confirmed as a real case: a 404 on
+        # /api/chat, which Ollama returns specifically when the requested MODEL hasn't
+        # been pulled on that instance yet, not when Ollama itself is unreachable (that's
+        # the ConnectionError case above, already handled). Previously uncaught here, so
+        # it surfaced as a raw, unexplained traceback instead of something actionable.
+        try:
+            ollama_detail = e.response.json().get("error", "") if e.response is not None else ""
+        except Exception:
+            ollama_detail = (e.response.text[:300] if e.response is not None and e.response.text else "")
+        if e.response is not None and e.response.status_code == 404:
+            raise RuntimeError(
+                f"Ollama at {host} could not find the model '{model}' - this almost always "
+                f"means it hasn't been pulled on that Ollama instance yet, not that Ollama is "
+                f"unreachable. Pull it with: docker compose exec ollama ollama pull {model}"
+                f"{f' (Ollama said: {ollama_detail})' if ollama_detail else ''}"
+            ) from e
+        status = e.response.status_code if e.response is not None else "unknown"
+        raise RuntimeError(
+            f"Ollama at {host} returned an error (status {status})"
+            f"{f': {ollama_detail}' if ollama_detail else '.'}"
+        ) from e
 
     data = resp.json()
     text = data.get("message", {}).get("content", "")

@@ -2,15 +2,18 @@ import os
 import re
 import json
 import uuid
+import shutil
 import traceback
 import datetime
+from .. import blooms_taxonomy
 from fastapi import APIRouter, Request, Depends, Form, UploadFile, File, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from ..database import get_db, SessionLocal
-from ..models import Teacher, Course, SchemeOfWork, LessonDeck
+from ..models import Teacher, Course, CourseTeacher, SchemeOfWork, LessonDeck, SOWTemplate, ExamExemplar, SpecVersion
+from ..course_access import get_course_for_teacher
 from ..sow_docx_export import render_sow_docx
 from ..sow_docx_fill import fill_sow_template_docx, count_available_weeks_in_range, _parse_append_labels
 from ..auth import get_current_teacher
@@ -21,6 +24,32 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 UPLOAD_DIR = "storage/uploads"
+
+
+def _get_owned_sow(db: Session, course_id: int, sow_id: int, teacher: Teacher):
+    """
+    The ONLY correct way to look up a SchemeOfWork in this router. Standing fix for a real,
+    serious vulnerability: nearly every route here previously looked up a SchemeOfWork by
+    id + course_id alone, with NO check that the requesting teacher actually owned that
+    course - meaning any authenticated teacher could view, edit, retry, delete, or replace
+    the template on ANY other teacher's scheme of work just by changing the IDs in the URL.
+    Confirmed across view/edit/retry/edit-week/delete/replace-template/remove-template/
+    use-shared-template - not a one-off slip in a single route, a systemic gap.
+
+    Joins through Course and CourseTeacher and checks course-management membership in the
+    SAME query, so it can never be forgotten the way it was before - there is no second
+    step to skip. Returns None if the scheme doesn't exist, doesn't belong to this course,
+    OR this teacher doesn't manage that course - callers should treat all three
+    identically (a clear "not found", never a partial render with someone else's data in
+    it).
+    """
+    return (
+        db.query(SchemeOfWork)
+        .join(Course, SchemeOfWork.course_id == Course.id)
+        .join(CourseTeacher, CourseTeacher.course_id == Course.id)
+        .filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id, CourseTeacher.teacher_id == teacher.id)
+        .first()
+    )
 
 # Not a hard pedagogical limit - some courses genuinely need longer schemes. This is just
 # a sanity ceiling against an obviously mistyped number (e.g. "9999"). The actual judgment
@@ -147,6 +176,130 @@ of this plan - don't assume a single lesson's worth of time if more hours are st
 cram a multi-topic week into a single short session if fewer hours are stated."""
 
 
+LEARNING_OUTCOME_STATEMENT_SYSTEM_PROMPT = """You are writing ONE learning outcome sentence per week \
+for an already-built UK further-education scheme of work. This is a narrow, focused task - do not \
+build a scheme of work, do not invent weeks, do not change anything about the weeks given to you.
+
+For each week given below (with its title and the exact spec criterion code(s) and description it \
+covers), write ONE proper learning outcome sentence using a verb from the Bloom's Taxonomy list below \
+- choose the verb that matches the ACTUAL demand of the given criterion text (an "evaluate" criterion \
+needs an evaluate-level verb, not "describe" - do not water down a high-demand criterion into a \
+low-demand statement, and do not inflate a low-demand one either).
+
+""" + blooms_taxonomy.as_prompt_text() + """
+
+Return ONLY raw JSON (no markdown fences, no commentary) matching exactly this shape:
+{
+  "statements": [
+    {"week": 1, "statement": "string - one learning outcome sentence for this week, e.g. 'Explain the purpose and application of compliance principles in computer forensics'"}
+  ]
+}
+
+Return exactly one entry per week given to you, using the same week numbers - do not skip any, do not \
+add extra ones, do not merge weeks together."""
+
+
+CONTEXT_IMPACT_SYSTEM_PROMPT = """You are writing a short summary for an already-built UK \
+further-education scheme of work, given its finished week-by-week plan and the real spec \
+criteria it covers, both below. This is a narrow, focused task - do not build a scheme of \
+work, do not change anything about the weeks given to you.
+
+Return ONLY raw JSON (no markdown fences, no commentary) matching exactly this shape:
+{
+  "context_rationale": "string - 2-4 sentences: why this content is sequenced in this order across the \
+scheme (what builds on what, why harder/dependent topics come later) - a real answer to 'Context for \
+the unit/project and rationale for the order of topics', not a generic summary of the unit.",
+  "intended_impact": "string - 2-3 sentences: what students should be able to DO or BE by the end of \
+this scheme that they couldn't before - a real answer to 'Intended impact of the unit/project', \
+focused on outcomes for the student, not a restatement of the content covered.",
+  "unit_outcomes_summary": "string - 2-4 sentences summarising what a student will be able to DO by \
+the end of the whole unit, written as a genuine SUMMARY in your own words - not a list, not one line \
+per criterion, not criterion codes or numbering. Read the actual criteria given below and synthesize \
+the overall capability they add up to, the way a course handbook would describe a unit in a few \
+sentences to someone who has never seen the detailed criteria. This goes in a small header field, so \
+brevity matters as much as accuracy - if you find yourself listing more than 3-4 distinct capabilities, \
+you are being too granular; group related ones together into a broader statement instead."
+}"""
+
+
+def _generate_learning_outcome_statements(weeks_data: list, units_to_use: list) -> dict:
+    """
+    Second, narrower AI call - given the already-generated weeks (title + LO codes), asks for ONE
+    learning outcome sentence per week. Deliberately kept separate from the main week-generation
+    call: confirmed as a real reliability problem when this was all one giant combined call - a
+    small local model returned something completely different from what was asked (echoing a raw
+    spec criterion back, not a scheme of work at all) rather than a genuine JSON-shape mistake,
+    consistent with the instruction set being too much to follow reliably at once. A short,
+    single-purpose call is far more achievable for a smaller model than one call asking for many
+    different kinds of content in the same response.
+
+    Since this only ENRICHES an already-successful generation, a failure here is caught and logged
+    rather than failing the whole scheme - the scheme is still fully usable without these
+    statements, exactly as it was before this feature existed. Returns {week_number: statement},
+    empty dict on any failure.
+    """
+    code_to_description = {}
+    for unit in units_to_use:
+        for lo in unit.get("learning_outcomes", []):
+            for crit in lo.get("criteria", []):
+                code = crit.get("code")
+                if code:
+                    code_to_description[code] = crit.get("description", "")
+
+    weeks_summary = []
+    for week in weeks_data:
+        codes = week.get("learning_outcomes") or []
+        criteria_text = "; ".join(f"{c}: {code_to_description.get(c, '')}" for c in codes) or "(no specific criterion code given for this week - use the title as the basis for a sensible statement)"
+        weeks_summary.append({"week": week.get("week"), "title": week.get("title", ""), "criteria": criteria_text})
+
+    prompt = "Weeks to write a learning outcome statement for:\n" + json.dumps(weeks_summary, indent=2)
+    try:
+        result = complete_json(system=LEARNING_OUTCOME_STATEMENT_SYSTEM_PROMPT, prompt=prompt, max_tokens=4000, for_draft_generation=True)
+        statements = result.get("statements", [])
+        return {s["week"]: s["statement"] for s in statements if s.get("week") is not None and s.get("statement")}
+    except Exception as e:
+        print(f"[sow] Learning outcome statement generation failed (non-fatal, scheme still usable without them): {e}", flush=True)
+        return {}
+
+
+def _generate_context_and_impact(weeks_data: list, units_to_use: list) -> tuple:
+    """
+    Third, narrow AI call - given the finished week list and the real spec criteria, writes the
+    scheme's "Context for the unit/project...", "Intended impact...", and a genuine unit-outcomes
+    SUMMARY (not a list of every criterion - see the prompt's own note on brevity; this was a
+    real, confirmed problem: a flat spec structure with many individual criteria and no natural
+    higher-level grouping was producing a long, bulky per-criterion dump when shown verbatim,
+    which is not what a reader of a short header field needs). Same reliability reasoning as the
+    learning-outcome-statement call above: kept separate and small, and a failure here is caught
+    and logged rather than failing the whole scheme. Returns (context_rationale, intended_impact,
+    unit_outcomes_summary), each None on failure.
+    """
+    weeks_summary = [{"week": w.get("week"), "title": w.get("title", "")} for w in weeks_data]
+    criteria_lines = []
+    for unit in units_to_use:
+        for lo in unit.get("learning_outcomes", []):
+            for crit in lo.get("criteria", []):
+                code = crit.get("code", "")
+                desc = crit.get("description", "")
+                if code or desc:
+                    criteria_lines.append(f"{code}: {desc}".strip(": ").strip())
+    prompt = (
+        "Finished week-by-week plan:\n" + json.dumps(weeks_summary, indent=2)
+        + "\n\nReal spec criteria this unit covers (for the unit_outcomes_summary specifically - "
+        "synthesize from these, don't just list them back):\n" + "\n".join(criteria_lines)
+    )
+    try:
+        result = complete_json(system=CONTEXT_IMPACT_SYSTEM_PROMPT, prompt=prompt, max_tokens=1500, for_draft_generation=True)
+        return (
+            result.get("context_rationale") or None,
+            result.get("intended_impact") or None,
+            result.get("unit_outcomes_summary") or None,
+        )
+    except Exception as e:
+        print(f"[sow] Context/intended impact/outcomes-summary generation failed (non-fatal, scheme still usable without them): {e}", flush=True)
+        return None, None, None
+
+
 @router.get("/courses/{course_id}/scheme-of-work/new", response_class=HTMLResponse)
 def new_sow_page(
     course_id: int,
@@ -154,13 +307,14 @@ def new_sow_page(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     has_parsed_spec = bool(course and course.spec_version and course.spec_version.structured_json)
     units = course.spec_version.structured_json.get("units", []) if has_parsed_spec else []
+    sow_templates = db.query(SOWTemplate).order_by(SOWTemplate.label).all()
     return templates.TemplateResponse(
         "scheme_of_work_new.html",
         {"request": request, "teacher": teacher, "course": course, "has_parsed_spec": has_parsed_spec,
-         "units": units, "max_weeks": SANITY_MAX_WEEKS},
+         "units": units, "max_weeks": SANITY_MAX_WEEKS, "sow_templates": sow_templates},
     )
 
 
@@ -181,11 +335,12 @@ async def generate_sow(
     os_assessment_structure: str = Form(""),
     hours_per_week: str = Form(""),
     append_eligible_labels: str = Form(""),
+    sow_template_id: str = Form(""),
     format_sample_file: UploadFile = File(None),
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if not course or not course.spec_version or not course.spec_version.structured_json:
         return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
 
@@ -210,7 +365,30 @@ async def generate_sow(
     format_sample_text = ""
     format_sample_path = None
     format_sample_filename = None
-    if format_sample_file is not None and format_sample_file.filename:
+    selected_sow_template_id = int(sow_template_id) if sow_template_id.strip().isdigit() else None
+
+    if selected_sow_template_id:
+        # A shared library template takes priority over a one-off upload in the same
+        # request (the form's own help text tells the lecturer this) - copied into this
+        # SOW's own storage rather than referencing the shared file directly, so an admin
+        # later replacing/removing the shared template never changes what an already-
+        # generated scheme downloads (see SchemeOfWork.sow_template_id's docstring).
+        sow_template = db.get(SOWTemplate, selected_sow_template_id)
+        if sow_template and os.path.exists(sow_template.file_path):
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            copied_name = f"{uuid.uuid4().hex}_{sow_template.original_filename}"
+            copied_path = os.path.join(UPLOAD_DIR, copied_name)
+            shutil.copy(sow_template.file_path, copied_path)
+            format_sample_path = copied_path
+            format_sample_filename = sow_template.original_filename
+            try:
+                format_sample_text = extract_text(copied_path, sow_template.original_filename)
+            except Exception:
+                format_sample_text = ""
+        else:
+            selected_sow_template_id = None  # stale/removed reference - fall through to any uploaded file instead
+
+    if not format_sample_path and format_sample_file is not None and format_sample_file.filename:
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         stored_name = f"{uuid.uuid4().hex}_{format_sample_file.filename}"
         stored_path = os.path.join(UPLOAD_DIR, stored_name)
@@ -285,6 +463,7 @@ async def generate_sow(
         format_sample=format_sample_text or None,
         format_sample_file_path=format_sample_path,
         format_sample_original_filename=format_sample_filename,
+        sow_template_id=selected_sow_template_id,
         tutor_names=tutor_names.strip() or None,
         os_assessment_structure=os_assessment_structure.strip() or None,
         append_eligible_labels=append_eligible_labels.strip() or None,
@@ -323,8 +502,10 @@ def edit_sow_page(
     and start over to change something": no, this is the alternative. The uploaded
     template (if any) is untouched by this - it's managed separately via Replace/Remove.
     """
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
+    if not sow:
+        return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+    course = sow.course
     has_parsed_spec = bool(course and course.spec_version and course.spec_version.structured_json)
     units = course.spec_version.structured_json.get("units", []) if has_parsed_spec else []
     return templates.TemplateResponse(
@@ -354,7 +535,7 @@ async def update_sow(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
     if not sow:
         return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
 
@@ -439,7 +620,7 @@ def retry_sow(
     requiring a brand new scheme of work each time - this is what stops the list from
     accumulating a new entry per failed attempt.
     """
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
     if sow:
         sow.status = "generating"
         sow.error_detail = None
@@ -475,7 +656,7 @@ async def update_sow_week(
     weeks_json every time, this takes effect on the very next download - there's no
     separate "regenerate the document" step needed.
     """
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
     if not sow or not sow.weeks_json:
         return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
 
@@ -524,7 +705,7 @@ def delete_sow(
     this scheme's weeks are NOT deleted - they're independently useful files - but their
     back-link (source_sow_id) is cleared rather than left pointing at a deleted row.
     """
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
     if sow:
         if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
             os.remove(sow.format_sample_file_path)
@@ -533,6 +714,44 @@ def delete_sow(
         db.commit()
 
     return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+
+
+@router.post("/courses/{course_id}/scheme-of-work/{sow_id}/template/use-shared")
+def use_shared_sow_template(
+    course_id: int,
+    sow_id: int,
+    sow_template_id: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Same idea as replace_sow_template, but pulling from the shared library instead of a
+    fresh upload - lets a lecturer switch an already-generated scheme onto the college's
+    shared template after the fact, not just at initial generation time. Copies the file
+    (see SchemeOfWork.sow_template_id's docstring for why) rather than referencing it
+    directly.
+    """
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
+    template_id = int(sow_template_id) if sow_template_id.strip().isdigit() else None
+    if sow and template_id:
+        sow_template = db.get(SOWTemplate, template_id)
+        if sow_template and os.path.exists(sow_template.file_path):
+            if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
+                os.remove(sow.format_sample_file_path)
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            copied_name = f"{uuid.uuid4().hex}_{sow_template.original_filename}"
+            copied_path = os.path.join(UPLOAD_DIR, copied_name)
+            shutil.copy(sow_template.file_path, copied_path)
+            sow.format_sample_file_path = copied_path
+            sow.format_sample_original_filename = sow_template.original_filename
+            sow.sow_template_id = template_id
+            try:
+                sow.format_sample = extract_text(copied_path, sow_template.original_filename) or sow.format_sample
+            except Exception:
+                pass
+            db.commit()
+
+    return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
 
 
 @router.post("/courses/{course_id}/scheme-of-work/{sow_id}/template")
@@ -548,10 +767,11 @@ async def replace_sow_template(
     of work, without needing to regenerate the AI content itself - the two are independent:
     this only changes which document "Download" fills into.
     """
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
     if sow and template_file.filename:
         if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
             os.remove(sow.format_sample_file_path)
+        sow.sow_template_id = None  # this is now a one-off upload, not the shared template it may have been before
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         stored_name = f"{uuid.uuid4().hex}_{template_file.filename}"
         stored_path = os.path.join(UPLOAD_DIR, stored_name)
@@ -586,12 +806,13 @@ def remove_sow_template(
     """Removes the uploaded template without deleting the scheme of work itself -
     "Download" then falls back to the general-shape export until a new template is
     uploaded."""
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
     if sow:
         if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
             os.remove(sow.format_sample_file_path)
         sow.format_sample_file_path = None
         sow.format_sample_original_filename = None
+        sow.sow_template_id = None
         db.commit()
 
     return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
@@ -672,6 +893,48 @@ def _run_sow_generation(sow_id: int):
                 else:
                     prompt_parts.append(f"College scheme-of-work FORMAT SAMPLE to match the style of:\n{sow.format_sample[:4000]}")
             prompt_parts.append(f"Selected units/LOs/criteria to build the scheme from:\n{json.dumps({'units': units_to_use}, indent=2)}")
+
+            # Exam exemplar matching - closes a real, confirmed gap: the spec covers
+            # underpinning content, but a real exam/Occupational Specialism task can
+            # require specific skills/deliverables the spec doesn't itemize as its own
+            # criterion (a real example given: a Gantt chart requirement for an ESP task
+            # that isn't listed in the spec). Matched by exact unit name against whatever
+            # was selected for THIS generation - a college that hasn't uploaded one for
+            # this particular unit yet still gets a working scheme from the spec alone,
+            # just clearly flagged as such rather than silently missing something.
+            #
+            # unit_names is a JSON list column (one real exemplar can genuinely span
+            # several content areas, e.g. a synoptic OS assessment) - SQLite can't
+            # reliably .in_() against a JSON array column, so this filters by spec first
+            # (a normal, safe SQL filter) then checks for ANY overlap in Python.
+            selected_unit_set = set(unit_names)
+            matching_exemplars = [
+                ex for ex in (
+                    db.query(ExamExemplar).filter(ExamExemplar.spec_version_id == sow.spec_version_id).all()
+                    if sow.spec_version_id else []
+                )
+                if set(ex.unit_names or []) & selected_unit_set
+            ]
+            if matching_exemplars:
+                sow.generated_without_exemplar = False
+                exemplar_blocks = [
+                    f"[Exemplar for unit(s) {', '.join(ex.unit_names or [])}: {ex.label}]\n{(ex.extracted_text or '')[:4000]}"
+                    for ex in matching_exemplars
+                ]
+                prompt_parts.append(
+                    "REAL EXAM/OCCUPATIONAL SPECIALISM TASK EXEMPLAR(S) (IMPORTANT: the spec above covers "
+                    "underpinning content, but a real assessment task can require specific skills/deliverables "
+                    "it doesn't itemize as its own criterion - e.g. a Gantt chart, a specific document format, "
+                    "a presentation. Read the exemplar(s) below and identify anything a student would actually "
+                    "need to be TAUGHT/PRACTISED to complete this real task that isn't already covered by the "
+                    "selected criteria - weave that into the relevant week(s) as genuine content/practice, and "
+                    "note in that week's \"notes\" field that it reflects an exam-exemplar requirement, not just "
+                    "a spec criterion, so the teacher understands why it's there. Do not invent content that "
+                    "isn't actually present in the exemplar text below):\n\n" + "\n\n".join(exemplar_blocks)
+                )
+            else:
+                sow.generated_without_exemplar = True
+
             prompt = "\n\n".join(prompt_parts)
 
             result = None
@@ -725,6 +988,18 @@ def _run_sow_generation(sow_id: int):
                     f"Raw model response: {json.dumps(result)[:1500]}"
                 )
 
+            # Two further, deliberately SEPARATE and SMALLER calls to enrich the now-confirmed-
+            # good week plan - split out specifically because asking for all of this in one
+            # giant call was confirmed unreliable on a smaller local model (see the two
+            # functions' own docstrings). Each degrades gracefully on its own failure - the
+            # core week-by-week plan above is never put at risk by either of these.
+            statements_by_week = _generate_learning_outcome_statements(weeks_data, units_to_use)
+            for week in weeks_data:
+                statement = statements_by_week.get(week.get("week"))
+                if statement:
+                    week["learning_outcome_statement"] = statement
+            sow.context_rationale, sow.intended_impact, sow.unit_outcomes_summary = _generate_context_and_impact(weeks_data, units_to_use)
+
             sow.weeks_json = weeks_data
             sow.status = "ready"
             # Keep the date-range-capped note if there was one, don't overwrite it with None
@@ -759,8 +1034,10 @@ def view_sow(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
+    if not sow:
+        return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+    course = sow.course
 
     # Most recent deck generated for each week - if a week was regenerated more than once,
     # link to the newest attempt rather than an old one.
@@ -776,9 +1053,11 @@ def view_sow(
             if deck.source_week is not None and deck.source_week not in decks_by_week:
                 decks_by_week[deck.source_week] = deck
 
+    sow_templates = db.query(SOWTemplate).order_by(SOWTemplate.label).all()
     return templates.TemplateResponse(
         "scheme_of_work_detail.html",
-        {"request": request, "teacher": teacher, "course": course, "sow": sow, "decks_by_week": decks_by_week},
+        {"request": request, "teacher": teacher, "course": course, "sow": sow, "decks_by_week": decks_by_week,
+         "sow_templates": sow_templates},
     )
 
 
@@ -797,19 +1076,78 @@ def download_sow(
     uploaded (or it wasn't a .docx), so a scheme of work without a template keeps working
     exactly as before.
     """
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
-    sow = db.query(SchemeOfWork).filter(SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id).first()
-    if not sow or sow.status != "ready" or not course:
+    sow = _get_owned_sow(db, course_id, sow_id, teacher)
+    if not sow or sow.status != "ready":
         return RedirectResponse(url=f"/courses/{course_id}/scheme-of-work/{sow_id}", status_code=303)
+    course = sow.course
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     output_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}_sow_export.docx")
 
     if sow.format_sample_file_path and os.path.exists(sow.format_sample_file_path):
+        # Prefer the AI-synthesized summary (genuinely summarized, 2-4 sentences - see
+        # _generate_context_and_impact) - confirmed as a real requirement: a flat,
+        # ungrouped spec can have a dozen-plus individual criteria, and listing every
+        # one (even trimmed) reads as a bulky dump, not a summary. Only fall back to the
+        # deterministic per-criterion listing below when no summary exists - an older
+        # scheme generated before this existed, or that specific AI call failed (it's a
+        # non-fatal enrichment, same as context_rationale/intended_impact).
+        if sow.unit_outcomes_summary:
+            unit_outcomes_lines = [sow.unit_outcomes_summary]
+        else:
+            # Deterministic, not AI-guessed - pulled directly from the spec's own parsed
+            # learning outcomes for whichever unit(s) this scheme was actually generated for,
+            # the same reasoning as course_title/unit_title below. Previously this field was
+            # never wired up at all - confirmed as a real, standing gap (the header cell has
+            # always existed in the template but nothing ever wrote to it).
+            #
+            # Real gap found and fixed: for a spec with a FLAT structure (criteria like 2.1,
+            # 2.2 with no named grouping heading above them), the parser synthesizes a
+            # placeholder group - code "general-N", title "General content (not further
+            # sub-grouped in the source document)" - purely so the group has SOMETHING to be
+            # keyed by internally. That placeholder text was leaking straight into "Unit
+            # outcomes" as if it were a real outcome. A "general-" code is the parser's own
+            # marker that this is synthetic, not real spec content - when seen, use the
+            # actual criteria underneath instead (which DO have real descriptions), each
+            # trimmed to stay a genuine summary rather than the full spec text.
+            unit_outcomes_lines = []
+            if sow.spec_version_id:
+                spec = db.get(SpecVersion, sow.spec_version_id)
+                if spec and spec.structured_json:
+                    selected = set(sow.selected_unit_names or [])
+                    for unit in spec.structured_json.get("units", []):
+                        if selected and unit.get("name") not in selected:
+                            continue
+                        for lo in unit.get("learning_outcomes", []):
+                            code = lo.get("code", "").strip()
+                            title = lo.get("title", "").strip()
+                            if code.startswith("general-"):
+                                for criterion in lo.get("criteria", []):
+                                    c_code = criterion.get("code", "").strip()
+                                    c_desc = criterion.get("description", "").strip()
+                                    # First sentence, or a hard cap if there's no clean sentence
+                                    # break within a reasonable length - a summary line, not the
+                                    # full assessment-criterion text.
+                                    cut = c_desc.find(". ")
+                                    short_desc = c_desc[:cut + 1] if 0 < cut < 160 else c_desc[:160].rstrip()
+                                    if c_code or short_desc:
+                                        unit_outcomes_lines.append(f"{c_code}: {short_desc}".strip(": ").strip())
+                            elif code or title:
+                                unit_outcomes_lines.append(f"{code}: {title}".strip(": ").strip())
+
         header_updates = {
             "start_date": sow.start_date,
             "end_date": sow.end_date,
             "tutor_names": sow.tutor_names,
+            # Deterministic, not AI-guessed - the app already knows the real course and
+            # unit this scheme was generated for, so these correct whatever placeholder
+            # text the template started with (confirmed as a real, standing problem: a
+            # template can arrive with a stale/wrong course title pre-filled in it).
+            "course_title": course.name,
+            "unit_title": sow.title,
+            "unit_outcomes": unit_outcomes_lines or None,
+            "context_rationale": sow.context_rationale,
+            "intended_impact": sow.intended_impact,
         }
         try:
             report, warnings = fill_sow_template_docx(

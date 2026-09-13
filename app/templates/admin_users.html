@@ -53,6 +53,26 @@ active status can't be changed, by anyone, including other admins.</p>
         <button class="btn btn-secondary" type="submit">Disable two-factor login</button>
       </form>
     {% endif %}
+    {% if early_access_features %}
+      <details style="margin:6px 0 14px 0;">
+        <summary>Early access to in-development features</summary>
+        <p class="muted" style="margin-top:8px;">Lets this specific person see and use a
+        feature while it still shows "Coming Soon" for everyone else - e.g. reviewing
+        progress on something being built.</p>
+        {% for key, label in early_access_features.items() %}
+          <form method="post" action="/admin/users/{{ user.id }}/early-access" style="display:inline-block;margin:0 8px 8px 0;">
+            <input type="hidden" name="feature_key" value="{{ key }}">
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">
+              {% if user.early_access_features and key in user.early_access_features %}
+                ✓ {{ label }} (click to revoke)
+              {% else %}
+                Grant {{ label }}
+              {% endif %}
+            </button>
+          </form>
+        {% endfor %}
+      </details>
+    {% endif %}
   {% endfor %}
 </div>
 

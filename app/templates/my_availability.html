@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}My availability - CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/">&larr; Dashboard</a></p>
+<h1>My availability</h1>
+<p class="muted">Keep your own contracted hours and unavailable dates up to date - this
+feeds directly into how classes get scheduled. Qualifications work a little differently:
+requesting one here sends it for admin confirmation rather than taking effect
+immediately, since a mistaken self-entry could otherwise place you in front of a class
+you're not actually ready for.</p>
+
+{% if saved %}
+  <div class="card" style="border-color:var(--success);">
+    <p style="margin:0;color:var(--success);">✓ Saved.</p>
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>Contracted hours &amp; non-teaching days</h2>
+  <form method="post" action="/timetabling/my-availability/update">
+    <label>Contracted hours per week</label>
+    <input type="number" step="0.5" min="0" name="contracted_hours_per_week" value="{{ teacher.contracted_hours_per_week or '' }}" style="max-width:120px;">
+    {% if teaching_hours %}
+      <p class="muted" style="margin-top:6px;font-size:0.85rem;">
+        Estimated real teaching hours: {{ teaching_hours.teaching_hours }}{% if teaching_hours.is_estimate %} (estimated){% endif %}
+        · Prep/other: {{ teaching_hours.prep_hours }}
+      </p>
+    {% endif %}
+
+    <label style="margin-top:14px;">Non-teaching days</label>
+    <p class="muted" style="margin:2px 0 6px;font-size:0.85rem;">Tick the days you DON'T
+    teach - the days you're NOT in. If you're only in on certain days, use the quick pick
+    below rather than ticking those days here directly - ticking a day here means "I'm
+    away this day", the opposite of "this is when I'm in".</p>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+      <span class="muted" style="font-size:0.82rem;">Quick pick — I'm ONLY in on:</span>
+      {% for day in weekdays %}
+        <label style="display:flex;align-items:center;gap:3px;font-weight:normal;font-size:0.82rem;">
+          <input type="checkbox" class="only-in-on-me" data-day="{{ day }}" style="width:auto;margin:0;"
+                 onchange="applyOnlyInOnMe()">{{ day[:3] }}
+        </label>
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
+      {% for day in weekdays %}
+        <label style="display:flex;align-items:center;gap:6px;font-weight:normal;">
+          <input type="checkbox" name="non_teaching_days" id="nonteach-me-{{ day }}" value="{{ day }}" style="width:auto;margin:0;"
+                 {% if teacher.non_teaching_days and day in teacher.non_teaching_days %}checked{% endif %}>
+          {{ day }}
+        </label>
+      {% endfor %}
+    </div>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Unavailable dates</h2>
+  <p class="muted">Specific dates - training days, appointments, planned leave. Different
+  from non-teaching days above, which are a standing weekly pattern.</p>
+  <form method="post" action="/timetabling/my-availability/unavailability/add" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+    <div>
+      <label>From</label>
+      <input type="date" name="start_date" required>
+    </div>
+    <div>
+      <label>To</label>
+      <input type="date" name="end_date" required>
+    </div>
+    <div>
+      <label>Portion</label>
+      <select name="portion">
+        <option value="full_day">Full day</option>
+        <option value="am">Morning only</option>
+        <option value="pm">Afternoon only</option>
+      </select>
+    </div>
+    <div>
+      <label>Reason (optional)</label>
+      <input type="text" name="reason" style="min-width:160px;">
+    </div>
+    <button class="btn" type="submit">Add</button>
+  </form>
+
+  {% if not my_unavailability %}
+    <p class="muted" style="margin-top:10px;">None added yet.</p>
+  {% endif %}
+  {% for u in my_unavailability %}
+    <div class="list-item">
+      <span>
+        {{ u.start_date }}{% if u.end_date != u.start_date %} to {{ u.end_date }}{% endif %}
+        {% if u.portion != 'full_day' %} ({{ 'Morning' if u.portion == 'am' else 'Afternoon' }}){% endif %}
+        {% if u.reason %} — {{ u.reason }}{% endif %}
+      </span>
+      <form method="post" action="/timetabling/my-availability/unavailability/{{ u.id }}/remove"
+            onsubmit="return confirm('Remove this?');">
+        <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Remove</button>
+      </form>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Qualifications</h2>
+  <p class="muted">What you're confirmed to teach, plus anything you've requested that's
+  still awaiting admin confirmation - either a new one you've asked for, or a removal
+  you've flagged for review.</p>
+  {% if not my_qualifications %}
+    <p class="muted">None yet.</p>
+  {% endif %}
+  {% for q in my_qualifications %}
+    <div class="list-item">
+      <span>
+        {{ q.unit_name }}
+        {% if q.status == 'pending' %}<span style="color:var(--warning);"> — awaiting confirmation</span>{% endif %}
+        {% if q.status == 'pending_removal' %}<span style="color:var(--warning);"> — removal requested, awaiting admin review</span>{% endif %}
+      </span>
+      {% if q.status == 'pending' %}
+        <form method="post" action="/timetabling/my-availability/qualifications/{{ q.id }}/withdraw"
+              onsubmit="return confirm('Withdraw this request?');">
+          <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Withdraw</button>
+        </form>
+      {% elif q.status == 'confirmed' %}
+        <form method="post" action="/timetabling/my-availability/qualifications/{{ q.id }}/request-removal"
+              onsubmit="return confirm('Request removal of this qualification? An admin will review it.');">
+          <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Request removal</button>
+        </form>
+      {% elif q.status == 'pending_removal' %}
+        <form method="post" action="/timetabling/my-availability/qualifications/{{ q.id }}/cancel-removal">
+          <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Cancel request</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <details style="margin-top:12px;">
+    <summary style="cursor:pointer;">Request a new qualification</summary>
+    <form method="post" action="/timetabling/my-availability/qualifications/request" style="margin-top:10px;">
+      {% for group in spec_unit_groups %}
+        <div style="margin-bottom:10px;">
+          <strong>{{ group.spec_label }}</strong>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:4px;">
+            {% for unit_name in group.unit_names %}
+              <label style="font-weight:normal;display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" name="spec_units" value="{{ group.spec_id }}|{{ unit_name }}" style="width:auto;margin:0;">
+                {{ unit_name }}
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+      <button class="btn" type="submit">Request</button>
+    </form>
+  </details>
+</div>
+
+<script>
+function applyOnlyInOnMe() {
+  const onlyInDays = new Set();
+  document.querySelectorAll('.only-in-on-me:checked').forEach(function (cb) {
+    onlyInDays.add(cb.dataset.day);
+  });
+  if (onlyInDays.size === 0) return;
+  {% for day in weekdays %}
+  document.getElementById('nonteach-me-{{ day }}').checked = !onlyInDays.has('{{ day }}');
+  {% endfor %}
+}
+</script>
+{% endblock %}

@@ -1,7 +1,26 @@
+# Database - all real data (and anything generated via the dummy-data testing tool)
+# lives here. Never committed - this is runtime data, not source.
 data/
-storage/
 *.db
+*.sqlite
+*.sqlite3
+
+# User-uploaded and generated files - specs, submissions, annotated marking, lesson
+# images, generated presentations. Real content belonging to real people, not source code.
+storage/
+
+# Secrets / local configuration - .env.example stays tracked as the template, the real
+# .env (API keys, SMTP credentials, etc.) never does.
 .env
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# OS / editor cruft
 .DS_Store
+.vscode/
+.idea/

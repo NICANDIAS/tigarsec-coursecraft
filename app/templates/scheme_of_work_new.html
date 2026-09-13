@@ -98,7 +98,7 @@
     <div class="field-grid">
       <div>
         <label>Tutor(s) name(s) (optional)</label>
-        <input type="text" name="tutor_names" placeholder="e.g. Abdulhakeem Ekun">
+        <input type="text" name="tutor_names" placeholder="e.g. Robert Thompson, Michael Hollis">
       </div>
       <div>
         <label>Existing template weeks that should still get lesson content (optional)</label>
@@ -113,7 +113,21 @@
       windows, conferences) stays fully protected as before - never touched.</p>
     </div>
 
-    <label>Upload your college's scheme of work format/template (optional - .docx/.pdf/.txt)</label>
+    {% if sow_templates %}
+      <label>Use your college's shared scheme of work template</label>
+      <select name="sow_template_id">
+        <option value="">Don't use a shared template</option>
+        {% for t in sow_templates %}
+          <option value="{{ t.id }}">{{ t.label }}</option>
+        {% endfor %}
+      </select>
+      <p class="muted" style="margin-top:-2px;">If you pick one, "Download" on the finished scheme
+      will fill it directly - it detects which rows already have real content and leaves those
+      alone, only filling genuinely blank (or explicitly listed above) weeks. If you also attach a
+      file below, this shared template takes priority and the upload is ignored.</p>
+    {% endif %}
+
+    <label>Or upload a one-off template just for this generation (optional - .docx/.pdf/.txt)</label>
     <input type="file" name="format_sample_file" accept=".docx,.pdf,.txt">
     <p class="muted" style="margin-top:-2px;">Used as a style guide for the AI's structure/detail
     level either way. If you upload a <strong>.docx</strong> specifically, "Download" on the

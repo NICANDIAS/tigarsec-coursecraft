@@ -38,7 +38,7 @@ from docx import Document
 
 from .docx_xml_edit import (
     qn, cell_text, all_existing_para_ids, ensure_para_id, clone_rpr_from_paragraph,
-    build_run, replace_paragraph_text, unzip_docx, rezip_docx, parse_document_xml,
+    build_run, build_mixed_runs, replace_paragraph_text, unzip_docx, rezip_docx, parse_document_xml,
     write_document_xml, assert_paragraph_count_unchanged,
 )
 
@@ -48,6 +48,11 @@ DATE_LABEL_PATTERNS = {
     "end_date": re.compile(r'\bend\s*date\b', re.IGNORECASE),
 }
 TUTOR_LABEL_PATTERN = re.compile(r'\btutor', re.IGNORECASE)
+COURSE_TITLE_LABEL_PATTERN = re.compile(r'\bcourse\s*title\b', re.IGNORECASE)
+UNIT_TITLE_LABEL_PATTERN = re.compile(r'\bunit\s*/?\s*project\s*title\b', re.IGNORECASE)
+UNIT_OUTCOMES_LABEL_PATTERN = re.compile(r'\bunit\s*outcomes?\b', re.IGNORECASE)
+CONTEXT_LABEL_PATTERN = re.compile(r'\bcontext\s+for\s+the\s+unit', re.IGNORECASE)
+IMPACT_LABEL_PATTERN = re.compile(r'\bintended\s+impact\b', re.IGNORECASE)
 DATE_VALUE_PATTERN = re.compile(r'^\s*(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})\s*$')
 
 
@@ -89,14 +94,27 @@ def _find_grid_table(root):
 def _find_header_fields(root) -> dict:
     """
     Locates the Start Date / End Date value cells (the cell immediately AFTER a cell
-    whose text is the label, in the same row) and the Tutor(s) value paragraph (the
-    paragraph immediately AFTER a "Tutor(s):"-style label paragraph, within the SAME
-    cell - this template keeps the label and value as two separate paragraphs in one
-    cell, unlike the date fields which use two separate cells).
+    whose text is the label, in the same row), the Tutor(s) / Course Title / Unit-Project
+    Title value paragraphs (the paragraph immediately AFTER a label-style paragraph,
+    within the SAME cell - this template keeps several label/value pairs as two separate
+    paragraphs in one cell, unlike the date fields which use two separate cells), and the
+    Context/Intended-impact value cell (this template stacks BOTH labels together in one
+    cell with no per-label answer space of their own - the actual answer area is a single
+    shared empty cell in the row directly below, same column - so both get written into
+    that one cell, clearly sub-labelled, rather than the document being restructured to
+    give them separate spaces it was never built with).
     """
-    fields = {"start_date_cell": None, "end_date_cell": None, "tutor_paragraph": None, "tutor_label_paragraph": None}
+    fields = {
+        "start_date_cell": None, "end_date_cell": None,
+        "tutor_paragraph": None, "tutor_label_paragraph": None,
+        "course_title_paragraph": None, "course_title_label_paragraph": None,
+        "unit_title_paragraph": None, "unit_title_label_paragraph": None,
+        "unit_outcomes_paragraph": None, "unit_outcomes_label_paragraph": None,
+        "context_impact_value_cell": None,
+    }
     for table in root.iter(qn("w:tbl")):
-        for row in table.iter(qn("w:tr")):
+        rows = table.findall(qn("w:tr"))
+        for row_idx, row in enumerate(rows):
             cells = row.findall(qn("w:tc"))
             for i, cell in enumerate(cells):
                 text = cell_text(cell).strip()
@@ -104,13 +122,32 @@ def _find_header_fields(root) -> dict:
                     fields["start_date_cell"] = cells[i + 1]
                 if DATE_LABEL_PATTERNS["end_date"].search(text) and i + 1 < len(cells):
                     fields["end_date_cell"] = cells[i + 1]
-                # Tutor label/value as two paragraphs within the SAME cell
+
+                # Label + value as two paragraphs within the SAME cell
                 paras = cell.findall(qn("w:p"))
                 for pi, p in enumerate(paras):
                     p_text = "".join(t.text or "" for t in p.iter(qn("w:t"))).strip()
                     if TUTOR_LABEL_PATTERN.search(p_text) and pi + 1 < len(paras):
                         fields["tutor_label_paragraph"] = p
                         fields["tutor_paragraph"] = paras[pi + 1]
+                    if COURSE_TITLE_LABEL_PATTERN.search(p_text) and pi + 1 < len(paras):
+                        fields["course_title_label_paragraph"] = p
+                        fields["course_title_paragraph"] = paras[pi + 1]
+                    if UNIT_TITLE_LABEL_PATTERN.search(p_text) and pi + 1 < len(paras):
+                        fields["unit_title_label_paragraph"] = p
+                        fields["unit_title_paragraph"] = paras[pi + 1]
+                    if UNIT_OUTCOMES_LABEL_PATTERN.search(p_text) and pi + 1 < len(paras):
+                        fields["unit_outcomes_label_paragraph"] = p
+                        fields["unit_outcomes_paragraph"] = paras[pi + 1]
+
+                # Context/Intended-impact: both labels live together in one cell with no
+                # per-label answer space - the real answer area is the equivalent cell in
+                # the NEXT row of the same table, same column index.
+                if CONTEXT_LABEL_PATTERN.search(text) or IMPACT_LABEL_PATTERN.search(text):
+                    if row_idx + 1 < len(rows):
+                        next_row_cells = rows[row_idx + 1].findall(qn("w:tc"))
+                        if i < len(next_row_cells):
+                            fields["context_impact_value_cell"] = next_row_cells[i]
     return fields
 
 
@@ -180,20 +217,64 @@ def _is_row_available(row, append_eligible_labels: list[str] | None = None) -> b
     return _row_fill_mode(row, append_eligible_labels or []) in ("blank", "append")
 
 
-def _week_fill_lines(week: dict) -> tuple[list[str], list[str], list[str]]:
+def _split_title_phase_and_topic(raw_title: str) -> list[str]:
+    """
+    The model has its own habit of writing "title" as a short phase-word (Discover,
+    Understand, Develop, Look Ahead, Engage) followed by the actual lesson topic, both
+    in one string with a single embedded newline - not something we prompt for, just
+    an emergent stylistic pattern. Splitting it into two properly blank-line-separated
+    lines (rather than the single line-break the model itself put there) reads as two
+    distinct things - a phase label and a topic - the same reasoning already applied to
+    separating the learning outcome statement below it.
+
+    Extracted as its own function, used by both the writer (_week_fill_lines) and the
+    read-back verification below, so the two can never drift into checking for a
+    different shape of text than what actually gets written.
+    """
+    if "\n" in raw_title:
+        phase_label, topic = raw_title.split("\n", 1)
+        return [phase_label.strip(), "", topic.strip()]
+    return [raw_title]
+
+
+def _week_fill_lines(week: dict) -> tuple[list, list, list]:
     """Builds the three content columns' text from one week of the already-generated
     weeks_json - the exact same fields the in-app view and the general-shape export
     already use, just aimed at different cells."""
-    topic_lines = [week.get("title", "")]
+    topic_lines = _split_title_phase_and_topic(week.get("title", ""))
+    # The actual learning outcome SENTENCE (Bloom's-verb-driven, e.g. "Explain the
+    # purpose of...") - this is what a reader of the "Learning outcome and lesson topic"
+    # column actually needs to see; the bare LO code(s) below it stay too, since
+    # coverage-tracking matches against those specifically and must keep working. A
+    # blank line separates it from the topic title above - without it, the two run
+    # straight into each other and read as one sentence rather than two distinct things
+    # (a lesson topic and a learning outcome), confirmed as a real readability problem.
+    if week.get("learning_outcome_statement"):
+        topic_lines.append("")
+        topic_lines.append(week["learning_outcome_statement"])
     los = week.get("learning_outcomes") or []
     if los:
         topic_lines.append("(" + ", ".join(los) + ")")
 
     content_lines = [f"- {a}" for a in (week.get("activities") or [])]
     if week.get("practical"):
-        content_lines.append(f"- Practical: {week['practical']}")
+        # A blank line before this, when there's preceding content to separate it
+        # from - without it, "Practical:" ran straight on from the last activity
+        # bullet with no visual break, exactly the readability problem already fixed
+        # for the topic/outcome split above, just not yet applied here too.
+        if content_lines:
+            content_lines.append("")
+        # Bold label, no leading "- " - a labelled sub-section reads distinctly from a
+        # plain bullet; with the dash it was visually indistinguishable from the
+        # activities above it despite meaning something different.
+        content_lines.append(("Practical: ", week["practical"]))
     if week.get("notes"):
-        content_lines.append(f"- Notes: {week['notes']}")
+        if content_lines:
+            content_lines.append("")
+        # Same fix, same reasoning - Notes had the identical problem (dash-prefixed,
+        # reading as just another bullet item) and needed the same treatment, not just
+        # the one example that happened to be pointed out.
+        content_lines.append(("Notes: ", week["notes"]))
     if not content_lines:
         content_lines = [""]
 
@@ -301,8 +382,12 @@ def fill_sow_template_docx(
     append_eligible_labels: list[str] | None = None,
 ) -> tuple[dict, list[str]]:
     """
-    header_updates: {"start_date": date|None, "end_date": date|None, "tutor_names": str|None}
+    header_updates: {"start_date": date|None, "end_date": date|None, "tutor_names": str|None,
+                      "course_title": str|None, "unit_title": str|None,
+                      "context_rationale": str|None, "intended_impact": str|None}
     - each only applied if not None/empty; anything else in the template is left alone.
+    course_title/unit_title are deterministic corrections from the app's own known data
+    (the course/unit this scheme was actually generated for), not AI-guessed.
 
     Returns (report, warnings). report = {
         "weeks_filled": int, "available_rows": int, "weeks_overflow": int,
@@ -368,10 +453,27 @@ def fill_sow_template_docx(
                     # clearly separated block underneath it, rather than replacing it -
                     # the teacher explicitly wants both visible together.
                     if cell_text(target_cell).strip():
-                        lines = [""] + lines
+                        lines = ["", ""] + lines
                     ensure_para_id(target_p, existing_para_ids, warnings, f"Week {week.get('week', '?')} cell")
                     rpr = clone_rpr_from_paragraph(target_p)
-                    target_p.append(build_run(lines, rpr))
+
+                    # Normalize paragraph-level formatting before writing - confirmed as
+                    # a real, standing cause of inconsistent-looking output: this
+                    # inherits whatever pStyle/indent the TEMPLATE's specific blank row
+                    # already happened to have (some rows carry a leftover "ListParagraph"
+                    # style with its own left indent from earlier manual editing, others
+                    # don't), so two weeks filled by identical code could render with
+                    # different left margins purely because of which template row they
+                    # landed on. Stripping these makes every week consistent regardless.
+                    ppr = target_p.find(qn("w:pPr"))
+                    if ppr is not None:
+                        for tag in ("w:pStyle", "w:ind"):
+                            el = ppr.find(qn(tag))
+                            if el is not None:
+                                ppr.remove(el)
+
+                    for run in build_mixed_runs(lines, rpr):
+                        target_p.append(run)
 
             weeks_filled += 1
 
@@ -422,6 +524,51 @@ def fill_sow_template_docx(
             replace_paragraph_text(header_fields["tutor_paragraph"], [tutor_names])
             header_fields_updated.append("Tutor(s)")
 
+        # Course Title / Unit-Project Title - deterministic, not AI-guessed: the app
+        # already knows the real course name and unit/content-area title from its own
+        # data, so these are corrected directly from that rather than asked of the AI,
+        # regardless of whatever placeholder text the template started with (confirmed
+        # as a real, standing problem: a template arrived with a stale/wrong course
+        # title pre-filled in it).
+        course_title = header_updates.get("course_title")
+        unit_title = header_updates.get("unit_title")
+        unit_outcomes = header_updates.get("unit_outcomes")
+        if course_title and header_fields["course_title_paragraph"] is not None:
+            ensure_para_id(header_fields["course_title_paragraph"], existing_para_ids, warnings, "Course Title field")
+            replace_paragraph_text(header_fields["course_title_paragraph"], [course_title])
+            header_fields_updated.append("Course Title")
+        if unit_title and header_fields["unit_title_paragraph"] is not None:
+            ensure_para_id(header_fields["unit_title_paragraph"], existing_para_ids, warnings, "Unit/Project Title field")
+            replace_paragraph_text(header_fields["unit_title_paragraph"], [unit_title])
+            header_fields_updated.append("Unit/Project Title")
+        if unit_outcomes and header_fields["unit_outcomes_paragraph"] is not None:
+            ensure_para_id(header_fields["unit_outcomes_paragraph"], existing_para_ids, warnings, "Unit outcomes field")
+            lines = unit_outcomes if isinstance(unit_outcomes, list) else [unit_outcomes]
+            replace_paragraph_text(header_fields["unit_outcomes_paragraph"], lines)
+            header_fields_updated.append("Unit outcomes")
+
+        # Context/rationale + intended impact - the template stacks both labels in one
+        # cell with no per-label answer space, so both are written into the single
+        # shared value cell below them, clearly sub-labelled, rather than the document
+        # being restructured to give them separate spaces it was never built with.
+        context_rationale = header_updates.get("context_rationale")
+        intended_impact = header_updates.get("intended_impact")
+        value_cell = header_fields["context_impact_value_cell"]
+        if (context_rationale or intended_impact) and value_cell is not None:
+            paras = value_cell.findall(qn("w:p"))
+            target_p = paras[-1] if paras else None
+            if target_p is not None:
+                ensure_para_id(target_p, existing_para_ids, warnings, "Context/Intended impact field")
+                lines = []
+                if context_rationale:
+                    lines.append(f"Context and rationale: {context_rationale}")
+                if context_rationale and intended_impact:
+                    lines.append("")
+                if intended_impact:
+                    lines.append(f"Intended impact: {intended_impact}")
+                replace_paragraph_text(target_p, lines)
+                header_fields_updated.append("Context/Intended impact")
+
         # Warn (don't guess) if a requested date range implies the template's own
         # calendar rows may no longer match - grid rows are never added/removed here.
         if end_date and grid_table is not None:
@@ -457,11 +604,11 @@ def fill_sow_template_docx(
                 # by position, since row identity is stable (no rows added/removed).
                 for i in range(min(weeks_filled, len(weeks_json))):
                     week = weeks_json[i]
-                    expected_title = week.get("title", "")
+                    expected_parts = [p for p in _split_title_phase_and_topic(week.get("title", "")) if p]
                     if i < len(available_rows):
                         row_index = rows.index(available_rows[i])
                         actual_text = verify_grid.rows[row_index].cells[1].text
-                        if expected_title and expected_title in actual_text:
+                        if expected_parts and all(part in actual_text for part in expected_parts):
                             verified_filled += 1
                         else:
                             warnings.append(f"Week {week.get('week', i+1)}: wrote successfully but read-back verification didn't find the expected title in the target row - check it manually.")

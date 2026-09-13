@@ -62,14 +62,21 @@ firewall blocks a specific domain) before relying on it.</p>
     </div>
 
     <div id="fields-openai_compatible" class="provider-fields" style="display:none;">
+      <p class="muted" style="margin-top:-4px;">This is the general option for adding an AI
+      that isn't one of the specific ones above - not just OpenAI itself. Anything that speaks
+      the same standard request format works here: Groq, DeepSeek, Mistral's own API, Together
+      AI, OpenRouter, and most self-hosted servers (vLLM, LM Studio, LocalAI) all qualify. Give
+      it whatever name you like above - this effectively IS how you "add a new AI to the list":
+      fill in its details below and save, and it appears in your saved providers exactly like
+      any other one.</p>
       <label>Base URL</label>
       <input type="text" name="base_url" placeholder="e.g. https://api.openai.com/v1">
       <label>API key (optional - some local servers don't need one)</label>
       <input type="password" name="api_key">
       <label>Model</label>
       <input type="text" name="model_name" placeholder="e.g. gpt-4o-mini">
-      <p class="muted" style="margin-top:-4px;">Any server that speaks the standard OpenAI
-      chat-completions API shape - OpenAI itself, or a self-hosted server such as LocalAI or vLLM.</p>
+      <p class="muted" style="margin-top:-4px;">Check the provider's own documentation for their
+      exact base URL and model name(s) - these vary by provider and change over time.</p>
     </div>
 
     <label style="display:flex;align-items:center;gap:8px;margin-top:14px;">

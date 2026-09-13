@@ -1,0 +1,180 @@
+<div class="tt-grid-wrap">
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+    <button type="button" class="btn btn-secondary tt-scope-tab" data-scope="course" onclick="ttSetScope(this)">Course</button>
+    <button type="button" class="btn btn-secondary tt-scope-tab" data-scope="teacher" onclick="ttSetScope(this)">Teacher</button>
+    <button type="button" class="btn btn-secondary tt-scope-tab" data-scope="room" onclick="ttSetScope(this)">Room</button>
+    <select id="tt-select-course" onchange="ttApplyFilter()">
+      {% for c in grid_courses %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+    </select>
+    <select id="tt-select-teacher" style="display:none;" onchange="ttApplyFilter()">
+      {% for t in grid_teachers %}<option value="{{ t.id }}" data-allocated="{{ (grid_teacher_hours|default({})).get(t.id, {}).get('allocated', '') }}" data-max="{{ (grid_teacher_hours|default({})).get(t.id, {}).get('max', '') }}">{{ t.name }}</option>{% endfor %}
+    </select>
+    <span id="tt-hours-summary" class="muted" style="display:none;font-size:0.85rem;"></span>
+    <select id="tt-select-room" style="display:none;" onchange="ttApplyFilter()">
+      {% for r in grid_rooms %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+    <div style="display:grid;grid-template-columns:52px repeat(5,1fr);border-bottom:1px solid var(--border);">
+      <div></div>
+      {% for day in grid_weekdays %}<div style="padding:8px 4px;font-size:0.85rem;font-weight:600;text-align:center;">{{ day[:3] }}</div>{% endfor %}
+    </div>
+    <div style="max-height:600px;overflow-y:auto;">
+    <div style="display:grid;grid-template-columns:52px repeat(5,1fr);position:relative;height:1200px;">
+      <div style="position:relative;">
+        {% for tl in grid_time_labels %}
+        <span style="position:absolute;top:calc({{ tl.top_pct }}% - 6px);left:4px;font-size:0.65rem;color:var(--text-muted);">{{ tl.time }}</span>
+        {% endfor %}
+      </div>
+      {% for day in grid_weekdays %}
+      <div class="tt-day-col" style="position:relative;border-left:1px solid var(--border);">
+        {% if grid_lunch %}
+        <div style="position:absolute;top:{{ grid_lunch.top_pct }}%;height:{{ grid_lunch.height_pct }}%;left:0;right:0;background:rgba(128,128,128,0.10);z-index:0;pointer-events:none;"></div>
+        {% endif %}
+        {% for s in grid_sessions if s.day == day %}
+        <div class="tt-session-block {% if s.is_clash %}tt-clash{% elif not s.teacher_name or not s.room_name %}tt-needs{% endif %}"
+             data-course-id="{{ s.course_id }}" data-teacher-id="{{ s.teacher_id or '' }}" data-room-id="{{ s.room_id or '' }}"
+             data-session-id="{{ s.session_id or '' }}"
+             style="position:absolute;top:{{ s.top_pct }}%;height:{{ s.height_pct }}%;left:2px;right:2px;z-index:1;overflow:hidden;cursor:pointer;border-radius:4px;padding:3px 5px;background:var(--bg-elevated);"
+             onclick="ttExpand(this)"
+             data-full="{{ s.course_name }}{% if s.unit_name %} — {{ s.unit_name }}{% endif %} · {{ s.day }} {{ s.start }}-{{ s.end }} · {{ s.teacher_name or 'needs staff' }} · {{ s.room_name or 'needs a room' }}{% if s.shortfall_reason %} ({{ s.shortfall_reason }}){% endif %}">
+          <div style="font-size:0.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ s.unit_name or s.course_name }}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            {% if not s.teacher_name %}<span style="color:var(--warning);">needs staff</span>{% else %}{{ s.teacher_name }}{% endif %}
+            ·
+            {% if not s.room_name %}<span style="color:var(--warning);">needs a room</span>{% else %}{{ s.room_name }}{% endif %}
+          </div>
+        </div>
+        {% if grid_editable and s.session_id %}
+        <div id="tt-edit-form-{{ s.session_id }}" style="display:none;">
+          <form method="post" action="/timetabling/sessions/{{ s.session_id }}/edit" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+            <div>
+              <label style="font-size:0.75rem;">Course</label>
+              <select name="course_id" required style="font-size:0.8rem;">
+                {% for c in grid_courses %}<option value="{{ c.id }}" {% if c.id == s.course_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Day</label>
+              <select name="day_of_week" required style="font-size:0.8rem;">
+                {% for d in grid_weekdays %}<option value="{{ d }}" {% if d == s.day %}selected{% endif %}>{{ d }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Start</label>
+              <input type="time" name="start_time" value="{{ s.start }}" required style="font-size:0.8rem;">
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">End</label>
+              <input type="time" name="end_time" value="{{ s.end }}" required style="font-size:0.8rem;">
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Staff</label>
+              <select name="teacher_id" style="font-size:0.8rem;">
+                <option value="">-- unassigned --</option>
+                {% for t in grid_teachers %}<option value="{{ t.id }}" {% if s.teacher_id == t.id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Room</label>
+              <select name="room_id" style="font-size:0.8rem;">
+                <option value="">-- unassigned --</option>
+                {% for r in grid_rooms %}<option value="{{ r.id }}" {% if s.room_id == r.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Unit</label>
+              <input type="text" name="unit_name" value="{{ s.unit_name or '' }}" style="font-size:0.8rem;min-width:140px;">
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Label</label>
+              <input type="text" name="label" value="{{ s.label or '' }}" style="font-size:0.8rem;min-width:120px;">
+            </div>
+            <button class="btn btn-secondary" type="submit" style="font-size:0.8rem;">Save</button>
+          </form>
+          <form method="post" action="/timetabling/sessions/{{ s.session_id }}/delete" style="margin-top:6px;"
+                onsubmit="return confirm('Remove this session?');">
+            <button class="btn" style="background:var(--danger);font-size:0.8rem;" type="submit">Delete</button>
+          </form>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;font-size:0.82rem;color:var(--text-muted);">
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--bg-elevated);border:1px solid var(--border);vertical-align:-1px;"></span> Staffed and roomed</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--bg-elevated);border:1px solid var(--warning);vertical-align:-1px;"></span> Needs staff or room</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--bg-elevated);border:1px solid var(--danger);vertical-align:-1px;"></span> Clash</span>
+  </div>
+
+  <div id="tt-expand-panel" style="display:none;margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-elevated);font-size:0.85rem;"></div>
+</div>
+
+<style>
+.tt-session-block { border-left: 3px solid var(--accent); display: none; }
+.tt-session-block.tt-needs { border-left-color: var(--warning); }
+.tt-session-block.tt-clash { border: 1px solid var(--danger); border-left-width: 3px; }
+</style>
+
+<script>
+function ttSetScope(btn) {
+  document.querySelectorAll('.tt-scope-tab').forEach(function (b) {
+    b.removeAttribute('data-active');
+    b.style.borderColor = '';
+    b.style.color = '';
+  });
+  btn.setAttribute('data-active', 'true');
+  btn.style.borderColor = 'var(--accent)';
+  btn.style.color = 'var(--accent)';
+  var scope = btn.dataset.scope;
+  ['course', 'teacher', 'room'].forEach(function (s) {
+    var sel = document.getElementById('tt-select-' + s);
+    if (sel) sel.style.display = (s === scope) ? '' : 'none';
+  });
+  ttApplyFilter();
+}
+
+function ttApplyFilter() {
+  var activeTab = document.querySelector('.tt-scope-tab[data-active="true"]') || document.querySelector('.tt-scope-tab');
+  var scope = activeTab ? activeTab.dataset.scope : 'course';
+  var sel = document.getElementById('tt-select-' + scope);
+  var value = sel ? sel.value : '';
+  document.querySelectorAll('.tt-session-block').forEach(function (block) {
+    var match = block.dataset[scope + 'Id'] === value;
+    block.style.display = match ? 'block' : 'none';
+  });
+
+  var summary = document.getElementById('tt-hours-summary');
+  if (scope === 'teacher' && sel && sel.selectedOptions.length && sel.selectedOptions[0].dataset.allocated) {
+    var opt = sel.selectedOptions[0];
+    var allocated = opt.dataset.allocated;
+    var max = opt.dataset.max;
+    summary.textContent = max ? (allocated + ' / ' + max + ' hrs/week allocated') : (allocated + ' hrs/week allocated');
+    summary.style.display = 'inline';
+  } else {
+    summary.style.display = 'none';
+  }
+}
+
+function ttExpand(el) {
+  var panel = document.getElementById('tt-expand-panel');
+  var sessionId = el.dataset.sessionId;
+  var formHolder = sessionId ? document.getElementById('tt-edit-form-' + sessionId) : null;
+  if (formHolder) {
+    panel.innerHTML = formHolder.innerHTML;
+  } else {
+    panel.textContent = el.dataset.full;
+  }
+  panel.style.display = 'block';
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  var first = document.querySelector('.tt-scope-tab');
+  if (first) ttSetScope(first);
+});
+</script>

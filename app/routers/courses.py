@@ -1,3 +1,4 @@
+import datetime
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -6,10 +7,11 @@ from urllib.parse import quote
 
 from ..database import get_db
 from ..models import (
-    Teacher, Course, SpecVersion, FeedbackStyleTemplate, LessonDeck, Student, Submission,
+    Teacher, Course, CourseTeacher, SpecVersion, FeedbackStyleTemplate, LessonDeck, Student, Submission,
     CriterionMark, MarkingRun, SubmissionFile, TeacherOverride, IVRequest, IVCriterionCheck,
-    AuditLogEntry, SchemeOfWork,
+    AuditLogEntry, SchemeOfWork, CourseUnitRequirement, TimetableSession, ResourceShare,
 )
+from ..course_access import get_course_for_teacher, get_courses_for_teacher
 from ..coverage import compute_coverage, summarize_coverage
 from ..auth import get_current_teacher, verify_password, hash_password, require_admin
 from ..system_settings import get_system_settings
@@ -25,21 +27,54 @@ def dashboard(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    courses = db.query(Course).filter(Course.teacher_id == teacher.id).all()
+    courses = get_courses_for_teacher(db, teacher)
+    joined_ids = {c.id for c in courses}
+    joinable_courses = [c for c in db.query(Course).order_by(Course.name).all() if c.id not in joined_ids]
     return templates.TemplateResponse(
-        "dashboard.html", {"request": request, "teacher": teacher, "courses": courses}
+        "dashboard.html",
+        {"request": request, "teacher": teacher, "courses": courses, "joinable_courses": joinable_courses},
     )
 
 
-@router.post("/courses/create")
-def create_course(
-    name: str = Form(...),
+@router.post("/courses/join")
+def join_course(
+    course_id: int = Form(...),
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = Course(name=name, teacher_id=teacher.id)
-    db.add(course)
-    db.commit()
+    """
+    Self-service: a teacher picks an existing, admin-created course they're actually
+    teaching, rather than each teacher creating their own separate copy of the same real
+    cohort - the fix for the original problem (two lecturers covering different content
+    areas of the same course each ending up with their own disconnected record).
+    """
+    course = db.get(Course, course_id)
+    if not course:
+        return RedirectResponse(url="/", status_code=303)
+    already = db.query(CourseTeacher).filter(
+        CourseTeacher.course_id == course_id, CourseTeacher.teacher_id == teacher.id
+    ).first()
+    if not already:
+        db.add(CourseTeacher(course_id=course_id, teacher_id=teacher.id))
+        db.commit()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@router.post("/courses/{course_id}/leave")
+def leave_course(
+    course_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """A teacher no longer teaching part of a course removes themselves - the other
+    teachers still on it keep their own access untouched, since membership is per-teacher,
+    not shared state that one person's departure could affect."""
+    membership = db.query(CourseTeacher).filter(
+        CourseTeacher.course_id == course_id, CourseTeacher.teacher_id == teacher.id
+    ).first()
+    if membership:
+        db.delete(membership)
+        db.commit()
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -51,7 +86,7 @@ def course_detail(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if not course:
         return RedirectResponse(url="/", status_code=303)
 
@@ -94,10 +129,17 @@ def delete_course(
 ):
     """
     Only deletable if it has no real work attached yet - no students, no scheme of work, no
-    lesson decks. This is deliberately conservative: a course with any of those represents
-    actual usage worth protecting, same reasoning as blocking spec deletion when in use.
+    lesson decks, no timetabling data. This is deliberately conservative: a course with any
+    of those represents actual usage worth protecting, same reasoning as blocking spec
+    deletion when in use.
+
+    CourseTeacher membership rows for this course ARE cleaned up here even though they're
+    not treated as a blocker - a course with just one teacher joined and nothing else done
+    yet is still "empty" in every real sense, but db.delete(course) alone won't remove
+    those membership rows (no ORM cascade is configured), which would otherwise be left
+    silently pointing at a course_id that no longer exists.
     """
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if not course:
         return RedirectResponse(url="/", status_code=303)
 
@@ -109,10 +151,18 @@ def delete_course(
     lesson_decks = db.query(LessonDeck).filter(LessonDeck.course_id == course_id).all()
     if lesson_decks:
         blockers.append(f"{len(lesson_decks)} lesson PowerPoint(s)")
+    requirements = db.query(CourseUnitRequirement).filter(CourseUnitRequirement.course_id == course_id).all()
+    if requirements:
+        blockers.append(f"{len(requirements)} timetabling requirement(s)")
+    sessions = db.query(TimetableSession).filter(TimetableSession.course_id == course_id).all()
+    if sessions:
+        blockers.append(f"{len(sessions)} scheduled session(s)")
 
     if blockers:
         message = f"Can't delete - this course has {', '.join(blockers)} attached. Remove those first if you really want to delete it."
         return RedirectResponse(url=f"/courses/{course_id}?delete_error={quote(message)}", status_code=303)
+
+    db.query(CourseTeacher).filter(CourseTeacher.course_id == course_id).delete(synchronize_session=False)
 
     db.delete(course)
     db.commit()
@@ -181,9 +231,16 @@ def force_delete_course(
         db.query(AuditLogEntry).filter(AuditLogEntry.submission_id.in_(submission_ids)).delete(synchronize_session=False)
         db.query(Submission).filter(Submission.id.in_(submission_ids)).delete(synchronize_session=False)
 
+    deck_ids = [d.id for d in db.query(LessonDeck).filter(LessonDeck.course_id == course_id).all()]
+    if deck_ids:
+        db.query(ResourceShare).filter(ResourceShare.lesson_deck_id.in_(deck_ids)).delete(synchronize_session=False)
+
     db.query(Student).filter(Student.course_id == course_id).delete(synchronize_session=False)
     db.query(SchemeOfWork).filter(SchemeOfWork.course_id == course_id).delete(synchronize_session=False)
     db.query(LessonDeck).filter(LessonDeck.course_id == course_id).delete(synchronize_session=False)
+    db.query(CourseTeacher).filter(CourseTeacher.course_id == course_id).delete(synchronize_session=False)
+    db.query(CourseUnitRequirement).filter(CourseUnitRequirement.course_id == course_id).delete(synchronize_session=False)
+    db.query(TimetableSession).filter(TimetableSession.course_id == course_id).delete(synchronize_session=False)
     db.commit()
 
     db.delete(course)
@@ -327,7 +384,7 @@ def coverage_dashboard(
     criterion, since that's the level a scheme of work actually plans at - stated plainly
     on the page itself, not just here.
     """
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if not course:
         return RedirectResponse(url="/", status_code=303)
 
@@ -365,7 +422,7 @@ def coverage_dashboard(
                 "target_unit_name": submission_target_units.get(sub_id),
             })
 
-    report = compute_coverage(units, schemes_of_work_data, marks_data)
+    report = compute_coverage(units, schemes_of_work_data, marks_data, course_start_date=course.start_date)
     summary = summarize_coverage(report)
 
     return templates.TemplateResponse(
@@ -373,3 +430,30 @@ def coverage_dashboard(
         {"request": request, "teacher": teacher, "course": course, "has_parsed_spec": True,
          "report": report, "summary": summary},
     )
+
+
+@router.post("/courses/{course_id}/start-date")
+def set_course_start_date(
+    course_id: int,
+    start_date: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Sets (or clears) when teaching actually begins for this course - the anchor point
+    "taught, not assessed" tracking needs to work out which weeks of a scheme of work have
+    genuinely happened yet. Clearing the field is a valid, deliberate choice (falls back
+    to the old, less precise "every week counts" behavior), not an error.
+    """
+    course = get_course_for_teacher(db, course_id, teacher)
+    if not course:
+        return RedirectResponse(url="/", status_code=303)
+    if not start_date:
+        course.start_date = None
+    else:
+        try:
+            course.start_date = datetime.date.fromisoformat(start_date)
+        except ValueError:
+            pass
+    db.commit()
+    return RedirectResponse(url=f"/courses/{course_id}/coverage", status_code=303)

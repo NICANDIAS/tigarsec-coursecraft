@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Admin - Courses - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Course management</h1>
+<p class="muted">Only visible to admins and curriculum managers. Courses are created here,
+once - individual teachers then join whichever one(s) they're actually teaching from their
+own dashboard, rather than each creating their own copy of the same cohort.</p>
+
+<div class="card">
+  <h2>Create a course</h2>
+  <form method="post" action="/admin/courses/create" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+    <div style="flex:1;min-width:250px;">
+      <label>Course name</label>
+      <input type="text" name="name" required placeholder='e.g. "T-Level Digital Support and Security - Year 2"'>
+    </div>
+    <div>
+      <label>Spec (optional)</label>
+      <select name="spec_version_id">
+        <option value="">-- none yet --</option>
+        {% for s in specs %}<option value="{{ s.id }}">{{ s.label }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn" type="submit">Create course</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All courses</h2>
+  {% if not courses %}
+    <p class="muted">None created yet.</p>
+  {% endif %}
+  {% for course in courses %}
+    <details style="border-bottom:1px solid var(--border);padding:8px 0;">
+      <summary style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;cursor:pointer;">
+        <span>
+          <strong>{{ course.name }}</strong>
+          {% if course.spec_version %}<span class="muted"> — {{ course.spec_version.label }}</span>{% endif %}
+        </span>
+        <span class="muted">
+          {% set assigned = teachers_by_course.get(course.id, []) %}
+          {% if assigned %}
+            {{ assigned|map(attribute="name")|join(", ") }}
+          {% else %}
+            No teachers joined yet
+          {% endif %}
+        </span>
+      </summary>
+      <form method="post" action="/admin/courses/{{ course.id }}/edit" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;">
+        <div style="flex:1;min-width:250px;">
+          <label>Course name</label>
+          <input type="text" name="name" required value="{{ course.name }}">
+        </div>
+        <div>
+          <label>Spec</label>
+          <select name="spec_version_id">
+            <option value="">-- none --</option>
+            {% for s in specs %}
+              <option value="{{ s.id }}" {% if course.spec_version_id == s.id %}selected{% endif %}>{{ s.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="btn btn-secondary" type="submit">Save</button>
+      </form>
+
+      {% if teacher.role == "admin" %}
+        <details style="margin-top:10px;">
+          <summary class="muted" style="cursor:pointer;color:var(--danger);">Delete this course</summary>
+          <div style="border:1px solid var(--danger);border-radius:8px;padding:10px;margin-top:8px;">
+            <p style="margin:0 0 8px;">
+              This permanently destroys
+              {{ course.students|length }} student(s),
+              {{ course.schemes_of_work|length }} scheme(s) of work, and everything attached
+              to them (submissions, marks, override history, IV records) - with no way to
+              recover any of it. Type the exact course name below to confirm.
+            </p>
+            <form method="post" action="/courses/{{ course.id }}/force-delete" style="display:flex;gap:10px;flex-wrap:wrap;">
+              <input type="text" name="confirm_name" placeholder="{{ course.name }}" required style="flex:1;min-width:250px;">
+              <button class="btn" style="background:var(--danger);" type="submit"
+                      onclick="return confirm('This cannot be undone. Are you certain?');">Delete permanently</button>
+            </form>
+          </div>
+        </details>
+      {% endif %}
+    </details>
+  {% endfor %}
+</div>
+{% endblock %}

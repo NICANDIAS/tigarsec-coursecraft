@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Timetabling - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<h1>Timetabling</h1>
+<p class="muted">Phase 2: sessions and clash detection, built on the Phase 1 foundation
+(rooms and staff availability). This is early, in-development work - automated generation
+and soft-constraint optimisation (the "good" timetable, not just a valid one) come in
+later phases.</p>
+
+<div class="card">
+  <div class="list-item">
+    <span><strong>Rooms</strong> <span class="muted">— {{ room_count }} active</span></span>
+    <a class="btn btn-secondary" href="/timetabling/rooms">Manage rooms</a>
+  </div>
+  <div class="list-item">
+    <span><strong>Staff availability</strong> <span class="muted">— {{ staff_count }} active staff</span></span>
+    <a class="btn btn-secondary" href="/timetabling/staff">Manage staff availability</a>
+  </div>
+  <div class="list-item">
+    <span>
+      <strong>Sessions</strong> <span class="muted">— {{ session_count }} scheduled</span>
+      {% if clash_count %}<span class="badge" style="background:var(--danger);color:#fff;">{{ clash_count }} clash(es)</span>{% endif %}
+    </span>
+    <a class="btn btn-secondary" href="/timetabling/sessions">Manage sessions</a>
+  </div>
+  <div class="list-item">
+    <span><strong>Course requirements</strong> <span class="muted">— what the generator uses</span></span>
+    <a class="btn btn-secondary" href="/timetabling/requirements">Manage requirements</a>
+  </div>
+  <div class="list-item">
+    <span><strong>Generate timetable</strong> <span class="muted">— places every requirement automatically</span></span>
+    <a class="btn" href="/timetabling/generate">Generate</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>College working hours</h2>
+  <p class="muted">Real, editable settings rather than a fixed assumption - different
+  colleges genuinely have different hours and lunch arrangements, and this needs to work
+  for more than just one college. A session lasting the threshold length or more
+  automatically gets a mid-session break added to its end time (e.g. a 3-hour session
+  becomes 3 hours 15 minutes on the clock, so it still delivers the full 3 hours of
+  teaching either side of the break).</p>
+  <form method="post" action="/timetabling/settings/update" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
+    <div>
+      <label>Day starts</label>
+      <input type="time" name="working_day_start" value="{{ settings.working_day_start }}" required>
+    </div>
+    <div>
+      <label>Day ends</label>
+      <input type="time" name="working_day_end" value="{{ settings.working_day_end }}" required>
+    </div>
+    <div>
+      <label>Lunch starts (optional)</label>
+      <input type="time" name="lunch_start" value="{{ settings.lunch_start or '' }}">
+    </div>
+    <div>
+      <label>Lunch ends (optional)</label>
+      <input type="time" name="lunch_end" value="{{ settings.lunch_end or '' }}">
+    </div>
+    <div>
+      <label>Mid-session break, for sessions of</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="number" step="0.5" name="break_after_hours" value="{{ settings.break_after_hours }}" min="0" style="max-width:80px;">
+        <span class="muted">hrs+</span>
+      </div>
+    </div>
+    <div>
+      <label>Break length (minutes)</label>
+      <input type="number" name="min_break_minutes" value="{{ settings.min_break_minutes }}" min="0" style="max-width:120px;">
+    </div>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+
+{% if teacher.role == "admin" %}
+<div class="card" style="border-color:var(--warning);">
+  <h2>Test data</h2>
+  <p class="muted">Generates clearly-labelled (name starts with "[DUMMY]"), flagged test
+  staff and rooms for trying the generator at real scale - qualifications are drawn from
+  your actual existing requirements so they're genuinely placeable, not inert rows. Every
+  dummy record can be removed completely and safely with the button below - it's flagged
+  explicitly, never identified by name, so this can never touch real data. Nothing here is
+  pushed anywhere outside your own database; it only ever exists as rows in your local
+  instance, the same as any other data you enter.</p>
+  <form method="post" action="/timetabling/dummy-data/generate" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+    <div>
+      <label>Dummy staff</label>
+      <input type="number" name="teacher_count" value="10" min="0" max="50" style="max-width:90px;">
+    </div>
+    <div>
+      <label>Dummy rooms</label>
+      <input type="number" name="room_count" value="5" min="0" max="50" style="max-width:90px;">
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-weight:normal;">
+      <input type="checkbox" name="heavy_load" value="1" style="width:auto;margin:0;">
+      Full coverage + near-full-time hours (stress-test mode)
+    </label>
+    <button class="btn" type="submit">Generate</button>
+  </form>
+  <form method="post" action="/timetabling/dummy-data/generate-requirements" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;">
+    <div>
+      <label>Dummy requirements</label>
+      <input type="number" name="requirement_count" value="15" min="0" max="100" style="max-width:90px;">
+    </div>
+    <button class="btn" type="submit">Add to a dummy course</button>
+    <span class="muted" style="font-size:0.85rem;">Adds to one dedicated, clearly-labelled
+    test course - never touches your real curriculum. Existing dummy staff get
+    retroactively qualified for the new units.</span>
+  </form>
+  <form method="post" action="/timetabling/dummy-data/clear" style="margin-top:10px;"
+        onsubmit="return confirm('Remove every dummy-flagged staff member and room completely? This cannot be undone.');">
+    <button class="btn" style="background:var(--danger);" type="submit">Clear all dummy data</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Teacher, Course, Student
+from ..course_access import get_course_for_teacher
 from ..auth import get_current_teacher
 
 router = APIRouter()
@@ -19,7 +20,7 @@ def create_student(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if course:
         student = Student(course_id=course.id, name=name, student_ref=student_ref or None)
         db.add(student)
@@ -35,7 +36,7 @@ def student_detail(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     student = db.query(Student).filter(Student.id == student_id, Student.course_id == course_id).first()
     has_parsed_spec = bool(course and course.spec_version and course.spec_version.structured_json)
     return templates.TemplateResponse(
@@ -53,7 +54,7 @@ def edit_student(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     student = db.query(Student).filter(Student.id == student_id, Student.course_id == course_id).first()
     if course and student:
         student.name = name
@@ -74,7 +75,7 @@ def toggle_student_active(
     attached (marks, overrides, IV records). Archiving hides them from the active list
     without breaking any of that.
     """
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     student = db.query(Student).filter(Student.id == student_id, Student.course_id == course_id).first()
     if course and student:
         student.is_active = not student.is_active

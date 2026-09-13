@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Generate Timetable - Timetabling - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/timetabling">&larr; Timetabling</a></p>
+<h1>Generate Timetable</h1>
+<p class="muted">Places the hardest-to-satisfy requirements first (fewest qualified
+staff, fewest suitable rooms, most hours, most specific day preferences), so an easy
+requirement never grabs a slot that was the only option for something harder. A staffing
+or room shortfall never stops generation - the session is still created with a valid day
+and time, with the teacher or room left blank and clearly flagged, so it's visible as
+something that still needs filling in rather than missing entirely. Nothing is written
+to your timetable until you explicitly confirm below.</p>
+
+<div class="card">
+  <p>{{ requirement_count }} requirement(s) on file. {{ active_staff_count }} active
+  staff member(s), {{ active_room_count }} active room(s). {{ existing_session_count }}
+  session(s) already scheduled - the generator will build around these, not replace
+  them.</p>
+  {% if active_room_count == 0 %}
+    <p style="color:var(--danger);">No active rooms exist - every session will show
+    "needs a room" until at least one is added on the Rooms page.</p>
+  {% endif %}
+  {% if existing_session_count > 0 %}
+    <details style="margin-top:8px;">
+      <summary class="muted" style="cursor:pointer;">Start fresh instead of building on
+      what's already scheduled</summary>
+      <p class="muted" style="margin:6px 0;">Useful while testing generation repeatedly -
+      old test sessions can otherwise sit there and end up claiming every available room
+      or staff slot across the week, leaving nothing for a new run to actually use.</p>
+      <form method="post" action="/timetabling/generate/clear-sessions"
+            onsubmit="return confirm('Delete all {{ existing_session_count }} existing session(s)? This cannot be undone.');">
+        <button class="btn" style="background:var(--danger);" type="submit">Clear all {{ existing_session_count }} existing session(s)</button>
+      </form>
+    </details>
+  {% endif %}
+</div>
+
+{% if not preview %}
+  <div class="card">
+    <form method="post" action="/timetabling/generate/preview">
+      <button class="btn" type="submit">Generate a preview</button>
+    </form>
+  </div>
+{% else %}
+  <div class="card">
+    <h2>Preview — nothing saved yet</h2>
+    <p>
+      {{ preview.sessions|length }} session(s) generated.
+      {% if preview.needs_teacher_count %}<span style="color:var(--warning);">{{ preview.needs_teacher_count }} still need a member of staff assigned.</span>{% endif %}
+      {% if preview.needs_room_count %}<span style="color:var(--warning);">{{ preview.needs_room_count }} still need a room assigned.</span>{% endif %}
+    </p>
+
+    {% if preview.already_satisfied %}
+      <div style="border:1px solid var(--success);border-radius:8px;padding:10px;margin-bottom:10px;">
+        <strong style="color:var(--success);">Already fully scheduled - skipped, not re-placed:</strong>
+        {% for a in preview.already_satisfied %}
+          <p style="margin:6px 0;">{{ a.course_name }} — {{ a.unit_name or "whole course" }} ({{ a.hours_per_week }} hrs/week already committed)</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if preview.unplaced %}
+      <div style="border:1px solid var(--danger);border-radius:8px;padding:10px;margin-bottom:10px;">
+        <strong style="color:var(--danger);">Couldn't be placed at all:</strong>
+        {% for u in preview.unplaced %}
+          <p style="margin:6px 0;">{{ u.course_name }} — {{ u.unit_name or "whole course" }} ({{ u.block_hours }} hrs): {{ u.reason }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button type="button" class="btn btn-secondary" id="tt-view-grid-btn" onclick="ttShowPreviewView('grid')">Grid</button>
+      <button type="button" class="btn btn-secondary" id="tt-view-list-btn" onclick="ttShowPreviewView('list')">List</button>
+    </div>
+    <div id="tt-view-grid">
+      {% include "_timetable_grid.html" %}
+    </div>
+    <div id="tt-view-list" style="display:none;">
+    {% for s in preview.sessions %}
+      <div class="list-item">
+        <span>
+          <strong>{{ s.day }} {{ s.start }}-{{ s.end }}</strong> —
+          {{ s.course_name }}{% if s.unit_name %} ({{ s.unit_name }}){% endif %}
+        </span>
+        <span class="muted">
+          {% if s.teacher_name %}{{ s.teacher_name }}{% else %}<span style="color:var(--warning);">needs staff</span>{% endif %}
+          ·
+          {% if s.room_name %}{{ s.room_name }}{% else %}<span style="color:var(--warning);" title="{{ s.room_shortfall_reason or '' }}">needs a room</span>{% if s.room_shortfall_reason %} <span class="muted" style="font-size:0.8rem;">({{ s.room_shortfall_reason }})</span>{% endif %}{% endif %}
+        </span>
+      </div>
+    {% endfor %}
+    </div>
+
+    <form method="post" action="/timetabling/generate/commit" style="margin-top:14px;"
+          onsubmit="return confirm('Add these {{ preview.sessions|length }} session(s) to your real timetable?');">
+      <input type="hidden" name="sessions_json" value='{{ preview.sessions_json }}'>
+      <button class="btn" type="submit">Commit this to the timetable</button>
+    </form>
+    <form method="post" action="/timetabling/generate/preview" style="margin-top:8px;">
+      <button class="btn btn-secondary" type="submit">Regenerate</button>
+    </form>
+  </div>
+{% endif %}
+<script>
+function ttShowPreviewView(view) {
+  var g = document.getElementById('tt-view-grid');
+  var l = document.getElementById('tt-view-list');
+  if (g) g.style.display = view === 'grid' ? '' : 'none';
+  if (l) l.style.display = view === 'list' ? '' : 'none';
+}
+</script>
+{% endblock %}

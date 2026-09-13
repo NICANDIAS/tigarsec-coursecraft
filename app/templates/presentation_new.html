@@ -40,11 +40,24 @@
         <div class="lo-group" data-unit-index="{{ unit_idx }}" style="display:none;">
           {% if unit.learning_outcomes %}
             {% for lo in unit.learning_outcomes %}
-              <label style="display:flex;gap:8px;align-items:center;font-size:0.9rem;margin-bottom:6px;color:var(--text);">
-                <input type="checkbox" name="selected_los" value="{{ loop.index0 }}" style="width:auto;margin:0;"
-                  {% if prefill and prefill.unit_index == unit_idx and loop.index0 in prefill.lo_indices %}checked{% endif %}>
-                {{ lo.code }} — {{ lo.title }}
-              </label>
+              {% set lo_idx = loop.index0 %}
+              {% if lo.code.startswith("general-") %}
+                {% for crit in lo.criteria %}
+                  <label style="display:flex;gap:8px;align-items:center;font-size:0.9rem;margin-bottom:6px;color:var(--text);">
+                    <input type="checkbox" name="selected_los" value="{{ lo_idx }}.{{ loop.index0 }}" style="width:auto;margin:0;"
+                      {% if prefill and prefill.unit_index == unit_idx and prefill.criteria_selected.get(lo_idx, []) and loop.index0 in prefill.criteria_selected.get(lo_idx, []) %}checked{% endif %}>
+                    {{ crit.code }} — {{ crit.description }}
+                  </label>
+                {% else %}
+                  <p class="muted">No individual criteria found for this area.</p>
+                {% endfor %}
+              {% else %}
+                <label style="display:flex;gap:8px;align-items:center;font-size:0.9rem;margin-bottom:6px;color:var(--text);">
+                  <input type="checkbox" name="selected_los" value="{{ lo_idx }}" style="width:auto;margin:0;"
+                    {% if prefill and prefill.unit_index == unit_idx and lo_idx in prefill.lo_indices %}checked{% endif %}>
+                  {{ lo.code }} — {{ lo.title }}
+                </label>
+              {% endif %}
             {% endfor %}
           {% else %}
             <p class="muted">No learning outcomes found for this unit.</p>

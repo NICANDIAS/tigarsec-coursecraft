@@ -14,6 +14,7 @@ from ..models import (
 from ..auth import get_current_teacher
 from ..docx_annotator import extract_text
 from ..llm_gateway import complete_json
+from .submissions import _get_owned_submission
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -67,7 +68,9 @@ def send_for_iv_page(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
+    if not submission:
+        return RedirectResponse(url="/iv", status_code=303)
     other_teachers = db.query(Teacher).filter(Teacher.id != teacher.id, Teacher.is_active == True).all()
     return templates.TemplateResponse(
         "iv_send.html", {"request": request, "teacher": teacher, "submission": submission, "other_teachers": other_teachers}
@@ -83,7 +86,7 @@ async def send_for_iv(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
     if not submission or not submission.marking_run:
         return RedirectResponse(url="/iv", status_code=303)
 
@@ -189,7 +192,16 @@ def iv_review(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
+    """
+    Standing fix: this used to look up the IV request by id alone, with no check that the
+    requesting teacher was actually the ASSIGNED reviewer - meaning any authenticated
+    teacher could view (and, on the submit route below, complete) a colleague's IV review
+    just by guessing the id, undermining the whole point of the process (a colleague other
+    than the marker verifying the marks).
+    """
     iv_request = db.get(IVRequest, iv_id)
+    if not iv_request or iv_request.assigned_to_teacher_id != teacher.id:
+        return RedirectResponse(url="/iv", status_code=303)
     checks = db.query(IVCriterionCheck).filter(IVCriterionCheck.iv_request_id == iv_id).all()
     return templates.TemplateResponse(
         "iv_review.html", {"request": request, "teacher": teacher, "iv_request": iv_request, "checks": checks}
@@ -205,6 +217,8 @@ async def submit_iv_review(
 ):
     form = await request.form()
     iv_request = db.get(IVRequest, iv_id)
+    if not iv_request or iv_request.assigned_to_teacher_id != teacher.id:
+        return RedirectResponse(url="/iv", status_code=303)
     checks = db.query(IVCriterionCheck).filter(IVCriterionCheck.iv_request_id == iv_id).all()
     for check in checks:
         check.iv_agree = form.get(f"agree_{check.id}") == "yes"

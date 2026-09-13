@@ -1,0 +1,480 @@
+{% extends "base.html" %}
+{% block title %}Staff availability - Timetabling - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/timetabling">&larr; Timetabling</a></p>
+<h1>Staff availability</h1>
+<p class="muted">Contracted hours and non-teaching days are a recurring weekly pattern.
+Unavailability below is for specific dates (training days, appointments, leave) - entered
+here directly for now rather than a self-service request process (see the requirements
+analysis for why that's a deliberate later refinement, not an oversight). Qualifications
+are the hard-constraint floor - who can be assigned a unit at all - not yet the fuller
+ranked scoring described in the requirements analysis.</p>
+
+<input type="text" id="staff-search" placeholder="Search staff by name or email..."
+       oninput="filterStaffCards()" style="margin-bottom:16px;">
+<p class="muted" id="staff-search-count" style="margin-top:-10px;"></p>
+
+<div class="card">
+  <h2>Teaching hours bands</h2>
+  <p class="muted">How contracted hours map to maximum teaching (contact) hours at this
+  college - a real, editable policy table rather than a fixed percentage, since the
+  ratio itself can genuinely differ between contract sizes (e.g. 35 contracted hours may
+  allow 24 teaching hours, but 20 contracted hours may only allow 13 - not simply a
+  smaller version of the same percentage). Add every band your college actually has an
+  agreed policy for; anything in between is calculated automatically, anything outside
+  the range you've defined is estimated and clearly marked as such.</p>
+  {% if not bands %}
+    <p class="muted">None added yet.</p>
+  {% endif %}
+  {% for b in bands %}
+    <div class="list-item">
+      <span>{{ b.contracted_hours }} contracted hours → {{ b.max_teaching_hours }} teaching hours</span>
+      <form method="post" action="/timetabling/teaching-hours-bands/{{ b.id }}/remove">
+        <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">Remove</button>
+      </form>
+    </div>
+  {% endfor %}
+  <form method="post" action="/timetabling/teaching-hours-bands/add" style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+    <input type="number" step="0.5" min="0.5" name="contracted_hours" placeholder="Contracted hours" required style="max-width:160px;">
+    <span>→</span>
+    <input type="number" step="0.5" min="0" name="max_teaching_hours" placeholder="Max teaching hours" required style="max-width:160px;">
+    <button class="btn btn-secondary" type="submit">Add band</button>
+  </form>
+</div>
+
+{% for person in staff %}
+  <div class="card staff-card" data-searchable="{{ (person.name ~ ' ' ~ person.email)|lower }}">
+    <details>
+      <summary><strong>{{ person.name }}</strong> <span class="muted">({{ person.email }})</span></summary>
+
+      <div style="margin-top:14px;">
+        <form method="post" action="/timetabling/staff/{{ person.id }}/update">
+          <label>Contracted hours per week</label>
+          <input type="number" step="0.5" min="0" name="contracted_hours_per_week"
+                 value="{{ person.contracted_hours_per_week if person.contracted_hours_per_week is not none else '' }}"
+                 style="max-width:150px;">
+          {% set th = teaching_hours_by_teacher.get(person.id) %}
+          {% if th %}
+            <p class="muted" style="margin:6px 0 0;">
+              Teaching hours: <strong>{{ th.teaching_hours }}</strong>{% if th.is_estimate %} (estimated - outside the college's defined bands, see below){% endif %}
+              — remaining <strong>{{ th.prep_hours }}</strong> hours for prep/admin
+            </p>
+          {% elif person.contracted_hours_per_week is not none and not bands %}
+            <p class="muted" style="margin:6px 0 0;">No teaching-hours bands defined yet - add at least one below to calculate this automatically.</p>
+          {% endif %}
+          <label style="margin-top:10px;">Non-teaching days</label>
+          <p class="muted" style="margin:2px 0 6px;font-size:0.85rem;">Tick the days you DON'T
+          teach - the days you're NOT in. If you're only in on Monday and Thursday, use the
+          quick pick below rather than ticking Monday and Thursday here directly - ticking a
+          day here means "I'm away this day", the opposite of "this is when I'm in".</p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+            <span class="muted" style="font-size:0.82rem;">Quick pick — I'm ONLY in on:</span>
+            {% for day in weekdays %}
+              <label style="display:flex;align-items:center;gap:3px;font-weight:normal;font-size:0.82rem;">
+                <input type="checkbox" class="only-in-on-{{ person.id }}" data-day="{{ day }}" style="width:auto;margin:0;"
+                       onchange="applyOnlyInOn({{ person.id }})">{{ day[:3] }}
+              </label>
+            {% endfor %}
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
+            {% for day in weekdays %}
+              <label style="display:flex;align-items:center;gap:6px;font-weight:normal;">
+                <input type="checkbox" name="non_teaching_days" id="nonteach-{{ person.id }}-{{ day }}" value="{{ day }}" style="width:auto;margin:0;"
+                       {% if person.non_teaching_days and day in person.non_teaching_days %}checked{% endif %}>
+                {{ day }}
+              </label>
+            {% endfor %}
+          </div>
+          <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Save</button>
+        </form>
+      </div>
+
+      <div style="margin-top:16px;">
+        <h3 style="margin-bottom:6px;">Qualified units</h3>
+        {% set my_quals = qualifications_by_teacher.get(person.id, []) %}
+        {% if not my_quals %}
+          <p class="muted">None added yet - this person can't currently be assigned any unit.</p>
+        {% endif %}
+        {% for q in my_quals %}
+          <div class="list-item">
+            <span>
+              {{ q.unit_name }}
+              {% if q.status == 'pending' %}<span style="color:var(--warning);"> — requested by staff, awaiting confirmation</span>{% endif %}
+              {% if q.status == 'pending_removal' %}<span style="color:var(--warning);"> — removal requested by staff, awaiting review</span>{% endif %}
+            </span>
+            <span style="display:flex;gap:6px;">
+              {% if q.status == 'pending' %}
+                <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/approve">
+                  <button class="btn" type="submit" style="padding:2px 10px;font-size:0.78rem;">Approve</button>
+                </form>
+              {% endif %}
+              {% if q.status == 'pending_removal' %}
+                <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/keep">
+                  <button class="btn" type="submit" style="padding:2px 10px;font-size:0.78rem;">Keep</button>
+                </form>
+              {% endif %}
+              <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/remove">
+                <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">{% if q.status == 'pending' %}Reject{% elif q.status == 'pending_removal' %}Confirm removal{% else %}Remove{% endif %}</button>
+              </form>
+            </span>
+          </div>
+          <details style="margin:0 0 8px 0;">
+            <summary class="muted" style="cursor:pointer;font-size:0.78rem;">
+              Skill ranking
+              {% if q.years_experience is not none or q.admin_rating is not none %}
+                ({% if q.years_experience is not none %}{{ q.years_experience }} yrs exp{% endif %}{% if q.years_experience is not none and q.admin_rating is not none %}, {% endif %}{% if q.admin_rating is not none %}rating {{ q.admin_rating }}/5{% endif %})
+              {% else %}
+                (none set)
+              {% endif %}
+            </summary>
+            <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/skill" style="display:flex;gap:10px;align-items:flex-end;margin-top:6px;flex-wrap:wrap;">
+              <div>
+                <label style="font-size:0.75rem;">Years of experience</label>
+                <input type="number" step="0.5" min="0" name="years_experience" value="{{ q.years_experience if q.years_experience is not none else '' }}" style="max-width:100px;">
+              </div>
+              <div>
+                <label style="font-size:0.75rem;">Admin rating (1-5)</label>
+                <select name="admin_rating">
+                  <option value="">Not set</option>
+                  {% for n in [1,2,3,4,5] %}
+                    <option value="{{ n }}" {% if q.admin_rating == n %}selected{% endif %}>{{ n }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.78rem;">Save</button>
+            </form>
+          </details>
+        {% endfor %}
+
+        <details style="margin-top:8px;">
+          <summary>Add qualified units</summary>
+          <form method="post" action="/timetabling/staff/{{ person.id }}/qualifications/add" style="margin-top:10px;">
+            {% for group in spec_unit_groups %}
+              {% set group_key = "p" ~ person.id ~ "-s" ~ group.spec_id %}
+              <div style="margin-bottom:12px;">
+                <label style="display:flex;align-items:center;gap:8px;font-weight:bold;">
+                  <input type="checkbox" data-select-all-group="{{ group_key }}" onclick="toggleQualGroup('{{ group_key }}', this.checked)" style="width:auto;margin:0;">
+                  {{ group.spec_label }} <span class="muted" style="font-weight:normal;">(select all)</span>
+                </label>
+                <div style="margin-left:26px;">
+                  {% for unit_name in group.unit_names %}
+                    <label style="display:flex;align-items:center;gap:8px;font-weight:normal;">
+                      <input type="checkbox" name="spec_units" value="{{ group.spec_id }}|{{ unit_name }}" data-qual-group="{{ group_key }}" style="width:auto;margin:0;">
+                      {{ unit_name }}
+                    </label>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endfor %}
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Add selected</button>
+          </form>
+        </details>
+      </div>
+
+      <div style="margin-top:16px;">
+        <h3 style="margin-bottom:6px;">Unavailability (specific dates)</h3>
+        {% set my_unavail = unavailability_by_teacher.get(person.id, []) %}
+        {% if not my_unavail %}
+          <p class="muted">None recorded.</p>
+        {% endif %}
+        {% for u in my_unavail %}
+          <div class="list-item">
+            <span>
+              {% if u.start_date == u.end_date %}{{ u.start_date }}{% else %}{{ u.start_date }} to {{ u.end_date }}{% endif %}
+              {% if u.portion == "am" %} (morning only){% elif u.portion == "pm" %} (afternoon only){% endif %}
+              {% if u.reason %} — {{ u.reason }}{% endif %}
+            </span>
+            <form method="post" action="/timetabling/staff/unavailability/{{ u.id }}/remove">
+              <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">Remove</button>
+            </form>
+          </div>
+        {% endfor %}
+
+        <form method="post" action="/timetabling/staff/{{ person.id }}/unavailability/add"
+              onsubmit="return validateUnavailabilityForm({{ person.id }})" style="margin-top:8px;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <select name="portion" id="portion-{{ person.id }}" onchange="onPortionChange({{ person.id }})">
+              <option value="full_day">Full day(s)</option>
+              <option value="am">Morning only (half day)</option>
+              <option value="pm">Afternoon only (half day)</option>
+            </select>
+
+            <span id="range-toggle-{{ person.id }}" style="display:flex;gap:12px;align-items:center;">
+              <label style="display:flex;align-items:center;gap:4px;font-weight:normal;">
+                <input type="radio" id="range-single-{{ person.id }}" name="range_mode" value="single" checked
+                       onchange="onRangeChange({{ person.id }})" style="width:auto;margin:0;">
+                Single day
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-weight:normal;">
+                <input type="radio" id="range-multiple-{{ person.id }}" name="range_mode" value="multiple"
+                       onchange="onRangeChange({{ person.id }})" style="width:auto;margin:0;">
+                Multiple days
+              </label>
+            </span>
+          </div>
+
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+            <button type="button" class="date-picker-btn" id="start-btn-{{ person.id }}"
+                    onclick="openCalendar('start-{{ person.id }}', 'start-btn-{{ person.id }}', {{ person.id }}, true)">Choose start date</button>
+            <input type="hidden" name="start_date" id="start-{{ person.id }}">
+
+            <span id="end-wrapper-{{ person.id }}" style="display:none;align-items:center;gap:10px;">
+              <span class="muted">to</span>
+              <button type="button" class="date-picker-btn" id="end-btn-{{ person.id }}"
+                      onclick="openCalendar('end-{{ person.id }}', 'end-btn-{{ person.id }}', {{ person.id }}, false)">Choose end date</button>
+              <input type="hidden" name="end_date" id="end-{{ person.id }}">
+            </span>
+
+            <input type="text" name="reason" placeholder="Reason (optional)" style="flex:1;min-width:150px;">
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Add</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </div>
+{% endfor %}
+
+<div id="calendar-popup" class="calendar-popup" style="display:none;">
+  <div class="calendar-header">
+    <button type="button" class="calendar-nav-btn" onclick="calendarNavMonth(-1)">&lsaquo;</button>
+    <span id="calendar-month-label"></span>
+    <button type="button" class="calendar-nav-btn" onclick="calendarNavMonth(1)">&rsaquo;</button>
+  </div>
+  <div class="calendar-weekdays">
+    <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+  </div>
+  <div id="calendar-grid" class="calendar-grid"></div>
+  <button type="button" class="btn btn-secondary calendar-cancel-btn" onclick="closeCalendar()">Cancel</button>
+</div>
+
+<style>
+.date-picker-btn {
+  background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 0.9rem;
+}
+.date-picker-btn:hover { border-color: var(--accent); }
+.calendar-popup {
+  position: absolute; z-index: 1000; background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow); padding: 12px; width: 260px;
+}
+.calendar-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+  font-weight: bold; color: var(--text);
+}
+.calendar-nav-btn {
+  background: none; border: none; color: var(--accent); font-size: 1.2rem; cursor: pointer;
+  padding: 2px 8px; border-radius: 6px;
+}
+.calendar-nav-btn:hover { background: var(--btn-secondary-bg); }
+.calendar-weekdays, .calendar-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center;
+}
+.calendar-weekdays span { color: var(--text-muted); font-size: 0.72rem; padding-bottom: 4px; }
+.calendar-grid button {
+  background: none; border: none; color: var(--text); border-radius: 6px; padding: 6px 0;
+  cursor: pointer; font-size: 0.85rem;
+}
+.calendar-grid button:hover { background: var(--btn-secondary-bg); }
+.cal-day-today { border: 1px solid var(--accent) !important; }
+.cal-day-selected { background: var(--accent) !important; color: var(--accent-text) !important; }
+.cal-day-empty { visibility: hidden; }
+.calendar-cancel-btn { width: 100%; margin-top: 8px; padding: 4px; font-size: 0.8rem; }
+</style>
+
+<script>
+// --- Calendar grid math - verified independently against leap years, month-length
+// edge cases, and both directions of year rollover before being wired into the DOM
+// glue code below. ---
+function getCalendarGrid(year, month) {
+  const firstDay = new Date(year, month, 1);
+  const startWeekday = (firstDay.getDay() + 6) % 7; // shift so Monday = 0, matching the header row above
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const grid = [];
+  let day = 1;
+  let week = [];
+  for (let i = 0; i < startWeekday; i++) week.push(null);
+  while (day <= daysInMonth) {
+    week.push(day);
+    day++;
+    if (week.length === 7) { grid.push(week); week = []; }
+  }
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null);
+    grid.push(week);
+  }
+  return grid;
+}
+
+function navigateMonth(year, month, delta) {
+  let newMonth = month + delta;
+  let newYear = year;
+  while (newMonth > 11) { newMonth -= 12; newYear += 1; }
+  while (newMonth < 0) { newMonth += 12; newYear -= 1; }
+  return [newYear, newMonth];
+}
+
+function toISODate(year, month, day) {
+  const mm = String(month + 1).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
+
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+let calendarState = null;
+
+function openCalendar(hiddenId, btnId, personId, isStart) {
+  const hiddenInput = document.getElementById(hiddenId);
+  const btn = document.getElementById(btnId);
+  const today = new Date();
+  let year = today.getFullYear();
+  let month = today.getMonth();
+  if (hiddenInput.value) {
+    const parts = hiddenInput.value.split("-").map(Number);
+    year = parts[0];
+    month = parts[1] - 1;
+  }
+  calendarState = { hiddenId, btnId, personId, isStart, year, month };
+  renderCalendar();
+  const popup = document.getElementById("calendar-popup");
+  popup.style.display = "block";
+  const rect = btn.getBoundingClientRect();
+  popup.style.top = (window.scrollY + rect.bottom + 4) + "px";
+  popup.style.left = (window.scrollX + rect.left) + "px";
+}
+
+function renderCalendar() {
+  const { year, month, hiddenId } = calendarState;
+  document.getElementById("calendar-month-label").textContent = MONTH_NAMES[month] + " " + year;
+  const grid = getCalendarGrid(year, month);
+  const selectedISO = document.getElementById(hiddenId).value;
+  const now = new Date();
+  const todayISO = toISODate(now.getFullYear(), now.getMonth(), now.getDate());
+  let html = "";
+  grid.forEach(function (week) {
+    week.forEach(function (day) {
+      if (day === null) {
+        html += '<span class="cal-day-empty">.</span>';
+      } else {
+        const iso = toISODate(year, month, day);
+        let cls = "";
+        if (iso === todayISO) cls += " cal-day-today";
+        if (iso === selectedISO) cls += " cal-day-selected";
+        html += '<button type="button" class="' + cls + '" onclick="selectCalendarDay(' + day + ')">' + day + "</button>";
+      }
+    });
+  });
+  document.getElementById("calendar-grid").innerHTML = html;
+}
+
+function calendarNavMonth(delta) {
+  const [y, m] = navigateMonth(calendarState.year, calendarState.month, delta);
+  calendarState.year = y;
+  calendarState.month = m;
+  renderCalendar();
+}
+
+function selectCalendarDay(day) {
+  const { hiddenId, btnId, personId, isStart, year, month } = calendarState;
+  const iso = toISODate(year, month, day);
+  document.getElementById(hiddenId).value = iso;
+  document.getElementById(btnId).textContent = iso;
+  closeCalendar();
+  if (isStart) {
+    // Single-day mode (the default) means there's no end-date field visible for the
+    // person to fill in themselves - mirror the start date into it so the form still
+    // submits a valid end_date, matching what the backend expects either way.
+    const singleRadio = document.getElementById("range-single-" + personId);
+    if (singleRadio && singleRadio.checked) {
+      document.getElementById("end-" + personId).value = iso;
+    }
+  }
+}
+
+function closeCalendar() {
+  document.getElementById("calendar-popup").style.display = "none";
+}
+
+function onPortionChange(personId) {
+  const portion = document.getElementById("portion-" + personId).value;
+  const rangeToggle = document.getElementById("range-toggle-" + personId);
+  const endWrapper = document.getElementById("end-wrapper-" + personId);
+  if (portion === "am" || portion === "pm") {
+    // A half-day absence spanning a date range doesn't mean anything - force single-day
+    // and hide the choice entirely rather than let it be picked and silently ignored.
+    document.getElementById("range-single-" + personId).checked = true;
+    rangeToggle.style.display = "none";
+    endWrapper.style.display = "none";
+    const startVal = document.getElementById("start-" + personId).value;
+    if (startVal) document.getElementById("end-" + personId).value = startVal;
+  } else {
+    rangeToggle.style.display = "flex";
+    onRangeChange(personId);
+  }
+}
+
+function onRangeChange(personId) {
+  const multipleChecked = document.getElementById("range-multiple-" + personId).checked;
+  const endWrapper = document.getElementById("end-wrapper-" + personId);
+  endWrapper.style.display = multipleChecked ? "flex" : "none";
+  if (!multipleChecked) {
+    const startVal = document.getElementById("start-" + personId).value;
+    if (startVal) document.getElementById("end-" + personId).value = startVal;
+  }
+}
+
+function validateUnavailabilityForm(personId) {
+  const start = document.getElementById("start-" + personId).value;
+  const end = document.getElementById("end-" + personId).value;
+  if (!start) {
+    alert("Choose a start date first.");
+    return false;
+  }
+  if (!end) {
+    alert("Choose an end date, or switch to Single day.");
+    return false;
+  }
+  if (end < start) {
+    alert("End date can't be before the start date.");
+    return false;
+  }
+  return true;
+}
+
+document.addEventListener("click", function (e) {
+  const popup = document.getElementById("calendar-popup");
+  if (popup.style.display === "block" && !popup.contains(e.target) && !e.target.classList.contains("date-picker-btn")) {
+    closeCalendar();
+  }
+});
+
+function filterStaffCards() {
+  const query = document.getElementById("staff-search").value.trim().toLowerCase();
+  const cards = document.querySelectorAll(".staff-card");
+  let visibleCount = 0;
+  cards.forEach(function (card) {
+    const match = !query || (card.dataset.searchable || "").includes(query);
+    card.style.display = match ? "" : "none";
+    if (match) visibleCount++;
+  });
+  const countEl = document.getElementById("staff-search-count");
+  countEl.textContent = query ? `${visibleCount} of ${cards.length} staff match "${query}"` : "";
+}
+
+function applyOnlyInOn(personId) {
+  const onlyInDays = new Set();
+  document.querySelectorAll('.only-in-on-' + personId + ':checked').forEach(function (cb) {
+    onlyInDays.add(cb.dataset.day);
+  });
+  if (onlyInDays.size === 0) return; // nothing picked here yet - leave the real checkboxes as they are
+  document.querySelectorAll('input[name="non_teaching_days"][id^="nonteach-' + personId + '-"]').forEach(function (cb) {
+    cb.checked = !onlyInDays.has(cb.value);
+  });
+}
+
+function toggleQualGroup(groupKey, checked) {
+  document.querySelectorAll('[data-qual-group="' + groupKey + '"]').forEach(function (cb) {
+    cb.checked = checked;
+  });
+}
+</script>
+{% endblock %}

@@ -1,7 +1,15 @@
 services:
   # Bundled local LLM - free, no account/API key needed. Used automatically when
-  # LLM_PROVIDER=ollama (the default in .env). The model is downloaded automatically
-  # on first run and cached in the ollama_data volume, so it only downloads once.
+  # LLM_PROVIDER=ollama (the default in .env).
+  #
+  # Standing fix for a real lockout this caused: the base Ollama image ships with ZERO
+  # models installed - it does NOT auto-download on first inference request, it just
+  # returns a 404. This entrypoint actually starts the server, waits until it is genuinely
+  # ready (polling, not a guessed sleep), then pulls whatever OLLAMA_MODEL is configured
+  # (read from .env automatically, same variable the app itself uses, so they can never
+  # drift apart) - cached in the ollama_data volume below, so it only downloads once, on
+  # first run or after switching to a different model. A pull failure (network, disk
+  # space) is never silent - it prints the exact manual command to run instead.
   #
   # Resource limits below cap how much of your machine Ollama can use - without them,
   # CPU inference on a large model will legitimately try to use every core it can find
@@ -10,12 +18,22 @@ services:
   # makes usage predictable and stops it starving the rest of your machine, at the cost
   # of generation taking somewhat longer under the cap.
   #
-  # mem_limit raised from 6g to 10g: 6GB was likely too tight for an 8B model plus context
-  # under sustained load - if it hits that ceiling, Ollama can stall or get killed/restarted
-  # mid-request, which looks exactly like "parsing takes hours" or "it's not loading at all".
-  # If your machine doesn't have 10GB+ free to give Docker, also check Docker Desktop's own
-  # VM memory allocation (Settings -> Resources -> Memory) - if THAT'S capped low, this
-  # per-container limit doesn't matter, the whole Docker VM is already starved.
+  # mem_limit/cpus are configurable via .env (OLLAMA_MEM_LIMIT/OLLAMA_CPUS) rather than a
+  # single hardcoded number - a real, confirmed problem with hardcoding this: a 16GB dev
+  # Mac and a 64GB production server need genuinely different values, and whichever
+  # number is picked is wrong for the OTHER environment. Defaults below (6g/4 cpus) are
+  # sized for gemma4:e4b specifically - raise OLLAMA_MEM_LIMIT considerably (e.g. 20g+)
+  # if switching to a larger model like gemma4:26b, especially on the production server
+  # where there is genuine headroom to do so.
+  #
+  # IMPORTANT - Docker Desktop on macOS has its OWN separate memory allocation (Settings ->
+  # Resources -> Memory), which caps the ENTIRE Docker VM, shared across every container
+  # at once (the app, Ollama, mailhog, Docker's own overhead) - not just this one.
+  # Confirmed as a real, distinct cause of the exact same "signal: killed" crash: raising
+  # THIS per-container limit does nothing if Docker Desktop's own VM is smaller than what
+  # you are asking this container to use. Check that setting first if this still happens
+  # after raising OLLAMA_MEM_LIMIT - it needs to be larger than OLLAMA_MEM_LIMIT plus
+  # whatever the app and other containers need, not just larger than the model itself.
   ollama:
     image: ollama/ollama:latest
     volumes:
@@ -23,8 +41,15 @@ services:
     ports:
       - "11434:11434"
     restart: unless-stopped
-    cpus: 4
-    mem_limit: 10g
+    cpus: ${OLLAMA_CPUS:-4}
+    mem_limit: ${OLLAMA_MEM_LIMIT:-6g}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        ollama serve &
+        until ollama list >/dev/null 2>&1; do sleep 1; done;
+        ollama pull ${OLLAMA_MODEL:-llama3.1:8b} || echo '[ollama] WARNING: could not auto-pull ${OLLAMA_MODEL:-llama3.1:8b} - check network/disk space, or pull it manually with: docker compose exec ollama ollama pull ${OLLAMA_MODEL:-llama3.1:8b}';
+        wait
 
   # Free, self-contained SMTP testing - same idea as bundling Ollama so AI features can be
   # tested with zero external account/cost. MailHog accepts any email sent to it (no real

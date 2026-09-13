@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Teacher, Course, Submission, Student, SpecVersion, SchemeOfWork, LessonDeck
+from ..course_access import get_courses_for_teacher
 from ..auth import get_current_teacher
 
 router = APIRouter()
@@ -16,7 +17,7 @@ TASKS_RECENT_LIMIT = 20
 
 
 def _teacher_course_ids(db: Session, teacher: Teacher) -> list[int]:
-    return [c.id for c in db.query(Course).filter(Course.teacher_id == teacher.id).all()]
+    return [c.id for c in get_courses_for_teacher(db, teacher)]
 
 
 def _gather_tasks(db: Session, teacher: Teacher) -> dict:

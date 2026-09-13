@@ -11,10 +11,11 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db, SessionLocal
 from ..models import (
-    Teacher, Course, Student, Submission, SubmissionFile, MarkingRun,
+    Teacher, Course, CourseTeacher, Student, Submission, SubmissionFile, MarkingRun,
     CriterionMark, TeacherOverride, AuditLogEntry, FeedbackStyleTemplate, MarkingTemplate,
     IVRequest, IVCriterionCheck, CORRECTION_REASON_CODES,
 )
+from ..course_access import get_course_for_teacher
 from ..auth import get_current_teacher
 from ..docx_annotator import extract_text, extract_text_with_locations, annotate_submission
 from ..spec_parser import _strip_repeated_boilerplate_lines  # same fix as spec parsing - repeated page headers/footers confuse marking too, confirmed on a real submission
@@ -25,6 +26,37 @@ from ..rubric_fill import fill_original_rubric_docx
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+
+
+def _get_owned_submission(db: Session, submission_id: int, teacher: Teacher):
+    """
+    The ONLY correct way to look up a Submission in this router for a teacher's own
+    marking/review workflow. Standing fix for a serious vulnerability: nearly every route
+    here looked up a Submission by id alone, with no check that the requesting teacher
+    owned the course the submission's student belongs to - confirmed exploitable across
+    marking, reviewing, approving, deleting, reopening, and downloading (both the rubric
+    fill and the annotated document). Any authenticated teacher could act on or view any
+    other teacher's submission just by changing the id in the URL.
+
+    Internal Verification is a legitimate, INTENTIONAL exception to single-teacher
+    ownership - a submission can genuinely be sent to a colleague for review. That happens
+    entirely through iv.py's own separate routes (keyed by iv_id, not submission_id) and
+    its own assigned_to_teacher_id check - never through this file - so applying strict
+    ownership here does not interfere with it.
+
+    Joins through Student, Course, and CourseTeacher to check course-management membership
+    in the SAME query, so it can never be silently skipped the way it was before. Returns
+    None if the submission doesn't exist or this teacher doesn't manage its course -
+    callers should treat both identically.
+    """
+    return (
+        db.query(Submission)
+        .join(Student, Submission.student_id == Student.id)
+        .join(Course, Student.course_id == Course.id)
+        .join(CourseTeacher, CourseTeacher.course_id == Course.id)
+        .filter(Submission.id == submission_id, CourseTeacher.teacher_id == teacher.id)
+        .first()
+    )
 
 
 def _bold_markdown(text: str):
@@ -392,7 +424,7 @@ def marking_templates_page(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     templates_list = db.query(MarkingTemplate).filter(MarkingTemplate.course_id == course_id).order_by(MarkingTemplate.name).all()
     return templates.TemplateResponse(
         "marking_templates.html",
@@ -417,7 +449,7 @@ async def create_marking_template(
     Save a rubric/marking scheme ONCE for this course, so it can be selected on every
     student's upload instead of being re-pasted or re-uploaded each time.
     """
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if not course:
         return RedirectResponse(url="/", status_code=303)
 
@@ -481,7 +513,7 @@ def new_submission_page(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     student = db.query(Student).filter(Student.id == student_id, Student.course_id == course_id).first()
     has_parsed_spec = bool(course and course.spec_version and course.spec_version.structured_json)
     units = course.spec_version.structured_json.get("units", []) if has_parsed_spec else []
@@ -517,7 +549,7 @@ async def upload_submission(
     spreadsheet, and PDF all evidencing the same learning outcome. All of them get
     considered together when marking.
     """
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if not course or not course.spec_version:
         return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
 
@@ -734,7 +766,7 @@ def mark_submission(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
     if not submission:
         return RedirectResponse(url="/", status_code=303)
 
@@ -1038,7 +1070,7 @@ def submission_status(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     """Polled by JS on the review page while marking is in progress."""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
     if not submission:
         return JSONResponse({"error": "not found"}, status_code=404)
     run = submission.marking_run
@@ -1160,7 +1192,9 @@ def review_submission(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
+    if not submission:
+        return RedirectResponse(url="/", status_code=303)
     marks = []
     if submission and submission.marking_run:
         marks = db.query(CriterionMark).filter(CriterionMark.marking_run_id == submission.marking_run.id).all()
@@ -1169,11 +1203,21 @@ def review_submission(
     # actual file) - this is exactly what the AI itself was given, not a short quote, so a
     # reviewer can judge the AI's marks against the real full context rather than trusting
     # its comments in isolation.
+    #
+    # Standing fix: this used to show the RAW extraction with no redaction at all, while
+    # claiming to show "exactly what was given to the AI" - false, since the real marking
+    # call redacts the student's own name/email/phone first (see _redact_student_pii).
+    # Mirrors that exact same pipeline (extract -> strip boilerplate -> redact) here too,
+    # so the claim is actually true and this can't be mistaken for evidence that
+    # redaction isn't happening.
+    student_name = submission.student.name if submission and submission.student else None
     file_views = []
     if submission:
         for f in submission.files:
             try:
                 text = extract_text_with_locations(f.stored_path, f.original_filename)
+                text = _strip_repeated_boilerplate_lines(text)
+                text, _ = _redact_student_pii(text, student_name)
             except Exception:
                 text = "(Could not extract text from this file for preview.)"
             file_views.append({
@@ -1206,7 +1250,7 @@ async def approve_submission(
     teacher: Teacher = Depends(get_current_teacher),
 ):
     form = await request.form()
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
     if not submission or not submission.marking_run:
         return RedirectResponse(url="/", status_code=303)
 
@@ -1286,7 +1330,7 @@ def delete_submission(
     failed/stuck attempt before re-uploading fresh, without needing to delete the whole
     course. Tested cascade, same dependency chain as the course-level delete.
     """
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
     if not submission:
         return RedirectResponse(url="/", status_code=303)
     student_id = submission.student_id
@@ -1329,7 +1373,7 @@ def unapprove_submission(
     they were (nothing is deleted), just re-opens the fields for editing and stops treating
     it as final. Re-approving afterward regenerates the annotated document from scratch.
     """
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
     if submission and submission.status == "released":
         submission.status = "needs_review"
         db.add(AuditLogEntry(
@@ -1355,7 +1399,7 @@ def similarity_check(
     just your own class), but a real, free, fast first line of defence for the specific
     case of students in the same class copying each other.
     """
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if not course:
         return RedirectResponse(url="/", status_code=303)
 
@@ -1408,7 +1452,7 @@ def download_filled_rubric(
     untouched, only the existing blank "Scoring"-style cells get written to. Only
     available when the rubric was uploaded as a .docx.
     """
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
     if not submission or not submission.rubric_file_path or not submission.marking_run:
         return RedirectResponse(url=f"/submissions/{submission_id}/review", status_code=303)
     if not os.path.exists(submission.rubric_file_path):
@@ -1458,7 +1502,7 @@ def download_annotated(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = _get_owned_submission(db, submission_id, teacher)
     if not submission or not submission.annotated_path or not os.path.exists(submission.annotated_path):
         return RedirectResponse(url=f"/submissions/{submission_id}/review", status_code=303)
     return FileResponse(

@@ -32,9 +32,21 @@
         <a href="/shared-with-me" class="{{ 'active' if request.url.path == '/shared-with-me' }}">Shared with me</a>
         <a href="/feedback" class="{{ 'active' if request.url.path == '/feedback' }}">Feedback</a>
         <a href="/tasks" class="{{ 'active' if request.url.path == '/tasks' }}">Tasks <span class="badge badge-needs_review" id="tasks-badge" style="display:none;"></span></a>
-        <a href="/coming-soon?feature=Timetabling" class="soon-link">Timetabling <span class="badge badge-uploaded">Soon</span></a>
-        <a href="/coming-soon?feature=Teams%20integration" class="soon-link">Teams integration <span class="badge badge-uploaded">Soon</span></a>
-        {% if teacher.role == "admin" %}
+        <a href="/timetabling/my-availability" class="{{ 'active' if request.url.path == '/timetabling/my-availability' }}">My availability</a>
+        {% if teacher.role == "curriculum_manager" %}
+          <a href="/admin/sow-templates" class="{{ 'active' if request.url.path == '/admin/sow-templates' }}">SOW Templates</a>
+        {% endif %}
+        {% if teacher.role == "admin" or 'timetabling' in (teacher.early_access_features or []) %}
+          <a href="/timetabling" class="{{ 'active' if request.url.path.startswith('/timetabling') }}">Timetabling <span class="badge badge-released" style="font-size:0.7rem;">Early access</span></a>
+        {% else %}
+          <a href="/coming-soon?feature=Timetabling" class="soon-link">Timetabling <span class="badge badge-uploaded">Soon</span></a>
+        {% endif %}
+        {% if 'teams_integration' in (teacher.early_access_features or []) %}
+          <a href="/early-access/teams_integration" class="{{ 'active' if request.url.path == '/early-access/teams_integration' }}">Teams integration <span class="badge badge-released" style="font-size:0.7rem;">Early access</span></a>
+        {% else %}
+          <a href="/coming-soon?feature=Teams%20integration" class="soon-link">Teams integration <span class="badge badge-uploaded">Soon</span></a>
+        {% endif %}
+        {% if teacher.role in ("admin", "curriculum_manager") %}
           <div class="sidebar-divider"></div>
           <button class="sidebar-group-toggle" id="admin-nav-toggle" type="button" aria-expanded="false" aria-controls="admin-nav-items">
             <span>Admin</span>
@@ -42,12 +54,19 @@
           </button>
           <div class="sidebar-group-items" id="admin-nav-items" data-expanded="false">
             <div>
-              <a href="/admin/users" class="{{ 'active' if request.url.path == '/admin/users' }}">Users</a>
-              <a href="/admin/logs" class="{{ 'active' if request.url.path == '/admin/logs' }}">Audit Log</a>
-              <a href="/admin/schema-check" class="{{ 'active' if request.url.path == '/admin/schema-check' }}">Schema Check</a>
-              <a href="/admin/feedback" class="{{ 'active' if request.url.path == '/admin/feedback' }}">Feedback</a>
-              <a href="/admin/ai-providers" class="{{ 'active' if request.url.path == '/admin/ai-providers' }}">AI Provider</a>
-              <a href="/admin/system-settings" class="{{ 'active' if request.url.path == '/admin/system-settings' }}">System Settings</a>
+              {% if teacher.role == "admin" %}
+                <a href="/admin/users" class="{{ 'active' if request.url.path == '/admin/users' }}">Users</a>
+                <a href="/admin/logs" class="{{ 'active' if request.url.path == '/admin/logs' }}">Audit Log</a>
+                <a href="/admin/schema-check" class="{{ 'active' if request.url.path == '/admin/schema-check' }}">Schema Check</a>
+                <a href="/admin/feedback" class="{{ 'active' if request.url.path == '/admin/feedback' }}">Feedback</a>
+                <a href="/admin/ai-providers" class="{{ 'active' if request.url.path == '/admin/ai-providers' }}">AI Provider</a>
+              {% endif %}
+              <a href="/admin/courses" class="{{ 'active' if request.url.path == '/admin/courses' }}">Courses</a>
+              <a href="/admin/sow-templates" class="{{ 'active' if request.url.path == '/admin/sow-templates' }}">SOW Templates</a>
+              {% if teacher.role == "admin" %}
+                <a href="/admin/system-settings" class="{{ 'active' if request.url.path == '/admin/system-settings' }}">System Settings</a>
+                <a href="/admin/data-retention" class="{{ 'active' if request.url.path == '/admin/data-retention' }}">Data Retention</a>
+              {% endif %}
             </div>
           </div>
         {% endif %}

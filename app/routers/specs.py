@@ -10,7 +10,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from ..database import get_db, SessionLocal
-from ..models import Teacher, SpecVersion, Course, Submission, DiscoveredSpecFormat
+from ..models import Teacher, SpecVersion, Course, Submission, DiscoveredSpecFormat, ExamExemplar
+from ..course_access import get_course_for_teacher
 from ..auth import get_current_teacher, require_spec_uploader
 from ..docx_annotator import extract_text
 from ..llm_gateway import get_effective_provider
@@ -248,9 +249,11 @@ def view_spec(
 ):
     spec = db.get(SpecVersion, spec_id)
     can_upload = teacher.role in ("admin", "curriculum_manager")
+    exemplars = db.query(ExamExemplar).filter(ExamExemplar.spec_version_id == spec_id).order_by(ExamExemplar.created_at.desc()).all() if spec else []
     return templates.TemplateResponse(
         "spec_detail.html",
-        {"request": request, "teacher": teacher, "spec": spec, "can_upload": can_upload, "delete_error": delete_error or None},
+        {"request": request, "teacher": teacher, "spec": spec, "can_upload": can_upload,
+         "delete_error": delete_error or None, "exemplars": exemplars},
     )
 
 
@@ -319,7 +322,7 @@ def attach_spec(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if course:
         course.spec_version_id = spec_version_id
         db.commit()
@@ -335,7 +338,7 @@ def detach_spec(
     """Unlinks the spec from this course only - the spec itself stays in the shared
     library untouched. Full deletion of a spec from the library is a separate action
     on the spec's own page."""
-    course = db.query(Course).filter(Course.id == course_id, Course.teacher_id == teacher.id).first()
+    course = get_course_for_teacher(db, course_id, teacher)
     if course:
         course.spec_version_id = None
         db.commit()

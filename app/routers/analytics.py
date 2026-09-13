@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Teacher, Course, Student, Submission, CriterionMark
+from ..course_access import get_courses_for_teacher
 from ..auth import get_current_teacher
 
 router = APIRouter()
@@ -84,7 +85,7 @@ def analytics_dashboard(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
-    courses = db.query(Course).filter(Course.teacher_id == teacher.id).all()
+    courses = get_courses_for_teacher(db, teacher)
     course_ids = [c.id for c in courses]
 
     # Scope submissions: everything across your courses by default, narrowed to one course

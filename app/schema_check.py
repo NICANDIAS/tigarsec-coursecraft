@@ -28,6 +28,41 @@ def _sqlite_type_for(sa_type) -> str:
     return SQLITE_TYPE_MAP.get(type_name, "TEXT")  # unknown type - fall back to TEXT rather than crash
 
 
+def _sqlite_default_clause(col) -> str:
+    """
+    A literal SQL DEFAULT clause for a column, if it has a simple, literal Python-side
+    default declared (a plain number, string, or boolean) - confirmed as a real, live bug
+    without this: a bare ALTER TABLE ADD COLUMN leaves every EXISTING row NULL for the new
+    column regardless of what default the model itself declares, which silently disabled a
+    real feature (a None value read by application code as "not configured" rather than
+    the intended default value).
+
+    Only handles simple, literal defaults - anything more complex (a callable, a function
+    reference) is skipped, leaving existing rows NULL as before rather than risk
+    generating invalid SQL from something that can't be expressed as a literal. Wrapped
+    defensively since this touches the underlying SQLAlchemy Column API directly - any
+    unexpected shape here falls back to no default clause (the pre-existing behavior)
+    rather than breaking schema sync entirely.
+    """
+    try:
+        default = getattr(col, "default", None)
+        if default is None or not hasattr(default, "arg"):
+            return ""
+        value = default.arg
+        if callable(value):
+            return ""
+        if isinstance(value, bool):
+            return f" DEFAULT {1 if value else 0}"
+        if isinstance(value, (int, float)):
+            return f" DEFAULT {value}"
+        if isinstance(value, str):
+            escaped = value.replace("'", "''")
+            return f" DEFAULT '{escaped}'"
+        return ""
+    except Exception:
+        return ""
+
+
 def diff_schema(engine, Base) -> dict:
     """Returns {"missing_tables": [...], "missing_columns": {table: [(col, type), ...]}}"""
     with engine.connect() as conn:
@@ -44,7 +79,7 @@ def diff_schema(engine, Base) -> dict:
                 row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})"))
             }
             missing = [
-                (col.name, _sqlite_type_for(col.type))
+                (col.name, _sqlite_type_for(col.type) + _sqlite_default_clause(col))
                 for col in table.columns if col.name not in actual_columns
             ]
             if missing:
