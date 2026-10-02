@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="900" viewBox="0 0 240 900" preserveAspectRatio="xMidYMid slice">
+<!-- TIGARSEC navy sidebar circuits (light theme) -->
+<g fill="none" stroke="#1f2f55" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+<path d="M108,326 L108,173 L168,114 L324,114"/>
+<path d="M184,674 L184,510 L141,467 L141,421 L216,346 L216,205"/>
+<path d="M254,161 L254,5 L142,-107 L65,-107 L19,-60 L19,94"/>
+<path d="M5,192 L5,248 L115,358"/>
+<path d="M3,859 L3,969 L70,1036 L135,1036 L227,1129 L227,1191"/>
+<path d="M154,106 L193,146 L357,146"/>
+<path d="M196,789 L196,843 L126,913 L60,913 L-3,976"/>
+<path d="M31,224 L31,346 L107,422 L107,465 L33,539"/>
+<path d="M167,54 L51,170 L-7,170 L-51,126 L-95,126"/>
+<path d="M-2,105 L-2,204 L-57,259"/>
+<path d="M5,511 L5,374 L-87,281"/>
+<path d="M140,739 L140,599 L79,538 L79,462 L124,418"/>
+<path d="M235,159 L152,241 L101,241 L19,159 L-91,159 L-173,240"/>
+<path d="M132,851 L132,900 L226,994 L226,1047 L156,1117"/>
+<path d="M177,-11 L177,-81 L68,-190 L68,-311 L153,-396 L246,-396"/>
+<path d="M201,43 L201,164 L170,195 L170,278 L141,307"/>
+<path d="M276,776 L276,903 L176,1003 L176,1169 L214,1208"/>
+<path d="M-14,62 L-14,183 L49,245 L49,316 L-50,414 L-50,456"/>
+<path d="M-7,744 L-7,846 L-91,930 L-91,1053 L-131,1093"/>
+<path d="M212,844 L212,1009 L243,1040 L315,1040 L388,967"/>
+<path d="M98,37 L169,108 L266,108 L325,167 L325,249 L382,306"/>
+<path d="M171,95 L171,262 L123,309 L73,309 L2,238"/>
+<circle cx="324" cy="114" r="6.3" fill="#1f2f55" stroke="none"/>
+<circle cx="216" cy="205" r="8.2" fill="#1f2f55" stroke="none"/>
+<circle cx="19" cy="94" r="8.6" fill="#1f2f55" stroke="none"/>
+<circle cx="115" cy="358" r="6.3" fill="#1f2f55" stroke="none"/>
+<circle cx="227" cy="1191" r="5.2" fill="#1f2f55" stroke="none"/>
+<circle cx="357" cy="146" r="5.6" fill="none"/>
+<circle cx="-3" cy="976" r="5.0" fill="none"/>
+<circle cx="33" cy="539" r="7.3" fill="none"/>
+<circle cx="-95" cy="126" r="6.1" fill="none"/>
+<circle cx="-57" cy="259" r="8.9" fill="none"/>
+<circle cx="-87" cy="281" r="6.7" fill="none"/>
+<circle cx="124" cy="418" r="5.6" fill="#1f2f55" stroke="none"/>
+<circle cx="-173" cy="240" r="7.2" fill="none"/>
+<circle cx="156" cy="1117" r="8.6" fill="#1f2f55" stroke="none"/>
+<circle cx="246" cy="-396" r="5.3" fill="none"/>
+<circle cx="141" cy="307" r="7.4" fill="#1f2f55" stroke="none"/>
+<circle cx="214" cy="1208" r="5.3" fill="#1f2f55" stroke="none"/>
+<circle cx="-50" cy="456" r="8.8" fill="none"/>
+<circle cx="-131" cy="1093" r="8.2" fill="#1f2f55" stroke="none"/>
+<circle cx="388" cy="967" r="8.5" fill="#1f2f55" stroke="none"/>
+<circle cx="382" cy="306" r="5.8" fill="#1f2f55" stroke="none"/>
+<circle cx="2" cy="238" r="8.1" fill="#1f2f55" stroke="none"/>
+</g>
+</svg>

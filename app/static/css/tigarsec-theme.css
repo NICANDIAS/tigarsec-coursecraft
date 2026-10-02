@@ -1,0 +1,97 @@
+/* ══════════════════════════════════════════════════════════════════
+   TIGARSEC look for CourseCraft (TIGARSEC Assess) - both themes.
+   Approved preview: "CourseCraft - TIGARSEC look (dark + light)", 2 Oct 2026.
+   Loaded AFTER style.css in base.html / base_auth.html. It only re-sets style.css's own
+   theme colours and adds the circuit background and the navy sidebar - no page markup
+   changes. Presentation mode (presentation_present.html) does not load it.
+   Remove the <link> line in the two base templates to go back to the old look.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── light theme (also the default) ── */
+:root,
+html[data-theme="light"] {
+  --bg: #eaeff7;               /* page */
+  --bg-elevated: #ffffff;      /* cards, panels */
+  --text: #142038;
+  --text-muted: #4c5b7d;
+  --border: #d3dbe8;
+  --accent: #e0a526;           /* amber: buttons, focus rings, markers */
+  --accent-text: #111111;      /* text ON amber */
+  --success: #1c7a43;
+  --warning: #8f5a06;
+  --danger: #c03537;
+  --shadow: 0 1px 3px rgba(20, 32, 56, 0.08);
+  --btn-secondary-bg: #f1f4fa;
+  --btn-secondary-bg-hover: #e3e9f3;
+  --ts-link: #1e3a5f;          /* links: amber TEXT on white is unreadable, so navy */
+  --ts-glow: #f9fbfe;
+  --ts-sidebar: #16223f;       /* navy sidebar in BOTH themes: the brand anchor */
+}
+
+/* ── dark theme ── */
+html[data-theme="dark"] {
+  --bg: #16223f;
+  --bg-elevated: #111a2f;
+  --text: #e6ebf5;
+  --text-muted: #a3b0c9;
+  --border: #2a3858;
+  --accent: #e0a526;
+  --accent-text: #111111;
+  --success: #2fbf71;
+  --warning: #e0a526;
+  --danger: #f2646a;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --btn-secondary-bg: #1d2a47;
+  --btn-secondary-bg-hover: #26375c;
+  --ts-link: #e0a526;
+  --ts-glow: #26375c;
+  --ts-deep: #0e172d;
+  --ts-sidebar: #0b142a;
+}
+
+/* ── page background: gradient + circuit-board lines ── */
+html[data-theme="light"] body {
+  background: url("/static/img/tigarsec-circuit-light.svg") center / cover no-repeat fixed,
+              radial-gradient(ellipse 90% 75% at 72% 0%, var(--ts-glow) 0%, var(--bg) 70%) fixed;
+  background-color: var(--bg);
+}
+html[data-theme="dark"] body {
+  background: url("/static/tigarsec/circuit-bg.svg") center / cover no-repeat fixed,
+              radial-gradient(ellipse 90% 75% at 72% 0%, var(--ts-glow) 0%, var(--bg) 62%, var(--ts-deep) 100%) fixed;
+  background-color: var(--bg);
+}
+
+/* ── text that used the accent colour now uses the readable link colour ── */
+a { color: var(--ts-link); }
+.form-section-title { color: var(--ts-link); }
+.topbar nav a:hover, .btn-secondary:hover, summary:hover { color: var(--ts-link); }
+
+/* ── sidebar: navy in both themes. Its own colour set, so EVERYTHING inside it
+      (links, counts, user info, the theme button) is light-on-navy automatically. ── */
+.sidebar {
+  --text: #e6ebf5;
+  --text-muted: #a3b0c9;
+  --border: rgba(255, 255, 255, 0.12);
+  --bg: rgba(255, 255, 255, 0.07);           /* hover backgrounds inside the sidebar */
+  --bg-elevated: transparent;
+  --ts-link: #e0a526;
+  background: var(--ts-sidebar);
+  color: var(--text);
+  border-right: 1px solid #0e172d;
+}
+html[data-theme="light"] .sidebar {
+  background: url("/static/img/tigarsec-sidebar-circuits.svg") center / cover no-repeat, var(--ts-sidebar);
+}
+.sidebar-brand { background: transparent; border-bottom: 1px solid var(--border); color: var(--text); }
+.brand-monogram { background: var(--accent); color: var(--accent-text); }
+.sidebar-nav a.active {
+  background: rgba(224, 165, 38, 0.12);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);    /* the amber "you are here" bar */
+}
+.sidebar .theme-toggle {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.18);
+}
