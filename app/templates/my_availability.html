@@ -154,6 +154,50 @@ you're not actually ready for.</p>
   </details>
 </div>
 
+<div class="card">
+  <h2>CPD</h2>
+  <p class="muted">Log your own continuing professional development - an admin reviews
+  it before it counts toward anything. Leave the scope as General for anything not tied
+  to a specific subject (safeguarding, Prevent, GDPR, first aid, and so on).</p>
+  {% if not my_cpd %}
+    <p class="muted">None logged yet.</p>
+  {% endif %}
+  {% for c in my_cpd %}
+    <div class="list-item">
+      <span>
+        {{ c.title }} — {{ c.date }} <span class="muted">({{ c.unit_name if c.unit_name else 'General' }})</span>
+        {% if c.status == 'pending' %}<span style="color:var(--warning);"> — awaiting confirmation</span>{% endif %}
+      </span>
+      {% if c.status == 'pending' %}
+        <form method="post" action="/timetabling/my-availability/cpd/{{ c.id }}/withdraw"
+              onsubmit="return confirm('Withdraw this submission?');">
+          <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.82rem;">Withdraw</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endfor %}
+  <form method="post" action="/timetabling/my-availability/cpd/add" style="display:flex;gap:10px;align-items:flex-end;margin-top:10px;flex-wrap:wrap;">
+    <div>
+      <label>Title</label>
+      <input type="text" name="title" required style="min-width:200px;">
+    </div>
+    <div>
+      <label>Date</label>
+      <input type="date" name="date" required>
+    </div>
+    <div>
+      <label>Scope</label>
+      <select name="spec_unit">
+        <option value="">General - not tied to a subject</option>
+        {% for q in my_qualifications %}
+          <option value="{{ q.spec_version_id }}|{{ q.unit_name }}">{{ q.unit_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn" type="submit">Add</button>
+  </form>
+</div>
+
 <script>
 function applyOnlyInOnMe() {
   const onlyInDays = new Set();

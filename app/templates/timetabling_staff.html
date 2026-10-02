@@ -90,60 +90,142 @@ ranked scoring described in the requirements analysis.</p>
       </div>
 
       <div style="margin-top:16px;">
+        {% set spec_groups = quals_grouped_by_teacher.get(person.id, []) %}
+        {% set general_exp = spec_experience_by_teacher.get(person.id, {}).get(None) %}
+        <details style="margin-bottom:10px;">
+          <summary class="muted" style="cursor:pointer;font-size:0.78rem;">
+            General experience (applies to every qualified unit unless a specific qualification below overrides it)
+            {% if general_exp and (general_exp.years_experience is not none or general_exp.admin_rating is not none) %}
+              ({% if general_exp.years_experience is not none %}{{ general_exp.years_experience }} yrs exp{% endif %}{% if general_exp.years_experience is not none and general_exp.admin_rating is not none %}, {% endif %}{% if general_exp.admin_rating is not none %}rating {{ general_exp.admin_rating }}/5{% endif %})
+            {% else %}
+              (none set)
+            {% endif %}
+          </summary>
+          <form method="post" action="/timetabling/staff/{{ person.id }}/general-skill" style="display:flex;gap:10px;align-items:flex-end;margin-top:6px;flex-wrap:wrap;">
+            <div>
+              <label style="font-size:0.75rem;">Years of experience</label>
+              <input type="number" step="0.5" min="0" name="years_experience" value="{{ general_exp.years_experience if general_exp and general_exp.years_experience is not none else '' }}" style="max-width:100px;">
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Admin rating (1-5)</label>
+              <select name="admin_rating">
+                <option value="">Not set</option>
+                {% for n in [1,2,3,4,5] %}
+                  <option value="{{ n }}" {% if general_exp and general_exp.admin_rating == n %}selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.78rem;">Save</button>
+          </form>
+        </details>
+
+        <details style="margin-bottom:10px;">
+          <summary class="muted" style="cursor:pointer;font-size:0.78rem;">CPD records ({{ cpd_by_teacher.get(person.id, [])|length }}) - for this person overall, not tied to any one qualification below</summary>
+          {% set my_cpd = cpd_by_teacher.get(person.id, []) %}
+          {% if not my_cpd %}
+            <p class="muted" style="margin-top:6px;">None logged yet.</p>
+          {% endif %}
+          {% for c in my_cpd %}
+            <div class="list-item">
+              <span>
+                {{ c.title }} — {{ c.date }} <span class="muted">({{ c.unit_name if c.unit_name else 'General - not tied to a subject' }})</span>
+                {% if c.status == 'pending' %}<span style="color:var(--warning);"> — submitted by staff, awaiting confirmation</span>{% endif %}
+              </span>
+              <span style="display:flex;gap:6px;">
+                {% if c.status == 'pending' %}
+                  <form method="post" action="/timetabling/staff/cpd/{{ c.id }}/approve">
+                    <button class="btn" type="submit" style="padding:2px 10px;font-size:0.78rem;">Approve</button>
+                  </form>
+                {% endif %}
+                <form method="post" action="/timetabling/staff/cpd/{{ c.id }}/remove" onsubmit="return confirm('Remove this CPD entry?');">
+                  <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">{% if c.status == 'pending' %}Reject{% else %}Remove{% endif %}</button>
+                </form>
+              </span>
+            </div>
+          {% endfor %}
+          <form method="post" action="/timetabling/staff/{{ person.id }}/cpd/add" style="display:flex;gap:10px;align-items:flex-end;margin-top:8px;flex-wrap:wrap;">
+            <div>
+              <label style="font-size:0.75rem;">Title</label>
+              <input type="text" name="title" required style="min-width:200px;">
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Date</label>
+              <input type="date" name="date" required>
+            </div>
+            <div>
+              <label style="font-size:0.75rem;">Scope</label>
+              <select name="spec_unit">
+                <option value="">General - not tied to any subject (e.g. safeguarding, Prevent, GDPR)</option>
+                {% for group in spec_groups %}
+                  {% for q in group.quals %}
+                    <option value="{{ group.spec_id }}|{{ q.unit_name }}">{{ q.unit_name }}</option>
+                  {% endfor %}
+                {% endfor %}
+              </select>
+            </div>
+            <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.78rem;">Add</button>
+          </form>
+        </details>
+
         <h3 style="margin-bottom:6px;">Qualified units</h3>
-        {% set my_quals = qualifications_by_teacher.get(person.id, []) %}
-        {% if not my_quals %}
+        {% if not spec_groups %}
           <p class="muted">None added yet - this person can't currently be assigned any unit.</p>
         {% endif %}
-        {% for q in my_quals %}
-          <div class="list-item">
-            <span>
-              {{ q.unit_name }}
-              {% if q.status == 'pending' %}<span style="color:var(--warning);"> — requested by staff, awaiting confirmation</span>{% endif %}
-              {% if q.status == 'pending_removal' %}<span style="color:var(--warning);"> — removal requested by staff, awaiting review</span>{% endif %}
-            </span>
-            <span style="display:flex;gap:6px;">
-              {% if q.status == 'pending' %}
-                <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/approve">
-                  <button class="btn" type="submit" style="padding:2px 10px;font-size:0.78rem;">Approve</button>
-                </form>
-              {% endif %}
-              {% if q.status == 'pending_removal' %}
-                <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/keep">
-                  <button class="btn" type="submit" style="padding:2px 10px;font-size:0.78rem;">Keep</button>
-                </form>
-              {% endif %}
-              <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/remove">
-                <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">{% if q.status == 'pending' %}Reject{% elif q.status == 'pending_removal' %}Confirm removal{% else %}Remove{% endif %}</button>
+        {% for group in spec_groups %}
+          <div style="margin-bottom:12px;">
+            <strong style="font-size:0.85rem;">{{ group.spec_label }}</strong>
+            {% for q in group.quals %}
+              <div class="list-item">
+                <span>
+                  {{ q.unit_name }}
+                  {% if q.status == 'pending' %}<span style="color:var(--warning);"> — requested by staff, awaiting confirmation</span>{% endif %}
+                  {% if q.status == 'pending_removal' %}<span style="color:var(--warning);"> — removal requested by staff, awaiting review</span>{% endif %}
+                </span>
+                <span style="display:flex;gap:6px;">
+                  {% if q.status == 'pending' %}
+                    <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/approve">
+                      <button class="btn" type="submit" style="padding:2px 10px;font-size:0.78rem;">Approve</button>
+                    </form>
+                  {% endif %}
+                  {% if q.status == 'pending_removal' %}
+                    <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/keep">
+                      <button class="btn" type="submit" style="padding:2px 10px;font-size:0.78rem;">Keep</button>
+                    </form>
+                  {% endif %}
+                  <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/remove">
+                    <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">{% if q.status == 'pending' %}Reject{% elif q.status == 'pending_removal' %}Confirm removal{% else %}Remove{% endif %}</button>
+                  </form>
+                </span>
+              </div>
+            {% endfor %}
+            {% set exp = spec_experience_by_teacher.get(person.id, {}).get(group.spec_id) %}
+            <details style="margin:4px 0 0 0;">
+              <summary class="muted" style="cursor:pointer;font-size:0.78rem;">
+                Skill ranking override for this qualification (leave unset to use the general figure above)
+                {% if exp and (exp.years_experience is not none or exp.admin_rating is not none) %}
+                  ({% if exp.years_experience is not none %}{{ exp.years_experience }} yrs exp{% endif %}{% if exp.years_experience is not none and exp.admin_rating is not none %}, {% endif %}{% if exp.admin_rating is not none %}rating {{ exp.admin_rating }}/5{% endif %})
+                {% else %}
+                  (none set)
+                {% endif %}
+              </summary>
+              <form method="post" action="/timetabling/staff/{{ person.id }}/spec/{{ group.spec_id }}/skill" style="display:flex;gap:10px;align-items:flex-end;margin-top:6px;flex-wrap:wrap;">
+                <div>
+                  <label style="font-size:0.75rem;">Years of experience</label>
+                  <input type="number" step="0.5" min="0" name="years_experience" value="{{ exp.years_experience if exp and exp.years_experience is not none else '' }}" style="max-width:100px;">
+                </div>
+                <div>
+                  <label style="font-size:0.75rem;">Admin rating (1-5)</label>
+                  <select name="admin_rating">
+                    <option value="">Not set</option>
+                    {% for n in [1,2,3,4,5] %}
+                      <option value="{{ n }}" {% if exp and exp.admin_rating == n %}selected{% endif %}>{{ n }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.78rem;">Save</button>
               </form>
-            </span>
+            </details>
           </div>
-          <details style="margin:0 0 8px 0;">
-            <summary class="muted" style="cursor:pointer;font-size:0.78rem;">
-              Skill ranking
-              {% if q.years_experience is not none or q.admin_rating is not none %}
-                ({% if q.years_experience is not none %}{{ q.years_experience }} yrs exp{% endif %}{% if q.years_experience is not none and q.admin_rating is not none %}, {% endif %}{% if q.admin_rating is not none %}rating {{ q.admin_rating }}/5{% endif %})
-              {% else %}
-                (none set)
-              {% endif %}
-            </summary>
-            <form method="post" action="/timetabling/staff/qualifications/{{ q.id }}/skill" style="display:flex;gap:10px;align-items:flex-end;margin-top:6px;flex-wrap:wrap;">
-              <div>
-                <label style="font-size:0.75rem;">Years of experience</label>
-                <input type="number" step="0.5" min="0" name="years_experience" value="{{ q.years_experience if q.years_experience is not none else '' }}" style="max-width:100px;">
-              </div>
-              <div>
-                <label style="font-size:0.75rem;">Admin rating (1-5)</label>
-                <select name="admin_rating">
-                  <option value="">Not set</option>
-                  {% for n in [1,2,3,4,5] %}
-                    <option value="{{ n }}" {% if q.admin_rating == n %}selected{% endif %}>{{ n }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <button class="btn btn-secondary" type="submit" style="padding:4px 12px;font-size:0.78rem;">Save</button>
-            </form>
-          </details>
         {% endfor %}
 
         <details style="margin-top:8px;">

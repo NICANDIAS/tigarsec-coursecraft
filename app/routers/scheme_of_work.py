@@ -1039,6 +1039,23 @@ def view_sow(
         return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
     course = sow.course
 
+    # Standing diagnostic for a real, reported confusion: the generic "no exam exemplar
+    # was available" warning gives no way to tell "none were ever uploaded for this spec"
+    # apart from "some exist, but they're tagged for different content area(s) than this
+    # SOW covers" - which are very different things to act on. Computed fresh at view
+    # time (read-only, no schema change) rather than stored, so it's always accurate to
+    # what's actually in Exam Exemplars right now, not a snapshot from generation time.
+    exemplar_diagnostic = None
+    if sow.generated_without_exemplar and sow.spec_version_id:
+        all_spec_exemplars = db.query(ExamExemplar).filter(ExamExemplar.spec_version_id == sow.spec_version_id).all()
+        if all_spec_exemplars:
+            covered_names = sorted({name for ex in all_spec_exemplars for name in (ex.unit_names or [])})
+            exemplar_diagnostic = (
+                f"{len(all_spec_exemplars)} exam exemplar(s) exist for this specification, but none are "
+                f"tagged for the content area(s) this scheme was generated for ({sow.content_area}). "
+                f"Exemplars currently cover: {', '.join(covered_names) if covered_names else 'no content areas'}."
+            )
+
     # Most recent deck generated for each week - if a week was regenerated more than once,
     # link to the newest attempt rather than an old one.
     decks_by_week = {}
@@ -1057,7 +1074,7 @@ def view_sow(
     return templates.TemplateResponse(
         "scheme_of_work_detail.html",
         {"request": request, "teacher": teacher, "course": course, "sow": sow, "decks_by_week": decks_by_week,
-         "sow_templates": sow_templates},
+         "sow_templates": sow_templates, "exemplar_diagnostic": exemplar_diagnostic},
     )
 
 

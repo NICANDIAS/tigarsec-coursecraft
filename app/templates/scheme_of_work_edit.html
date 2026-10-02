@@ -14,11 +14,11 @@ from the "Replace template"/"Remove template" controls on the scheme of work's o
     <div class="field-grid">
       <div>
         <label>Term/period start date</label>
-        <input type="date" name="start_date" value="{{ sow.start_date }}">
+        <input type="date" name="start_date" value="{{ sow.start_date or '' }}">
       </div>
       <div>
         <label>Term/period end date</label>
-        <input type="date" name="end_date" value="{{ sow.end_date }}">
+        <input type="date" name="end_date" value="{{ sow.end_date or '' }}">
       </div>
       <p class="muted full" style="margin-top:-2px;">If a .docx template is attached, the week count is
       calculated from its actual available (blank) weeks in this date range, not just the raw

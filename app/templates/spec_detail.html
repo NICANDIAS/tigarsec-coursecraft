@@ -80,6 +80,22 @@
         <span>
           <strong>{{ e.label }}</strong>
           <span class="muted"> — {{ e.unit_names|join(", ") }} ({{ e.original_filename }})</span>
+          <br>
+          <details style="margin-top:4px;display:inline-block;">
+            <summary style="cursor:pointer;font-size:0.82rem;display:inline;">View file</summary>
+            <div style="margin-top:8px;">
+              {% if e.original_filename.lower().endswith('.pdf') %}
+                <iframe src="/exam-exemplars/{{ e.id }}/file" style="width:100%;max-width:900px;height:500px;border:1px solid var(--border);border-radius:8px;"></iframe>
+              {% else %}
+                <p class="muted" style="font-size:0.82rem;">This file type can't be previewed inline - <a href="/exam-exemplars/{{ e.id }}/file">download it</a> to view.</p>
+              {% endif %}
+            </div>
+          </details>
+          <span class="muted" style="font-size:0.82rem;">
+            {% if e.extracted_text %} — {{ "{:,}".format(e.extracted_text|length) }} characters extracted
+            {% else %} — no text could be extracted from this file
+            {% endif %}
+          </span>
         </span>
         <form method="post" action="/exam-exemplars/{{ e.id }}/delete"
               onsubmit="return confirm('Remove ' + '{{ e.label }}' + '? Schemes already generated with it keep the content already baked in - this only stops it being used for new/regenerated ones.');">
@@ -89,7 +105,8 @@
     {% endfor %}
 
     <h3 style="margin-top:16px;">Add an exemplar</h3>
-    <form method="post" action="/spec-library/{{ spec.id }}/exam-exemplars/upload" enctype="multipart/form-data" style="margin-top:6px;">
+    <form method="post" action="/spec-library/{{ spec.id }}/exam-exemplars/upload" enctype="multipart/form-data" style="margin-top:6px;"
+          onsubmit="var btn=document.getElementById('exemplar-submit-btn'); btn.disabled=true; btn.textContent='Uploading, please wait...';">
       <label>Name (shown in the list above)</label>
       <input type="text" name="label" required placeholder="e.g. Sample ESP Task 1 brief 2025">
       <label>Unit(s) this exemplar covers - tick all that apply</label>
@@ -101,10 +118,15 @@
           </label>
         {% endfor %}
       </div>
-      <label>File(s) - select all that share the same name/units above (e.g. every task
-      brief and model answer for one synoptic assessment)</label>
-      <input type="file" name="exemplar_files" multiple required>
-      <button class="btn" type="submit" style="margin-top:10px;">Add exemplar(s)</button>
+      <label>File(s) - select individual files, or use "Choose a folder" below to add
+      several at once (every task brief and model answer for one synoptic assessment,
+      for example)</label>
+      <input type="file" name="exemplar_files" multiple>
+      <label style="margin-top:8px;">...or select a whole folder (subfolders are scanned automatically - every file inside is added)</label>
+      <input type="file" name="exemplar_files" webkitdirectory multiple>
+      <button class="btn" type="submit" id="exemplar-submit-btn" style="margin-top:10px;">Add exemplar(s)</button>
+      <p class="muted" style="margin-top:6px;">Extracting text from each file can take a little while for larger
+      documents or several at once - the button will show "Uploading..." once submitted, this isn't stuck.</p>
     </form>
   </div>
 {% endif %}

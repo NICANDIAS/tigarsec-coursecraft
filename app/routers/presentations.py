@@ -204,7 +204,7 @@ async def generate_presentation(
     background_tasks: BackgroundTasks,
     unit_index: int = Form(...),
     title: str = Form(...),
-    duration_minutes: int = Form(60),
+    duration_hours: float = Form(1.0),
     previous_lesson_context: str = Form(""),
     include_practicals: str = Form(""),
     source_sow_id: int = Form(0),
@@ -212,6 +212,12 @@ async def generate_presentation(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(get_current_teacher),
 ):
+    # The form now takes hours (a 5-hour session should just work, not be capped at 240
+    # minutes) - converted to minutes right here, at the one boundary where the form value
+    # enters the system. Everything downstream (deck.duration_minutes storage, regenerate,
+    # the generation job, generate_lesson_outline) is untouched and keeps working in
+    # minutes exactly as before.
+    duration_minutes = round(duration_hours * 60)
     course = get_course_for_teacher(db, course_id, teacher)
     if not course or not course.spec_version or not course.spec_version.structured_json:
         return RedirectResponse(url=f"/courses/{course_id}", status_code=303)

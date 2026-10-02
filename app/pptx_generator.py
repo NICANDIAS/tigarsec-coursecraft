@@ -20,6 +20,7 @@ Images resolve through three tiers - see resolve_slide_image.
 import os
 import re
 import uuid
+import random
 import requests
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
@@ -71,8 +72,20 @@ DURATION SELF-ASSESSMENT - do this BEFORE building the slides: given the actual 
 selected content (how many learning outcomes/criteria, how much genuine understanding each requires) \
 against the requested lesson duration, honestly assess whether this content can be properly taught - \
 with real understanding, not a rushed skim - within that time. As a practical ceiling, a single \
-class session tops out around 180 minutes (3 hours); if the content would need more than that, or \
-more than the specific duration given, to do it justice, it does NOT fit.
+class session tops out around 480 minutes (8 hours) - the longest a lecturer can request; if the \
+content would need more than that, or more than the specific duration given, to do it justice, it \
+does NOT fit.
+
+LONG SESSION STRUCTURE - for any session longer than about 90 minutes, do NOT structure it as one \
+long block of content followed by activities at the end. Alternate clearly: a chunk of content/ \
+questioning, then a hands-on activity, practical, or short research task that lets students apply or \
+explore what was just covered, before moving to the next content segment. For a genuinely long \
+session (several hours), this means MORE activity/practical/research slides distributed THROUGHOUT \
+the lesson, not one or two saved for the end - students should never sit through more than roughly \
+30-40 minutes of direct content/questioning before a hands-on, research, or discussion break, \
+regardless of overall lesson length. A research task can be a genuine activity slide too (grouping \
+"pairs" or "small group", instructions to investigate/find out something specific and feed back) - \
+not every break needs to be a practical.
 
 If it does NOT fit: do not silently cram everything in, rush shallow coverage of every point, or \
 skip content without saying so. Instead, scope THIS lesson to a coherent, complete subset of the \
@@ -94,12 +107,18 @@ cut up"}. If an activity/practical needs nothing printed (e.g. a class discussio
 entirely in a lab environment with no handout), set "resource" to null - do not invent a resource that
 isn't actually needed.
 
-CONCRETE PRACTICAL STEPS - a practical's "instructions" must be genuinely actionable, not a vague
-description of the topic. If the practical involves a specific tool (e.g. Nmap, Wireshark, a specific
-OS command, a specific IDE), give the ACTUAL steps and commands to run in sequence (e.g. "1. Open a
-terminal. 2. Run: nmap -sV 192.168.1.0/24 3. Note which ports appear open on each host. 4. ..."), not
-just "use Nmap to scan the network". A lecturer or student should be able to follow the instructions
-directly without having to work out what to actually type or click themselves.
+CONCRETE PRACTICAL STEPS - an activity or practical's "instructions" must be genuinely actionable, \
+not a vague description of the topic, and must be a LIST of separate step strings - one action per \
+list entry - NOT one long string with the numbers written inline (e.g. NOT "1. Open a terminal. 2. \
+Run: nmap -sV 192.168.1.0/24 3. ..." as a single string - that renders as an unreadable wall of text). \
+Instead: ["Open a terminal.", "Run: nmap -sV 192.168.1.0/24", "Note which ports appear open on each \
+host.", ...] - each entry is one discrete step, rendered as its own numbered line. If the practical \
+involves a specific tool (e.g. Nmap, Wireshark, a specific OS command, a specific IDE), give the \
+ACTUAL steps and commands to run, one per list entry, not just "use Nmap to scan the network". A \
+lecturer or student should be able to follow the instructions directly without having to work out \
+what to actually type or click themselves. A simple activity with no real sequential steps (e.g. "as \
+a pair, discuss X") can be a single-entry list - the point is genuine steps never get squashed \
+together into one paragraph, not that every activity needs many steps.
 
 Return ONLY raw JSON (no markdown fences, no commentary) matching exactly this shape:
 {
@@ -112,8 +131,8 @@ Return ONLY raw JSON (no markdown fences, no commentary) matching exactly this s
     {"type": "objectives", "objectives": ["string", ...]},
     {"type": "content", "title": "string", "guiding_question": "string", "key_points": ["string", ...], "check_question": "string", "image_query": "string"},
     {"type": "real_life_example", "title": "string", "scenario": "string", "discussion_question": "string", "image_query": "string"},
-    {"type": "activity", "title": "string", "instructions": "string", "grouping": "pairs|individual|small group|whole class", "time_minutes": 0, "resource": null},
-    {"type": "practical", "title": "string", "instructions": "string", "materials_needed": "string", "time_minutes": 0, "resource": null},
+    {"type": "activity", "title": "string", "instructions": ["string - one step per entry", ...], "grouping": "pairs|individual|small group|whole class", "time_minutes": 0, "resource": null},
+    {"type": "practical", "title": "string", "instructions": ["string - one step per entry", ...], "materials_needed": "string", "time_minutes": 0, "resource": null},
     {"type": "retrieval_plenary", "title": "Check Your Understanding", "questions": ["string", ...]},
     {"type": "objectives_review", "objectives_check": [{"objective": "string", "self_assess_prompt": "string"}]}
   ]
@@ -133,12 +152,19 @@ def _estimate_outline_max_tokens(duration_minutes: int, include_practicals: bool
     instruction above, the complete printable content of any practical/activity resource (a whole
     worksheet's worth of text, not a reference to one). Longer lessons need more content slides;
     practicals add substantial resource text on top. Scaled rather than a bigger flat guess, since
-    a 20-minute lesson doesn't need the same budget as a 3-hour one.
+    a 20-minute lesson doesn't need the same budget as an 8-hour one.
+
+    The outer cap was raised from 32000 to 48000 alongside the lesson-duration ceiling going from
+    240 minutes to 8 hours - the old cap was already being reached even at the OLD 240-minute
+    maximum (240*120+8000=36800), so a much longer lesson with more content/activity slides
+    spread across it is even more likely to need the headroom. The model's own actual maximum
+    output token limit isn't verified here (that's configured in llm_gateway.py, not reviewed
+    this round) - if a very long lesson still truncates, that's the next thing to check.
     """
     base = 8000
     duration_component = duration_minutes * 120  # roughly accounts for more content/activity slides
     practicals_component = 6000 if include_practicals else 0
-    return min(32000, base + duration_component + practicals_component)
+    return min(48000, base + duration_component + practicals_component)
 
 
 def generate_lesson_outline(
@@ -346,6 +372,95 @@ def _add_bullet_list(slide, left, top, width, height, items, size, color, font="
     return box
 
 
+def _add_numbered_list(slide, left, top, width, height, items, size, color, font="Calibri", spacing_after=10):
+    """
+    Same shape as _add_bullet_list but numbered (1. 2. 3. ...) instead of bulleted -
+    sequential practical/activity steps read far better numbered than as unordered
+    bullets, and critically, as genuinely SEPARATE paragraphs rather than one run-on
+    string with the numbers typed inline (the actual bug this was added to fix - a wall
+    of "1. X. 2. Y. 3. Z." text with no real line breaks between steps).
+    """
+    box = slide.shapes.add_textbox(left, top, width, height)
+    tf = box.text_frame
+    tf.word_wrap = True
+    for i, item in enumerate(items):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.alignment = PP_ALIGN.LEFT
+        p.space_after = Pt(spacing_after)
+        run = p.add_run()
+        run.text = f"{i + 1}.  {item}"
+        run.font.size = Pt(size)
+        run.font.color.rgb = _rgb(color)
+        run.font.name = font
+    return box
+
+
+def _normalize_instructions(instructions) -> list[str]:
+    """
+    The prompt now asks for a list of separate step strings, but this stays defensive
+    against the two other shapes that could still arrive: a plain string (an old,
+    already-generated deck's stored outline_json from before this change, or a rare AI
+    slip that ignores the instruction) is treated as one single step rather than crashing;
+    an empty/missing value returns an empty list so the caller can skip rendering cleanly.
+    """
+    if not instructions:
+        return []
+    if isinstance(instructions, list):
+        return [str(step) for step in instructions if str(step).strip()]
+    return [str(instructions)]
+
+
+def _estimate_bullet_block_height(items: list[str], width_inches: float, font_size_pt: int, spacing_after_pt: int = 8) -> float:
+    """
+    Rough estimate (in inches) of how much vertical space a wrapped bullet/numbered list
+    will take at a given width and font size - used to position the NEXT element
+    dynamically below it, rather than at a fixed coordinate that overlaps whenever the
+    list runs longer than whoever picked that fixed number expected. Not a pixel-exact
+    text-layout engine (that would need to replicate pptx's own rendering), just a
+    deliberately cautious estimate good enough to avoid the overlap this was built to fix.
+    """
+    chars_per_line = max(10, (width_inches * 72) / (0.5 * font_size_pt))
+    line_height_in = (font_size_pt * 1.2) / 72
+    spacing_in = spacing_after_pt / 72
+    total = 0.0
+    for item in items:
+        lines = max(1, -(-len(item) // int(chars_per_line)))  # ceil division
+        total += lines * line_height_in + spacing_in
+    return total
+
+
+def _pick_key_points_font_size(items: list[str], width_inches: float, available_height_inches: float) -> int:
+    """
+    Shrink-to-fit for a key_points list: tries the normal 15pt first, steps down only if
+    the estimated block genuinely wouldn't fit the space actually available before the
+    next element, down to an 11pt floor (a tight fit is still far better than an
+    overlapping one).
+    """
+    for size in (15, 13, 11):
+        if _estimate_bullet_block_height(items, width_inches, size) <= available_height_inches:
+            return size
+    return 11
+
+
+def _content_columns(image_on_left: bool):
+    """
+    Text/image column positions for a content-style slide, on either side - randomized
+    per slide by the caller so a deck doesn't read as "text always left, image always
+    right" throughout. Returns (text_left, text_width, image_left, image_width).
+    """
+    text_width = Inches(6.6)
+    column_gap = Inches(0.4)
+    if image_on_left:
+        image_left = MARGIN
+        image_width = SLIDE_W - MARGIN - column_gap - text_width - MARGIN
+        text_left = image_left + image_width + column_gap
+    else:
+        text_left = MARGIN
+        image_left = text_left + text_width + column_gap
+        image_width = SLIDE_W - image_left - MARGIN
+    return text_left, text_width, image_left, image_width
+
+
 def _add_badge(slide, left, top, text, accent_hex):
     """A small rounded-rect badge (e.g. for time allocation) - not an edge stripe, a
     self-contained shape, per the design guidance against decorative accent bars."""
@@ -368,10 +483,31 @@ def _add_badge(slide, left, top, text, accent_hex):
 
 def _add_image_or_generated(slide, image_info, left, top, width, height, palette, label=""):
     """Places a real photo if resolved, otherwise a clean generated placeholder graphic
-    (a tinted rounded rectangle with a simple geometric mark) - never leaves a blank gap."""
+    (a tinted rounded rectangle with a simple geometric mark) - never leaves a blank gap.
+
+    A real photo's own aspect ratio is preserved (a "contain" fit, centered within the
+    given box) rather than stretched to exactly fill width x height - forcing an exact
+    width AND height onto add_picture distorts any photo whose natural proportions don't
+    match the box, which is what was producing the odd/unnatural-looking stretched images.
+    """
     if image_info.get("type") == "photo" and os.path.exists(image_info.get("path", "")):
         try:
-            slide.shapes.add_picture(image_info["path"], left, top, width=width, height=height)
+            fit_width, fit_height = width, height
+            try:
+                from PIL import Image
+                with Image.open(image_info["path"]) as img:
+                    img_w, img_h = img.size
+                if img_w > 0 and img_h > 0:
+                    box_w_in, box_h_in = width / 914400, height / 914400
+                    scale = min(box_w_in / img_w, box_h_in / img_h)
+                    fit_width = Inches(img_w * scale)
+                    fit_height = Inches(img_h * scale)
+            except Exception:
+                pass  # PIL couldn't read this file's dimensions - fall back to the box size as-is (old stretch behavior) rather than lose the photo entirely
+
+            picture_left = left + (width - fit_width) // 2
+            picture_top = top + (height - fit_height) // 2
+            slide.shapes.add_picture(image_info["path"], picture_left, picture_top, width=fit_width, height=fit_height)
             if image_info.get("attribution"):
                 _add_textbox(
                     slide, left, top + height - Inches(0.3), width, Inches(0.3),
@@ -452,29 +588,101 @@ def _build_objectives_slide(prs, data, palette, review=False):
                           data.get("objectives", []), 22, TEXT_COLOR, spacing_after=18)
 
 
-def _build_content_slide(prs, data, palette, image_info):
+def _build_content_slide(prs, data, palette, image_info, image_on_left=False):
     slide = _new_slide(prs)
     _set_background(slide, BG_COLOR)
     _add_title_only(slide, data.get("title", "Content"), palette)
 
-    text_width = Inches(6.6)
-    image_left = MARGIN + text_width + Inches(0.4)
-    image_width = SLIDE_W - image_left - MARGIN
+    text_left, text_width, image_left, image_width = _content_columns(image_on_left)
     image_height = Inches(4.6)
 
-    # Fixed vertical zones rather than accumulating a running position - a longer
-    # key_points list can't push the check_question into overlapping territory this way,
-    # since python-pptx text boxes overflow past their nominal height rather than clipping.
     if data.get("guiding_question"):
-        _add_textbox(slide, MARGIN, Inches(1.7), text_width, Inches(0.9),
-                     f"?  {data['guiding_question']}", 19, palette["accent"], bold=True)
+        _add_textbox(slide, text_left, Inches(1.7), text_width, Inches(0.9),
+                     data["guiding_question"], 19, palette["accent"], bold=True)
 
     key_points = data.get("key_points", [])
+    key_points_top_in = 2.75
     if key_points:
-        _add_bullet_list(slide, MARGIN, Inches(2.75), text_width, Inches(2.9), key_points, 15, TEXT_COLOR, spacing_after=8)
+        # Available room before check_question needs to start, with a small gap and space
+        # for check_question's own text before the slide's bottom margin.
+        available_in = (7.5 - 0.6) - key_points_top_in - 0.9
+        font_size = _pick_key_points_font_size(key_points, text_width / 914400, available_in)
+        _add_bullet_list(slide, text_left, Inches(key_points_top_in), text_width, Inches(available_in),
+                          key_points, font_size, TEXT_COLOR, spacing_after=8)
+        estimated_height = _estimate_bullet_block_height(key_points, text_width / 914400, font_size)
+        check_question_top = min(key_points_top_in + estimated_height + 0.2, 7.5 - 0.6 - 0.9)
+    else:
+        check_question_top = key_points_top_in
 
     if data.get("check_question"):
-        _add_textbox(slide, MARGIN, Inches(6.4), text_width, Inches(0.9),
+        _add_textbox(slide, text_left, Inches(check_question_top), text_width, Inches(0.9),
+                     f"Check: {data['check_question']}", 14, MUTED_COLOR)
+
+    _add_image_or_generated(slide, image_info, image_left, Inches(1.7), image_width, image_height, palette,
+                             label=data.get("image_query", ""))
+
+
+def _build_content_question_slide(prs, data, palette, image_info, image_on_left=False):
+    """
+    First half of a two-part content slide: title, guiding question, and the image - no
+    key points or check question yet. Built so a teacher can present this, pose the
+    question, and hear from students BEFORE advancing to the reveal slide.
+
+    This achieves "don't show the answer until I click" via a genuine next-slide advance,
+    not an in-slide fade/appear animation. python-pptx has no supported API for native
+    PowerPoint build animations - they'd have to be hand-written as raw OOXML timing XML,
+    which is undocumented, easy to get subtly wrong, and can't be verified here (no real
+    PowerPoint install to open the result in and confirm it isn't corrupted). Two ordinary
+    slides is something python-pptx handles completely reliably, and the effect during an
+    actual presentation - press to advance, the answer appears - is the same either way.
+    """
+    slide = _new_slide(prs)
+    _set_background(slide, BG_COLOR)
+    _add_title_only(slide, data.get("title", "Content"), palette)
+
+    text_left, text_width, image_left, image_width = _content_columns(image_on_left)
+    image_height = Inches(4.6)
+
+    if data.get("guiding_question"):
+        _add_textbox(slide, text_left, Inches(2.6), text_width, Inches(2.2),
+                     data["guiding_question"], 26, palette["accent"], bold=True)
+
+    _add_image_or_generated(slide, image_info, image_left, Inches(1.7), image_width, image_height, palette,
+                             label=data.get("image_query", ""))
+
+
+def _build_content_answer_slide(prs, data, palette, image_info, image_on_left=False):
+    """
+    Second half - the reveal, advanced to once the teacher has heard student answers.
+    Repeats the guiding question smaller at the top for continuity, then the key points
+    and check question - the same content the original single-slide version showed, just
+    moved to this second slide.
+    """
+    slide = _new_slide(prs)
+    _set_background(slide, BG_COLOR)
+    _add_title_only(slide, data.get("title", "Content"), palette)
+
+    text_left, text_width, image_left, image_width = _content_columns(image_on_left)
+    image_height = Inches(4.6)
+
+    if data.get("guiding_question"):
+        _add_textbox(slide, text_left, Inches(1.7), text_width, Inches(0.7),
+                     data["guiding_question"], 16, MUTED_COLOR, bold=True)
+
+    key_points = data.get("key_points", [])
+    key_points_top_in = 2.5
+    if key_points:
+        available_in = (7.5 - 0.6) - key_points_top_in - 0.9
+        font_size = _pick_key_points_font_size(key_points, text_width / 914400, available_in)
+        _add_bullet_list(slide, text_left, Inches(key_points_top_in), text_width, Inches(available_in),
+                          key_points, font_size, TEXT_COLOR, spacing_after=8)
+        estimated_height = _estimate_bullet_block_height(key_points, text_width / 914400, font_size)
+        check_question_top = min(key_points_top_in + estimated_height + 0.2, 7.5 - 0.6 - 0.9)
+    else:
+        check_question_top = key_points_top_in
+
+    if data.get("check_question"):
+        _add_textbox(slide, text_left, Inches(check_question_top), text_width, Inches(0.9),
                      f"Check: {data['check_question']}", 14, MUTED_COLOR)
 
     _add_image_or_generated(slide, image_info, image_left, Inches(1.7), image_width, image_height, palette,
@@ -519,8 +727,9 @@ def _build_activity_slide(prs, data, palette, kind="activity"):
                      f"Grouping: {data['grouping']}", 14, MUTED_COLOR)
 
     top = Inches(2.3)
-    if data.get("instructions"):
-        _add_textbox(slide, MARGIN, top, SLIDE_W - 2 * MARGIN, Inches(3.0), data["instructions"], 18, TEXT_COLOR)
+    instruction_steps = _normalize_instructions(data.get("instructions"))
+    if instruction_steps:
+        _add_numbered_list(slide, MARGIN, top, SLIDE_W - 2 * MARGIN, Inches(3.4), instruction_steps, 16, TEXT_COLOR, spacing_after=8)
         top += Inches(1.5)
 
     if kind == "practical" and data.get("materials_needed"):
@@ -558,7 +767,23 @@ def render_lesson_pptx(outline: dict, db, image_cache_dir: str, output_path: str
             image_info = slide_data.get("resolved_image") or resolve_slide_image(slide_data.get("image_query", ""), db, image_cache_dir)
             if image_info["type"] == "generated":
                 generated_fallback_slides.append(slide_data.get("title", "Content slide"))
-            _build_content_slide(prs, slide_data, palette, image_info)
+            # Decided once per content entry (not per builder call) so a question/reveal
+            # pair keeps the image on the same side across both slides - varies ACROSS
+            # different content entries in the deck instead of every slide defaulting to
+            # the same side, which was the actual complaint.
+            image_on_left = random.choice([True, False])
+            if slide_data.get("guiding_question"):
+                # Two slides so the teacher can pose the question and hear from students
+                # before advancing to reveal the key points - see the two builder
+                # functions' own docstrings for why this is a next-slide advance rather
+                # than an in-slide animation.
+                _build_content_question_slide(prs, slide_data, palette, image_info, image_on_left)
+                _build_content_answer_slide(prs, slide_data, palette, image_info, image_on_left)
+            else:
+                # No guiding question was generated for this slide (shouldn't normally
+                # happen per the prompt, but handled safely) - nothing to reveal, so this
+                # stays a single slide exactly as before.
+                _build_content_slide(prs, slide_data, palette, image_info, image_on_left)
 
         elif slide_type == "real_life_example":
             image_info = slide_data.get("resolved_image") or resolve_slide_image(slide_data.get("image_query", ""), db, image_cache_dir)

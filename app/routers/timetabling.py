@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Teacher, Room, StaffUnavailability, TeacherUnitQualification, SpecVersion, ROOM_TYPES, Course, TimetableSession, DAYS_OF_WEEK, TeachingHoursBand, TimetablingSettings, CourseUnitRequirement, Site, CourseTeacher, TeacherCPDRecord, TeacherIVOutcome, SkillRankingWeights
+from ..models import Teacher, Room, StaffUnavailability, TeacherUnitQualification, SpecVersion, ROOM_TYPES, Course, TimetableSession, DAYS_OF_WEEK, TeachingHoursBand, TimetablingSettings, CourseUnitRequirement, Site, CourseTeacher, TeacherCPDRecord, TeacherIVOutcome, SkillRankingWeights, TeacherSpecExperience
 from ..auth import require_timetabling_access, require_admin, hash_password, get_current_teacher
 from ..timetabling_settings import get_timetabling_settings, get_skill_ranking_weights
 from .. import timetable_generator
@@ -249,6 +249,25 @@ def delete_room(
     return RedirectResponse(url="/timetabling/rooms", status_code=303)
 
 
+def _group_quals_by_spec(quals: list, spec_labels: dict) -> list:
+    """
+    Groups a flat list of a teacher's qualification rows by spec, preserving order of
+    first appearance - so the admin Staff page's skill-ranking form renders once per
+    spec/qualification, not once per individual unit within it. Confirmed as the right
+    granularity directly: years of experience and an admin rating don't meaningfully vary
+    content-area to content-area within the same qualification, and asking for them per
+    unit was real, unnecessary repeated work for whoever's entering it.
+    """
+    groups = []
+    index_by_spec = {}
+    for q in quals:
+        if q.spec_version_id not in index_by_spec:
+            index_by_spec[q.spec_version_id] = len(groups)
+            groups.append({"spec_id": q.spec_version_id, "spec_label": spec_labels.get(q.spec_version_id, "Unknown spec"), "quals": []})
+        groups[index_by_spec[q.spec_version_id]]["quals"].append(q)
+    return groups
+
+
 @router.get("/timetabling/staff", response_class=HTMLResponse)
 def list_staff_availability(
     request: Request,
@@ -267,10 +286,25 @@ def list_staff_availability(
     # than a flat list - directly supports the real use case of qualifying someone for
     # every unit in one programme at once, not ticking each individually.
     spec_unit_groups = []
+    spec_labels = {}
     for spec in db.query(SpecVersion).filter(SpecVersion.parse_status == "parsed").order_by(SpecVersion.label).all():
+        spec_labels[spec.id] = spec.label
         unit_names = [unit.get("name", "?") for unit in (spec.structured_json or {}).get("units", [])]
         if unit_names:
             spec_unit_groups.append({"spec_id": spec.id, "spec_label": spec.label, "unit_names": unit_names})
+
+    spec_experience_by_teacher = {}
+    for e in db.query(TeacherSpecExperience).all():
+        spec_experience_by_teacher.setdefault(e.teacher_id, {})[e.spec_version_id] = e
+
+    cpd_by_teacher = {}
+    for c in db.query(TeacherCPDRecord).order_by(TeacherCPDRecord.date.desc()).all():
+        cpd_by_teacher.setdefault(c.teacher_id, []).append(c)
+
+    quals_grouped_by_teacher = {
+        teacher_id: _group_quals_by_spec(quals, spec_labels)
+        for teacher_id, quals in qualifications_by_teacher.items()
+    }
 
     bands_query = db.query(TeachingHoursBand).order_by(TeachingHoursBand.contracted_hours).all()
     bands = [(b.contracted_hours, b.max_teaching_hours) for b in bands_query]
@@ -292,7 +326,11 @@ def list_staff_availability(
          "unavailability_by_teacher": unavailability_by_teacher,
          "teaching_hours_by_teacher": teaching_hours_by_teacher,
          "bands": bands_query,
-         "spec_unit_groups": spec_unit_groups},
+         "spec_unit_groups": spec_unit_groups,
+         "spec_labels": spec_labels,
+         "spec_experience_by_teacher": spec_experience_by_teacher,
+         "quals_grouped_by_teacher": quals_grouped_by_teacher,
+         "cpd_by_teacher": cpd_by_teacher},
     )
 
 
@@ -430,45 +468,154 @@ def keep_qualification(
     return RedirectResponse(url="/timetabling/staff", status_code=303)
 
 
-@router.post("/timetabling/staff/qualifications/{qualification_id}/skill")
-def update_qualification_skill_data(
-    qualification_id: int,
+def _upsert_spec_experience(db: Session, teacher_id: int, spec_version_id, years_experience_raw: str, admin_rating_raw: str):
+    """
+    Shared upsert logic for both the spec-specific and general (spec_version_id=None)
+    skill routes below - looked up and updated in place if a row already exists, created
+    otherwise, since a teacher has at most one experience/rating figure per (teacher,
+    spec) including the general NULL-spec row. Both fields are optional and can be
+    cleared - a college that never fills these in gets exactly today's load-balancing-only
+    behaviour, unchanged. Malformed input is silently ignored rather than crashing the
+    page - the existing value is simply left as it was.
+    """
+    exp = db.query(TeacherSpecExperience).filter(
+        TeacherSpecExperience.teacher_id == teacher_id,
+        TeacherSpecExperience.spec_version_id == spec_version_id,
+    ).first()
+    if not exp:
+        exp = TeacherSpecExperience(teacher_id=teacher_id, spec_version_id=spec_version_id)
+        db.add(exp)
+    if not years_experience_raw.strip():
+        exp.years_experience = None
+    else:
+        try:
+            val = float(years_experience_raw)
+            if val >= 0:
+                exp.years_experience = val
+        except ValueError:
+            pass
+    if not admin_rating_raw.strip():
+        exp.admin_rating = None
+    else:
+        try:
+            val = int(admin_rating_raw)
+            if 1 <= val <= 5:
+                exp.admin_rating = val
+        except ValueError:
+            pass
+    exp.updated_at = datetime.datetime.utcnow()
+    db.commit()
+
+
+@router.post("/timetabling/staff/{teacher_id}/spec/{spec_version_id}/skill")
+def update_spec_experience(
+    teacher_id: int,
+    spec_version_id: int,
     years_experience: str = Form(""),
     admin_rating: str = Form(""),
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(require_timetabling_access),
 ):
     """
-    Sets years of experience and/or a discretionary admin rating (1-5) for this specific
-    (teacher, unit) qualification - the two simplest skill-ranking factors, feeding
-    directly into skill_ranking.score_teacher_for_unit as a tie-breaker when the generator
-    has more than one qualified, available teacher to choose from. Both fields are
-    optional and can be cleared - a college that never fills these in gets exactly today's
-    load-balancing-only behaviour, unchanged. Malformed input is silently ignored rather
-    than crashing the page - the existing value is simply left as it was.
+    Sets years of experience and/or a discretionary admin rating (1-5) for a teacher
+    against a whole spec/qualification - not per individual unit. Confirmed as the right
+    granularity directly: these figures don't meaningfully vary content-area to
+    content-area within the same qualification, and asking for them per unit was real,
+    unnecessary repeated work for whoever's entering it - a teacher qualified for four
+    content areas under one spec needed the same numbers typed in four times.
+
+    Overrides the teacher's general figure (see update_general_experience below) for
+    units under THIS spec specifically - confirmed as a real remaining gap directly: a
+    teacher deeply experienced in one subject under one spec may also be qualified for a
+    different spec touching the same subject, and a purely spec-scoped model understated
+    them there entirely. The general figure covers that case by default; this route is
+    for recording genuinely deeper, spec-specific expertise on top of it.
     """
-    q = db.get(TeacherUnitQualification, qualification_id)
-    if not q:
+    _upsert_spec_experience(db, teacher_id, spec_version_id, years_experience, admin_rating)
+    return RedirectResponse(url="/timetabling/staff", status_code=303)
+
+
+@router.post("/timetabling/staff/{teacher_id}/general-skill")
+def update_general_experience(
+    teacher_id: int,
+    years_experience: str = Form(""),
+    admin_rating: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_timetabling_access),
+):
+    """
+    Sets a teacher's GENERAL years of experience and/or admin rating - not tied to any
+    spec, applying as a baseline to every unit they're qualified for. Deliberately kept
+    separate from a single un-scoped global score: a spec-specific figure (see
+    update_spec_experience above) always overrides this for units under that particular
+    spec, so genuinely deep expertise in one narrow area can be recorded without silently
+    inflating a teacher's ranking for completely unrelated subjects they've never
+    actually worked in.
+    """
+    _upsert_spec_experience(db, teacher_id, None, years_experience, admin_rating)
+    return RedirectResponse(url="/timetabling/staff", status_code=303)
+
+
+@router.post("/timetabling/staff/{teacher_id}/cpd/add")
+async def add_cpd_record(
+    request: Request,
+    teacher_id: int,
+    title: str = Form(...),
+    date: str = Form(...),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_timetabling_access),
+):
+    """
+    Logs a CPD entry for a teacher - the recency-decayed scoring for this already existed
+    (see skill_ranking.py) but had no entry form until now. A blank scope means GENERAL
+    CPD, contributing to every unit the teacher is qualified for; a specific scope (an
+    encoded "spec_id|unit_name", the same pattern already used for qualification
+    requests elsewhere in this app) only counts toward that one unit.
+    """
+    form = await request.form()
+    raw_scope = form.get("spec_unit", "")
+    spec_version_id, unit_name = None, None
+    if raw_scope and "|" in raw_scope:
+        spec_id_str, parsed_unit_name = raw_scope.split("|", 1)
+        if spec_id_str.isdigit():
+            spec_version_id, unit_name = int(spec_id_str), parsed_unit_name
+    try:
+        parsed_date = datetime.date.fromisoformat(date)
+    except ValueError:
         return RedirectResponse(url="/timetabling/staff", status_code=303)
-    if not years_experience.strip():
-        q.years_experience = None
-    else:
-        try:
-            val = float(years_experience)
-            if val >= 0:
-                q.years_experience = val
-        except ValueError:
-            pass
-    if not admin_rating.strip():
-        q.admin_rating = None
-    else:
-        try:
-            val = int(admin_rating)
-            if 1 <= val <= 5:
-                q.admin_rating = val
-        except ValueError:
-            pass
-    db.commit()
+    if title.strip():
+        db.add(TeacherCPDRecord(teacher_id=teacher_id, spec_version_id=spec_version_id, unit_name=unit_name, title=title.strip(), date=parsed_date))
+        db.commit()
+    return RedirectResponse(url="/timetabling/staff", status_code=303)
+
+
+@router.post("/timetabling/staff/cpd/{cpd_id}/remove")
+def remove_cpd_record(
+    cpd_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_timetabling_access),
+):
+    record = db.get(TeacherCPDRecord, cpd_id)
+    if record:
+        db.delete(record)
+        db.commit()
+    return RedirectResponse(url="/timetabling/staff", status_code=303)
+
+
+@router.post("/timetabling/staff/cpd/{cpd_id}/approve")
+def approve_cpd_record(
+    cpd_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_timetabling_access),
+):
+    """Confirms a teacher-submitted CPD entry, making it count for real generator scoring
+    - the completion of the self-service CPD workflow. Rejecting a pending entry reuses
+    the existing remove_cpd_record route above (an unconditional delete regardless of
+    status), the same pattern already used for qualification requests."""
+    record = db.get(TeacherCPDRecord, cpd_id)
+    if record:
+        record.status = "confirmed"
+        db.commit()
     return RedirectResponse(url="/timetabling/staff", status_code=303)
 
 
@@ -538,6 +685,7 @@ def my_availability(
     """
     my_qualifications = db.query(TeacherUnitQualification).filter(TeacherUnitQualification.teacher_id == teacher.id).all()
     my_unavailability = db.query(StaffUnavailability).filter(StaffUnavailability.teacher_id == teacher.id).order_by(StaffUnavailability.start_date.desc()).all()
+    my_cpd = db.query(TeacherCPDRecord).filter(TeacherCPDRecord.teacher_id == teacher.id).order_by(TeacherCPDRecord.date.desc()).all()
 
     spec_unit_groups = []
     for spec in db.query(SpecVersion).filter(SpecVersion.parse_status == "parsed").order_by(SpecVersion.label).all():
@@ -557,6 +705,7 @@ def my_availability(
         "my_availability.html",
         {"request": request, "teacher": teacher, "weekdays": DAYS_OF_WEEK,
          "my_qualifications": my_qualifications, "my_unavailability": my_unavailability,
+         "my_cpd": my_cpd,
          "spec_unit_groups": spec_unit_groups, "teaching_hours": teaching_hours,
          "saved": request.query_params.get("saved")},
     )
@@ -661,6 +810,56 @@ def withdraw_my_qualification_request(
     q = db.get(TeacherUnitQualification, qualification_id)
     if q and q.teacher_id == teacher.id and q.status == "pending":
         db.delete(q)
+        db.commit()
+    return RedirectResponse(url="/timetabling/my-availability?saved=1", status_code=303)
+
+
+@router.post("/timetabling/my-availability/cpd/add")
+async def add_my_cpd_record(
+    request: Request,
+    title: str = Form(...),
+    date: str = Form(...),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Lets any teacher log their own CPD directly, rather than needing an admin to enter it
+    for them - confirmed as a real, wanted workflow. Always created as "pending": not yet
+    trusted for real generator scoring until an admin reviews and confirms it (see
+    approve_cpd_record on the Staff page), the same reasoning as self-requested
+    qualifications - an unreviewed self-report shouldn't be able to inflate a ranking with
+    nothing behind it. A blank scope means general CPD (not tied to any subject - e.g.
+    safeguarding, Prevent duty, GDPR), counting toward every unit once confirmed; a
+    specific scope only counts toward that one unit.
+    """
+    form = await request.form()
+    raw_scope = form.get("spec_unit", "")
+    spec_version_id, unit_name = None, None
+    if raw_scope and "|" in raw_scope:
+        spec_id_str, parsed_unit_name = raw_scope.split("|", 1)
+        if spec_id_str.isdigit():
+            spec_version_id, unit_name = int(spec_id_str), parsed_unit_name
+    try:
+        parsed_date = datetime.date.fromisoformat(date)
+    except ValueError:
+        return RedirectResponse(url="/timetabling/my-availability", status_code=303)
+    if title.strip():
+        db.add(TeacherCPDRecord(teacher_id=teacher.id, spec_version_id=spec_version_id, unit_name=unit_name, title=title.strip(), date=parsed_date, status="pending"))
+        db.commit()
+    return RedirectResponse(url="/timetabling/my-availability?saved=1", status_code=303)
+
+
+@router.post("/timetabling/my-availability/cpd/{cpd_id}/withdraw")
+def withdraw_my_cpd_record(
+    cpd_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """A teacher can withdraw their own PENDING CPD submission - but not remove a
+    CONFIRMED one, which is an admin decision, matching the qualification pattern."""
+    c = db.get(TeacherCPDRecord, cpd_id)
+    if c and c.teacher_id == teacher.id and c.status == "pending":
+        db.delete(c)
         db.commit()
     return RedirectResponse(url="/timetabling/my-availability?saved=1", status_code=303)
 
@@ -1278,17 +1477,20 @@ def _build_generation_inputs(db: Session):
 
     qual_rows = db.query(TeacherUnitQualification).filter(TeacherUnitQualification.status.in_(["confirmed", "pending_removal"])).all()
     qualifications_by_teacher = {}
-    qual_row_by_key = {}
     for q in qual_rows:
         qualifications_by_teacher.setdefault(q.teacher_id, set()).add((q.spec_version_id, q.unit_name))
-        qual_row_by_key[(q.teacher_id, q.spec_version_id, q.unit_name)] = q
+
+    spec_experience_by_key = {
+        (e.teacher_id, e.spec_version_id): e
+        for e in db.query(TeacherSpecExperience).all()
+    }
 
     # General CPD (no unit_name set) is genuinely relevant across everything a teacher is
     # qualified for; unit-specific CPD only counts toward that one unit - see
     # skills_ranking_requirements_analysis.md section 4.3 for why this distinction matters.
     general_cpd_by_teacher = {}
     specific_cpd_by_teacher_unit = {}
-    for c in db.query(TeacherCPDRecord).all():
+    for c in db.query(TeacherCPDRecord).filter(TeacherCPDRecord.status == "confirmed").all():
         entry = {"date": c.date}
         if c.unit_name is None:
             general_cpd_by_teacher.setdefault(c.teacher_id, []).append(entry)
@@ -1314,11 +1516,14 @@ def _build_generation_inputs(db: Session):
             max_hours = hours
         skill_scores = {}
         for (spec_version_id, unit_name) in qualifications_by_teacher.get(t.id, set()):
-            qual = qual_row_by_key.get((t.id, spec_version_id, unit_name))
+            specific_exp = spec_experience_by_key.get((t.id, spec_version_id))
+            general_exp = spec_experience_by_key.get((t.id, None))
+            has_specific = specific_exp and (specific_exp.years_experience is not None or specific_exp.admin_rating is not None)
+            exp = specific_exp if has_specific else general_exp
             cpd = general_cpd_by_teacher.get(t.id, []) + specific_cpd_by_teacher_unit.get((t.id, spec_version_id, unit_name), [])
             iv = iv_by_teacher_unit.get((t.id, spec_version_id, unit_name), [])
             skill_scores[(spec_version_id, unit_name)] = skill_ranking.score_teacher_for_unit(
-                qual.years_experience if qual else None, qual.admin_rating if qual else None, cpd, iv, weights,
+                exp.years_experience if exp else None, exp.admin_rating if exp else None, cpd, iv, weights,
             )
         teachers.append({
             "id": t.id, "non_teaching_days": t.non_teaching_days or [],

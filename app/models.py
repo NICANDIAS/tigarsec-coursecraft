@@ -421,6 +421,7 @@ class ExamExemplar(Base):
     uploaded_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
     spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=False)
     unit_names = Column(JSON, nullable=False)
+    unit_name = Column(String(500), nullable=True)  # legacy column from before the multiunit migration - the live DB table still has this as NOT NULL
     label = Column(String(255), nullable=False)
     file_path = Column(String(1000), nullable=False)
     original_filename = Column(String(500), nullable=False)
@@ -550,9 +551,62 @@ class TeacherUnitQualification(Base):
     spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=False)
     status = Column(String(20), nullable=False, default="confirmed")  # "confirmed" (admin-set, or an admin-approved request) vs "pending" (teacher self-requested via the self-service page, not yet trusted for real generator placement decisions) vs "pending_removal" (teacher-requested removal of a confirmed qualification, awaiting admin review - still trusted for scheduling until then)
     unit_name = Column(String(500), nullable=False)
-    years_experience = Column(Float, nullable=True)  # admin/self-entered - not derived from account age, since most staff taught for years before any digital system existed
-    admin_rating = Column(Integer, nullable=True)  # 1-5, deliberately simple and discretionary - the escape hatch for whatever a formula can't capture. Real HR-sensitive data: only ever shown to admin/curriculum-manager access, never to other teachers
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    teacher = relationship("Teacher", foreign_keys=[teacher_id])
+
+
+class TeacherSpecExperience(Base):
+    """
+    Years of experience and a discretionary admin rating (1-5) for a teacher - either
+    scoped to one spec/qualification (spec_version_id set) or GENERAL (spec_version_id
+    NULL), meaning it applies to every unit that teacher is qualified for as a baseline.
+
+    Originally spec-only, but confirmed as a real remaining gap directly: a teacher deeply
+    experienced in one subject (e.g. security, taught under a Cyber Security spec) may
+    also be qualified for a DIFFERENT spec that happens to touch the same subject (e.g. a
+    Software Development course with its own security content area) - under a purely
+    spec-scoped model, that teacher would show as having no experience/rating standing
+    at all for the second spec, understating someone genuinely well-suited to it. A fully
+    global, un-scoped single figure was considered and deliberately rejected instead - it
+    would let deep expertise in one narrow area silently inflate a teacher's ranking for
+    completely unrelated subjects they've never actually worked in, the opposite failure
+    from the one being fixed.
+
+    A general (spec_version_id=NULL) figure resolves the tension: it's the teacher's
+    overall standing, applied everywhere they're qualified by default - and a spec-specific
+    row, where one exists, OVERRIDES the general figure for units under that particular
+    spec only, letting genuinely deeper expertise in one qualification still be recorded
+    without leaking into unrelated ones. See skill_ranking.py's caller in
+    _build_generation_inputs for the override-resolution logic.
+
+    These two factors are naturally coarser-grained judgments ("how experienced is this
+    person, generally or at this qualification"), not something that meaningfully differs
+    content-area to content-area within the same spec - confirmed as a real, unnecessary
+    workload problem when this briefly lived on each individual TeacherUnitQualification
+    row instead: a teacher qualified for four content areas under one spec needed the
+    exact same figures re-entered four separate times.
+
+    CPD and IV outcomes stay genuinely unit-specific (see TeacherCPDRecord and
+    TeacherIVOutcome above) since those really can differ unit to unit - a CPD event on
+    penetration testing techniques or an IV sample against one specific unit's marking
+    decisions doesn't generalise the same way a teacher's overall experience level does.
+    CPD does support its own separate general/specific split for the same reason (see
+    TeacherCPDRecord).
+
+    One row per (teacher, spec) INCLUDING the general NULL-spec row - enforced at the
+    application level via lookup-then-update/insert, matching this project's existing
+    pattern (e.g. SkillRankingWeights' own singleton-per-college row) rather than a
+    DB-level unique constraint, since this schema-sync mechanism works from plain column
+    definitions.
+    """
+    __tablename__ = "teacher_spec_experience"
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=True)  # NULL = general, applies to every unit this teacher is qualified for; set = overrides the general figure for units under that spec only
+    years_experience = Column(Float, nullable=True)
+    admin_rating = Column(Integer, nullable=True)  # 1-5, deliberately simple and discretionary - real HR-sensitive data about a real person's job performance: only ever shown to admin/curriculum-manager access, never to other teachers
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     teacher = relationship("Teacher", foreign_keys=[teacher_id])
 
@@ -566,15 +620,29 @@ class TeacherCPDRecord(Base):
     year, especially in fast-moving vocational subjects - see skill_ranking.py for the
     decay calculation. Deliberately not tied to a specific awarding body's own CPD
     categories, since colleges work with many different ones.
+
+    General (unit_name/spec_version_id both NULL) is deliberately the home for CPD that
+    isn't about any particular subject at all - safeguarding, Prevent duty, equality and
+    diversity, GDPR, first aid - confirmed as a real, common case directly: a college
+    still wants this recorded, but it shouldn't be forced under one specific unit just
+    because the form technically requires picking something. General CPD counts toward
+    every unit a teacher is qualified for, exactly like the general skill-ranking figure.
+
+    status mirrors TeacherUnitQualification.status exactly, for the same reason: a
+    teacher can submit their own CPD via self-service, landing as "pending" until an
+    admin confirms it - not yet trusted for real generator scoring, since an
+    unreviewed self-report could otherwise inflate a ranking with nothing behind it.
+    Admin-entered CPD (via the Staff page) is created directly as "confirmed".
     """
     __tablename__ = "teacher_cpd_records"
     id = Column(Integer, primary_key=True)
     teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
-    spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=True)  # nullable - some CPD is general (e.g. assessment methods) rather than tied to one spec
+    spec_version_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=True)  # nullable - some CPD is general (e.g. safeguarding, assessment methods) rather than tied to one spec
     unit_name = Column(String(500), nullable=True)  # nullable for the same reason
     title = Column(String(300), nullable=False)
     date = Column(Date, nullable=False)
     note = Column(String(1000), nullable=True)
+    status = Column(String(20), nullable=False, default="confirmed")  # "confirmed" (admin-entered, or an admin-approved self-service request) vs "pending" (teacher self-requested, not yet trusted for real generator scoring)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     teacher = relationship("Teacher", foreign_keys=[teacher_id])
