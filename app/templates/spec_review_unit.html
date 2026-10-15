@@ -1,9 +1,35 @@
 {% extends "base.html" %}
 {% block title %}{{ unit.name }} - Review - TIGARSEC CourseCraft{% endblock %}
 {% block content %}
+<style>
+  /* Compact editor: one row per criterion, boxes only as tall as their text. */
+  .unit-editor textarea { min-height: 0; resize: vertical; overflow: hidden; }
+  .unit-editor .crit-row { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px; align-items: start;
+                           padding: 6px 0; border-top: 1px solid var(--border); }
+  .unit-editor .crit-row input, .unit-editor .crit-row textarea { margin: 0; }
+  .unit-editor .crit-head { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px;
+                            font-size: 0.8rem; font-weight: 600; color: var(--text-muted); padding-top: 8px; }
+  .unit-editor .row-delete { font-weight: normal; display: flex; align-items: center; gap: 4px; margin: 6px 0 0;
+                             font-size: 0.85rem; white-space: nowrap; }
+  .unit-editor .row-delete input { width: auto; margin: 0; }
+  .unit-editor details.lo-block { padding: 0; }
+  .unit-editor .lo-item { border-top: 1px solid var(--border); padding: 10px 0; }
+  .unit-editor .lo-item:first-of-type { border-top: none; }
+  .unit-editor details.lo-block > summary { cursor: pointer; padding: 4px 0; font-size: 1rem; }
+  .unit-editor details.lo-block[open] > summary { margin-bottom: 10px; }
+  .unit-editor .band-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 6px; }
+  .unit-editor .save-bar { position: sticky; bottom: 0; z-index: 5; box-shadow: 0 -4px 16px rgba(0,0,0,0.18); }
+  @media (max-width: 640px) {
+    .unit-editor .crit-row, .unit-editor .crit-head { grid-template-columns: 1fr; }
+    .unit-editor .crit-head { display: none; }
+  }
+</style>
+
 <p><a href="/spec-library/{{ spec.id }}/review">&larr; All units of {{ spec.label }}</a></p>
 <h1>{{ unit.name }}</h1>
-<p class="muted">Unit {{ unit_index + 1 }} of {{ unit_count }}{% if unit.get("glh") %} · {{ unit.glh }} GLH{% endif %}</p>
+<p class="muted">Unit {{ unit_index + 1 }} of {{ unit_count }}{% if unit.get("glh") %} · {{ unit.glh }} GLH{% endif %}
+  · {{ unit.learning_outcomes|length }} learning outcome(s),
+  {{ unit.learning_outcomes|map(attribute="criteria")|map("length")|sum }} criteria</p>
 
 {% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
 {% if locked %}
@@ -12,110 +38,133 @@
   </div>
 {% endif %}
 
-<form method="post" action="/spec-library/{{ spec.id }}/review/unit/{{ unit_index }}">
+<form method="post" action="/spec-library/{{ spec.id }}/review/unit/{{ unit_index }}" class="unit-editor">
 <fieldset {% if locked %}disabled{% endif %} style="border:none;padding:0;margin:0;">
   <div class="card">
     <label for="unit-name">Unit name</label>
     <input type="text" id="unit-name" name="unit-name" value="{{ unit.name or '' }}" required>
-    <p class="muted">Schemes of work, timetabling and exemplars find a unit by this exact name.</p>
+    <p class="muted" style="margin-bottom:0;">Schemes of work, timetabling and exemplars find a unit by this exact name.
+    {% if (unit.name or '').lower().startswith('unknown') %}<strong style="color:var(--warning);">Give it a real name.</strong>{% endif %}</p>
   </div>
 
+  {% set many = unit.learning_outcomes|length > 3 %}
+  {% if many %}
+    <p style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-secondary" data-toggle-all="open" style="padding:4px 12px;font-size:0.85rem;">Open all</button>
+      <button type="button" class="btn btn-secondary" data-toggle-all="close" style="padding:4px 12px;font-size:0.85rem;">Close all</button>
+      <span class="muted" style="align-self:center;">Only outcomes that need attention start open.</span>
+    </p>
+  {% endif %}
+
+  <div class="card lo-list">
+  <h2 style="margin-top:0;font-size:1.05rem;">Learning outcomes</h2>
   {% for lo in unit.learning_outcomes %}
     {% set i = loop.index0 %}
-    <div class="card">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-        <div style="flex:0 0 120px;">
-          <label for="lo-{{ i }}-code">Code</label>
-          <input type="text" id="lo-{{ i }}-code" name="lo-{{ i }}-code" value="{{ lo.code or '' }}" required>
-        </div>
-        <div style="flex:1 1 300px;">
-          <label for="lo-{{ i }}-title">Learning outcome / objective</label>
-          <input type="text" id="lo-{{ i }}-title" name="lo-{{ i }}-title" value="{{ lo.title or '' }}">
-        </div>
-        <label style="font-weight:normal;display:flex;align-items:center;gap:6px;margin-bottom:12px;">
-          <input type="checkbox" name="lo-{{ i }}-delete" style="width:auto;margin:0;"> Delete this learning outcome
-        </label>
-      </div>
-      {% if lo.get("content_area") %}<p class="muted">Taught through: {{ lo.content_area }}</p>{% endif %}
+    {% set needs_attention = not lo.criteria or not lo.code %}
+    <div class="lo-item">
+      <details class="lo-block" {% if not many or needs_attention %}open{% endif %}>
+        <summary>
+          <strong>{{ lo.code or "(no code)" }}</strong> — {{ lo.title or "(no title)" }}
+          <span class="muted">· {{ lo.criteria|length }} {{ "criterion" if lo.criteria|length == 1 else "criteria" }}</span>
+          {% if needs_attention %}<span class="badge badge-needs_review">Needs attention</span>{% endif %}
+        </summary>
 
-      {% for c in lo.criteria %}
-        {% set j = loop.index0 %}
-        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-            <div style="flex:0 0 120px;">
-              <label for="c-{{ i }}-{{ j }}-code">Criterion code</label>
-              <input type="text" id="c-{{ i }}-{{ j }}-code" name="c-{{ i }}-{{ j }}-code" value="{{ c.code or '' }}" required>
-            </div>
-            {% if c.get("bands") %}
-              <div style="flex:1 1 300px;">
-                <label for="c-{{ i }}-{{ j }}-title">Criterion title</label>
-                <input type="text" id="c-{{ i }}-{{ j }}-title" name="c-{{ i }}-{{ j }}-title" value="{{ (c.description or '').split(' - ')[0] }}">
-              </div>
-            {% endif %}
-            <label style="font-weight:normal;display:flex;align-items:center;gap:6px;margin-bottom:12px;">
-              <input type="checkbox" name="c-{{ i }}-{{ j }}-delete" style="width:auto;margin:0;"> Delete
-            </label>
+        <div style="display:grid;grid-template-columns:110px 1fr auto;gap:8px;align-items:end;">
+          <div>
+            <label for="lo-{{ i }}-code">Code</label>
+            <input type="text" id="lo-{{ i }}-code" name="lo-{{ i }}-code" value="{{ lo.code or '' }}" style="margin:0;">
           </div>
+          <div>
+            <label for="lo-{{ i }}-title">Learning outcome / objective</label>
+            <input type="text" id="lo-{{ i }}-title" name="lo-{{ i }}-title" value="{{ lo.title or '' }}" style="margin:0;">
+          </div>
+          <label class="row-delete" style="margin-bottom:10px;">
+            <input type="checkbox" name="lo-{{ i }}-delete"> Delete outcome
+          </label>
+        </div>
+        {% if lo.get("content_area") %}<p class="muted" style="margin:6px 0 0;">Taught through: {{ lo.content_area }}</p>{% endif %}
+
+        {% if lo.criteria and not lo.criteria[0].get("bands") %}
+          <div class="crit-head" aria-hidden="true"><span>Criterion</span><span>Wording</span><span>Delete</span></div>
+        {% endif %}
+        {% for c in lo.criteria %}
+          {% set j = loop.index0 %}
           {% if c.get("bands") %}
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
-              {% for band, text in c.bands.items() %}
+            <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px;">
+              <div style="display:grid;grid-template-columns:110px 1fr auto;gap:8px;align-items:end;">
                 <div>
-                  <label for="c-{{ i }}-{{ j }}-band-{{ band }}">{{ band }}</label>
-                  <textarea id="c-{{ i }}-{{ j }}-band-{{ band }}" name="c-{{ i }}-{{ j }}-band-{{ band }}" rows="5">{{ text }}</textarea>
+                  <label for="c-{{ i }}-{{ j }}-code">Criterion</label>
+                  <input type="text" id="c-{{ i }}-{{ j }}-code" name="c-{{ i }}-{{ j }}-code" value="{{ c.code or '' }}" style="margin:0;">
                 </div>
-              {% endfor %}
+                <div>
+                  <label for="c-{{ i }}-{{ j }}-title">Criterion title</label>
+                  <input type="text" id="c-{{ i }}-{{ j }}-title" name="c-{{ i }}-{{ j }}-title" value="{{ (c.description or '').split(' - ')[0] }}" style="margin:0;">
+                </div>
+                <label class="row-delete" style="margin-bottom:10px;"><input type="checkbox" name="c-{{ i }}-{{ j }}-delete"> Delete</label>
+              </div>
+              <div class="band-grid">
+                {% for band, text in c.bands.items() %}
+                  <div>
+                    <label for="c-{{ i }}-{{ j }}-band-{{ band }}">{{ band }}</label>
+                    <textarea id="c-{{ i }}-{{ j }}-band-{{ band }}" name="c-{{ i }}-{{ j }}-band-{{ band }}" rows="2" style="margin:0;">{{ text }}</textarea>
+                  </div>
+                {% endfor %}
+              </div>
             </div>
           {% else %}
-            <label for="c-{{ i }}-{{ j }}-desc">Wording</label>
-            <textarea id="c-{{ i }}-{{ j }}-desc" name="c-{{ i }}-{{ j }}-desc" rows="2">{{ c.description or '' }}</textarea>
+            <div class="crit-row">
+              <input type="text" id="c-{{ i }}-{{ j }}-code" name="c-{{ i }}-{{ j }}-code" value="{{ c.code or '' }}"
+                     aria-label="Criterion code ({{ lo.code }}, row {{ j + 1 }})">
+              <textarea id="c-{{ i }}-{{ j }}-desc" name="c-{{ i }}-{{ j }}-desc" rows="1"
+                        aria-label="Criterion wording ({{ lo.code }}, row {{ j + 1 }})">{{ c.description or '' }}</textarea>
+              <label class="row-delete"><input type="checkbox" name="c-{{ i }}-{{ j }}-delete"
+                     aria-label="Delete criterion {{ c.code }}"> Delete</label>
+            </div>
           {% endif %}
-        </div>
-      {% endfor %}
+        {% endfor %}
 
-      <details style="margin-top:10px;">
-        <summary>Add a criterion to {{ lo.code }}</summary>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <div style="flex:0 0 120px;">
-            <label for="new-c-{{ i }}-code">Code</label>
-            <input type="text" id="new-c-{{ i }}-code" name="new-c-{{ i }}-code">
+        <details style="margin-top:8px;">
+          <summary>Add a criterion to {{ lo.code or "this outcome" }}</summary>
+          <div class="crit-row" style="border-top:none;">
+            <input type="text" id="new-c-{{ i }}-code" name="new-c-{{ i }}-code" aria-label="New criterion code" placeholder="Code">
+            <textarea id="new-c-{{ i }}-desc" name="new-c-{{ i }}-desc" rows="1" aria-label="New criterion wording" placeholder="Wording"></textarea>
+            <span></span>
           </div>
-          <div style="flex:1 1 300px;">
-            <label for="new-c-{{ i }}-desc">Wording</label>
-            <textarea id="new-c-{{ i }}-desc" name="new-c-{{ i }}-desc" rows="2"></textarea>
-          </div>
-        </div>
+        </details>
       </details>
     </div>
   {% endfor %}
 
-  <div class="card">
+  <div class="lo-item">
     <details>
       <summary>Add a learning outcome</summary>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <div style="flex:0 0 120px;">
+      <div style="display:grid;grid-template-columns:110px 1fr;gap:8px;margin-top:8px;">
+        <div>
           <label for="new-lo-code">Code</label>
-          <input type="text" id="new-lo-code" name="new-lo-code">
+          <input type="text" id="new-lo-code" name="new-lo-code" style="margin:0;">
         </div>
-        <div style="flex:1 1 300px;">
+        <div>
           <label for="new-lo-title">Title</label>
-          <input type="text" id="new-lo-title" name="new-lo-title">
+          <input type="text" id="new-lo-title" name="new-lo-title" style="margin:0;">
         </div>
       </div>
     </details>
   </div>
+  </div>
 
-  <div class="card">
-    <label style="font-weight:normal;display:flex;align-items:center;gap:8px;">
-      <input type="checkbox" name="reviewed" {% if is_reviewed %}checked{% endif %} style="width:auto;margin:0;">
-      <strong>I have checked this unit against the real spec</strong>
-    </label>
-    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+  <div class="card save-bar">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <label style="font-weight:normal;display:flex;align-items:center;gap:8px;margin:0;">
+        <input type="checkbox" name="reviewed" {% if is_reviewed %}checked{% endif %} style="width:auto;margin:0;">
+        <strong>I have checked this unit against the real spec</strong>
+      </label>
+      <span style="flex:1;"></span>
       <button class="btn" type="submit">Save</button>
       {% if unit_index + 1 < unit_count %}
         <button class="btn btn-secondary" type="submit" name="next" value="1">Save and go to next unit</button>
       {% endif %}
     </div>
-    <p class="muted" style="margin-top:8px;">Every saved change is recorded (who and what) in the change list and the admin logs.</p>
+    <p class="muted" style="margin:6px 0 0;font-size:0.85rem;">Every saved change is recorded (who and what) in the change list and the admin logs.</p>
   </div>
 </fieldset>
 </form>
@@ -131,12 +180,26 @@
 {% endif %}
 
 <script>
-/* Text boxes grow to fit their text, so nothing is hidden behind a scroll bar. */
 (function () {
-  document.querySelectorAll("textarea").forEach(function (t) {
-    function grow() { t.style.height = "auto"; t.style.height = (t.scrollHeight + 4) + "px"; }
-    t.addEventListener("input", grow);
-    grow();
+  /* Text boxes grow to fit their text, so nothing is hidden behind a scroll bar. Boxes inside a
+     closed section have no size yet, so they are sized when the section is opened. */
+  function grow(t) {
+    if (!t.offsetParent) return;
+    t.style.height = "auto";
+    t.style.height = (t.scrollHeight + 2) + "px";
+  }
+  document.querySelectorAll(".unit-editor textarea").forEach(function (t) {
+    t.addEventListener("input", function () { grow(t); });
+    grow(t);
+  });
+  document.querySelectorAll(".unit-editor details").forEach(function (d) {
+    d.addEventListener("toggle", function () { d.querySelectorAll("textarea").forEach(grow); });
+  });
+  document.querySelectorAll("[data-toggle-all]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var open = b.dataset.toggleAll === "open";
+      document.querySelectorAll(".unit-editor details.lo-block").forEach(function (d) { d.open = open; });
+    });
   });
 })();
 </script>
