@@ -3,7 +3,7 @@ Small automatic tests for the Stage 1 parser changes. No AI, no database, no PDF
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_parser_stage1.py
-Expected last line: "ALL 14 TESTS PASSED"
+Expected last line: "ALL 15 TESTS PASSED"
 """
 import sys
 import types
@@ -266,6 +266,22 @@ def a_renamed_continuation_is_joined_and_odd_codes_are_tidied():
     assert [lo["code"] for lo in los] == ["LO6", "LO7", "LO8"] or [lo["code"] for lo in los] == ["LO1", "LO2", "LO3"], [lo["code"] for lo in los]
     assert [c["code"] for c in los[1]["criteria"]] == ["C1", "C2", "C3"], los[1]["criteria"]
     assert all("continues_previous" not in lo for lo in los)
+
+
+
+@test
+def a_failed_ai_read_says_why_in_plain_english():
+    def ai(**kwargs):
+        raise RuntimeError("Error code: 429 - rate_limit_error: too many requests")
+    original = sp.complete_json
+    sp.complete_json = ai
+    try:
+        result = sp.read_piece("\n".join(f"Explain topic {i} for learners" for i in range(20)), "Component 2")
+    finally:
+        sp.complete_json = original
+    why = [n for n in result["notes"] if n.startswith("Why:")]
+    assert why and "busy or its usage limit" in why[0], result["notes"]
+    assert "cut off" not in sp.explain_ai_error("x") and "too long" in sp.explain_ai_error("hit the max_tokens limit")
 
 
 if __name__ == "__main__":
