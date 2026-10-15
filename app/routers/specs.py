@@ -35,10 +35,41 @@ def spec_library(
 ):
     specs = db.query(SpecVersion).order_by(SpecVersion.id.desc()).all()
     can_upload = teacher.role in ("admin", "curriculum_manager")
+    learned = db.query(DiscoveredSpecFormat).order_by(DiscoveredSpecFormat.id.desc()).all()
     return templates.TemplateResponse(
         "spec_library.html",
-        {"request": request, "teacher": teacher, "specs": specs, "can_upload": can_upload},
+        {"request": request, "teacher": teacher, "specs": specs, "can_upload": can_upload,
+         "built_in_readers": BUILT_IN_READERS, "learned_formats": learned},
     )
+
+
+# What CourseCraft can read without being taught (shown on the library page).
+BUILT_IN_READERS = [
+    ("Pearson BTEC", "units, learning aims, Pass / Merit / Distinction criteria"),
+    ("T Levels", "core component, occupational specialisms, content areas"),
+    ("Gateway Qualifications", "units, unit aims, numbered criteria"),
+    ("Pearson BTEC 'Practice'", "assessment units with U / Pass / Merit / Distinction grade grids"),
+    ("City & Guilds, NCFE-style units", "learning outcomes, assessment criteria, credits, rules of combination"),
+    ("WJEC / Eduqas A level and GCSE", "Content / Amplification tables, exams, assessment objectives"),
+    ("Any table layout", "worked out from a new spec once, then remembered (listed below)"),
+]
+
+
+@router.post("/spec-library/learned-formats/{format_id}/forget")
+def forget_learned_format(
+    format_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    """Removes a learned layout (e.g. one that read a later spec badly). Specs already read
+    with it keep their content; only future uploads stop using it."""
+    learned = db.get(DiscoveredSpecFormat, format_id)
+    if learned:
+        db.add(AuditLogEntry(actor=teacher.email, action="spec_edit",
+                             detail=f"learned format {format_id}: forgotten ('{learned.label}', used {learned.times_used or 0} time(s))"))
+        db.delete(learned)
+        db.commit()
+    return RedirectResponse(url="/spec-library", status_code=303)
 
 
 @router.get("/spec-library/new", response_class=HTMLResponse)
@@ -138,15 +169,20 @@ def _run_parse_job(spec_id: int):
             return spec.cancel_requested
 
         try:
-            known_patterns = [
-                {
+            known_patterns = []
+            for p in db.query(DiscoveredSpecFormat).all():
+                entry = {
                     "label": p.label,
                     "unit_header_regex": p.unit_header_regex,
                     "sub_heading_regex": p.sub_heading_regex,
                     "criterion_regex": p.criterion_regex,
                 }
-                for p in db.query(DiscoveredSpecFormat).all()
-            ]
+                if p.layout_json:  # Stage 5: a learned TABLE layout
+                    try:
+                        entry["layout"] = {**json.loads(p.layout_json), "format_id": p.id}
+                    except (ValueError, TypeError):
+                        continue
+                known_patterns.append(entry)
 
             # The original file (kept since Stage 1) lets readers use the page layout, e.g.
             # the Media grade grid. Specs uploaded before that have no file - readers cope.
@@ -197,7 +233,16 @@ def _run_parse_job(spec_id: int):
                     summary += f" Section(s) that failed AI review and were skipped: {', '.join(failed_labels)}."
 
                 discovered = result.get("newly_discovered_pattern")
-                if discovered:
+                if discovered and discovered.get("kind") == "table":
+                    layout = {k: v for k, v in discovered.items() if k != "format_id"}
+                    db.add(DiscoveredSpecFormat(
+                        label=layout.get("label", "Table layout")[:255],
+                        unit_header_regex="", sub_heading_regex=None, criterion_regex="",
+                        description=f"Table layout learned from '{spec.label}'"[:1000],
+                        layout_json=json.dumps(layout), times_used=1,
+                    ))
+                    summary += " (New table layout learned and saved - the next spec in this layout needs no AI.)"
+                elif discovered:
                     db.add(DiscoveredSpecFormat(
                         label=discovered.get("label", "Unnamed format")[:255],
                         unit_header_regex=discovered["unit_header_regex"],
@@ -206,6 +251,10 @@ def _run_parse_job(spec_id: int):
                         description=discovered.get("description", ""),
                     ))
                     summary += " (New format learned and saved for future specs.)"
+                if result.get("learned_layout_id"):
+                    used = db.get(DiscoveredSpecFormat, result["learned_layout_id"])
+                    if used:
+                        used.times_used = (used.times_used or 0) + 1
 
                 if unit_count == 0:
                     # Honesty fix: this used to show a green "Parsed" with nothing usable in it.

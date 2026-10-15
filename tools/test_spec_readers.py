@@ -4,7 +4,7 @@ The Media, C&G and A level tests use their PDFs in golden/pdfs/ if they are ther
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_readers.py
-Expected last line: "ALL 16 TESTS PASSED" (or fewer run + SKIP lines if the PDF is missing)
+Expected last line: "ALL 22 TESTS PASSED" (or fewer run + SKIP lines if the PDF is missing)
 """
 import sys
 import types
@@ -20,10 +20,12 @@ from app import spec_parser as sp  # noqa: E402
 from app.spec_readers import btec_practice as bp  # noqa: E402
 from app.spec_readers import lo_ac_units as loac  # noqa: E402
 from app.spec_readers import content_amplification as ca  # noqa: E402
+from app.spec_readers import table_layout as tl  # noqa: E402
 
 MEDIA_PDF = ROOT / "golden" / "pdfs" / "media_btec_cmp.pdf"
 CG_PDF = ROOT / "golden" / "pdfs" / "cityguilds_6502_l4.pdf"
 AL_PDF = ROOT / "golden" / "pdfs" / "alevel_business_eduqas.pdf"
+FIX = ROOT / "tools" / "fixtures"
 TESTS, SKIPPED = [], []
 _media_cache = {}
 
@@ -259,6 +261,80 @@ def content_amplification_needs_the_pdf_and_its_own_layout():
     blocks = ca._blocks([{"text": "Explain", "top": 100, "x0": 0, "size": 11}, {"text": "it", "top": 112.6, "x0": 0, "size": 11},
                          {"text": "Next", "top": 128.5, "x0": 0, "size": 11}], rules=[120])
     assert [t for _, t in blocks] == ["Explain it", "Next"]  # wrapped line joined; a ruled line splits
+
+
+
+# ---------------------------------------------------------------- Stage 5: the layout learner
+# tools/fixtures/ holds three small MADE-UP specs (always present): the layouts copy how other
+# exam boards print their content tables; the words are invented.
+
+@test
+def layout_learner_works_out_an_edexcel_style_table():
+    layout, r = tl.discover_layout(str(FIX / "layout_edexcel_like.pdf"))
+    assert layout and layout["roles"] == ["code", "topic", "statement"], layout
+    assert layout["unit_rule"]["type"] == "heading" and layout["unit_rule"]["example"] == "Topic 1: Running a business"
+    assert [u["name"] for u in r["units"]] == ["Topic 1: Running a business", "Topic 2: Money and growth"]
+    assert [[(l["code"], len(l["criteria"])) for l in u["learning_outcomes"]] for u in r["units"]] == [
+        [("1.1", 4), ("1.2", 9), ("1.3", 5)], [("2.1", 6), ("2.2", 12), ("2.3", 3)]]  # 2.2 runs onto a second page
+    assert r["units"][1]["learning_outcomes"][1]["criteria"][11]["code"] == "2.2.12"
+
+
+@test
+def layout_learner_works_out_an_aqa_style_table():
+    layout, r = tl.discover_layout(str(FIX / "layout_aqa_like.pdf"))
+    assert layout and layout["roles"] == ["statement", "guidance"], layout
+    assert layout["topic_rule"]["example"] == "3.1.1 Understanding markets"
+    assert [(u["code"], [(l["code"], l["title"], len(l["criteria"])) for l in u["learning_outcomes"]]) for u in r["units"]] == [
+        ("3.1", [("3.1.1", "Understanding markets", 5), ("3.1.2", "Customer needs", 8)]),
+        ("3.2", [("3.2.1", "Leading people", 6), ("3.2.2", "Rewarding staff", 4), ("3.2.3", "Team working", 7)])]
+    first = r["units"][0]["learning_outcomes"][0]["criteria"]
+    assert first[0]["guidance"] == "Learners should consider examples 1 from real firms." and "guidance" not in first[1]
+
+
+@test
+def layout_learner_needs_ai_only_when_the_page_alone_is_not_enough():
+    pdf = str(FIX / "layout_plain_header.pdf")
+    assert tl.discover_layout(pdf) == (None, None)  # its header row is not bold
+    layout = tl.layout_from_description({"header": ["Topic", "Learners should be able to"], "roles": ["topic", "statement"],
+                                         "unit_heading_example": "Unit 2: Stock control"})
+    r = tl.read_with_layout(pdf, layout)
+    assert [[len(l["criteria"]) for l in u["learning_outcomes"]] for u in r["units"]] == [[5, 7], [6, 4, 5]]
+    assert "Topic" in tl.sample_pages_text(pdf) and len(tl.sample_pages_text(pdf)) <= 7000  # only a sample goes to AI
+
+
+@test
+def a_bad_ai_description_is_rejected():
+    for bad in [None, "text", {"header": None}, {"header": ["A"], "roles": ["statement"]},
+                {"header": ["A", "B"], "roles": ["statement", "statement"]}, {"header": ["A", "B"], "roles": ["topic", "drop table"]},
+                {"header": ["A", "B", "C", "D", "E"], "roles": ["statement"] + ["ignore"] * 4}]:
+        assert tl.layout_from_description(bad) is None, bad
+    assert tl._rule_from_example("3.1.2 Customer needs", for_topic=True)["regex"].startswith("^(\\d")
+    assert tl._rule_from_example("Written examination: 2 hours")["type"] == "line_before"
+    assert tl._rule_from_example("some ordinary sentence") is None
+
+
+@test
+def layout_learner_matches_the_hand_built_a_level_reader():
+    if not AL_PDF.exists():
+        raise Skip("golden/pdfs/alevel_business_eduqas.pdf not found")
+    layout, r = tl.discover_layout(str(AL_PDF))
+    ref = al_result()["units"][:3]  # the reader's 3 components (it also adds Appendix A)
+    flat = lambda units: [(u["name"], lo["code"], lo["title"], c["code"], c["description"]) for u in units for lo in u["learning_outcomes"] for c in lo["criteria"]]
+    assert layout["header"] == ["Content", "Amplification"] and layout["unit_rule"]["type"] == "line_before"
+    assert flat(r["units"]) == flat(ref) and len(flat(ref)) == 383  # word for word, with no A level code
+
+
+@test
+def layout_learner_leaves_other_specs_alone():
+    # On specs it must not guess at, discovery finds nothing (measured: junk tables are ~1% of a spec)
+    tried = 0
+    for name in ("cityguilds_6502_l4", "digital_dsd"):
+        pdf = ROOT / "golden" / "pdfs" / f"{name}.pdf"
+        if pdf.exists():
+            tried += 1
+            assert tl.discover_layout(str(pdf)) == (None, None), name
+    if not tried:
+        raise Skip("golden PDFs not found")
 
 
 if __name__ == "__main__":

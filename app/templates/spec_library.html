@@ -53,4 +53,36 @@ and re-parsed repeatedly.</p>
     specifications — ask them if the one you need isn't listed above.</p>
   {% endif %}
 </div>
+
+<div class="card">
+  <h2>Spec layouts CourseCraft can read</h2>
+  <p class="muted">Different exam boards print their specs differently. CourseCraft reads these layouts on its own, with no AI:</p>
+  <table>
+    <tr><th>Layout</th><th>What it reads</th></tr>
+    {% for name, what in built_in_readers | default([]) %}<tr><td>{{ name }}</td><td>{{ what }}</td></tr>{% endfor %}
+  </table>
+  {% set learned_list = learned_formats | default([]) %}
+  <h3 style="margin-top:16px;">Learned from your specs ({{ learned_list|length }})</h3>
+  {% if learned_list %}
+    <p class="muted">When a spec arrives in a layout CourseCraft has not seen, it works the layout out once and remembers it -
+    the next spec in that layout is read straight away.</p>
+    <table>
+      <tr><th>Layout</th><th>Learned</th><th>Specs read with it</th>{% if can_upload %}<th></th>{% endif %}</tr>
+      {% for f in learned_list %}
+        <tr>
+          <td>{{ f.label }}</td>
+          <td class="muted">{{ f.description or "" }}{% if f.created_at %} · {{ f.created_at.strftime("%d %b %Y") }}{% endif %}</td>
+          <td>{{ f.times_used or 0 }}</td>
+          {% if can_upload %}
+            <td><form method="post" action="/spec-library/learned-formats/{{ f.id }}/forget"
+                      onsubmit="return confirm('Forget this layout? Specs already read keep their content; new uploads in this layout will be worked out again.');">
+              <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.8rem;">Forget</button></form></td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="muted">None yet. Upload a spec in a new layout and it will appear here.</p>
+  {% endif %}
+</div>
 {% endblock %}

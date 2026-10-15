@@ -1019,5 +1019,8 @@ class DiscoveredSpecFormat(Base):
     sub_heading_regex = Column(Text, nullable=True)
     criterion_regex = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
+    # Stage 5: a TABLE layout (header cells, column roles, unit heading rule) as JSON text.
+    # When set, the regex columns above are empty strings and this is what gets used.
+    layout_json = Column(Text, nullable=True)
     times_used = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

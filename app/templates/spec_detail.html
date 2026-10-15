@@ -320,7 +320,8 @@
                   </table>
                 </td></tr>
               {% else %}
-                <tr><td>{{ c.code }}</td><td>{{ c.description }}</td></tr>
+                <tr><td>{{ c.code }}</td><td>{{ c.description }}
+                  {% if c.get("guidance") %}<div class="muted" style="font-size:0.85rem;margin-top:4px;">Guidance: {{ c.guidance }}</div>{% endif %}</td></tr>
               {% endif %}
             {% endfor %}
           </table>

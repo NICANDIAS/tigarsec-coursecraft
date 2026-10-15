@@ -22,7 +22,7 @@ parse for a breakdown of how much was caught by rules vs sent to AI.
 import os
 import re
 from .llm_gateway import complete_json
-from .spec_readers import btec_practice, content_amplification, lo_ac_units
+from .spec_readers import btec_practice, content_amplification, lo_ac_units, table_layout
 
 # Hard ceiling on total AI calls per document during parsing (across discovery + all
 # per-section fallback chunks combined). This is the actual fix for "parsing took hours" -
@@ -690,6 +690,44 @@ lookbehind assertions. Keep patterns as simple as possible while specific enough
 ordinary prose. If you can't identify a confident pattern from this excerpt, return {"unit_header_regex": null}."""
 
 
+DESCRIBE_LAYOUT_SYSTEM_PROMPT = """You are helping a UK further-education lecturer's app read a course \
+specification whose subject content is printed in TABLES. You are shown two sample pages with their \
+layout kept (columns are separated by wide spaces). Do NOT copy the content. Only DESCRIBE the table \
+layout so the app's own code can read every line itself.
+
+Return ONLY compact raw JSON (no markdown fences, no commentary), exactly this shape:
+{"header": ["exact text of each header cell of the content table, left to right"],
+ "roles": ["one role per header cell: topic | statement | code | guidance | ignore"],
+ "unit_heading_example": "the exact text of one heading line that starts a new unit/component/topic area, or null",
+ "topic_heading_example": "the exact text of one heading line ABOVE a table that names its topic, or null"}
+
+Roles: "statement" = what learners must know or be able to do (one per line or paragraph); "topic" = a \
+short topic name in its own column; "code" = a short reference code column (e.g. 1.1, 2.3a); "guidance" = \
+notes/additional information for teachers; "ignore" = anything else. Exactly one column is "statement". \
+If these pages have no such table, return {"header": null}."""
+
+
+def describe_table_layout_via_ai(pdf_path: str, progress_callback=None, budget: "CallBudget" = None):
+    """One SHORT AI call: the AI describes the table layout (header cells, column roles, an
+    example heading); CourseCraft builds the layout from that and reads every line itself.
+    Returns a layout dict (not yet checked) or None."""
+    if budget and (budget.exhausted() or budget.cancelled()):
+        return None
+    sample = table_layout.sample_pages_text(pdf_path)
+    if not sample:
+        return None
+    if progress_callback:
+        progress_callback("Asking AI to describe this spec's table layout once (CourseCraft then reads every line itself)...")
+    try:
+        if budget:
+            budget.use_one()
+        result = complete_json(system=DESCRIBE_LAYOUT_SYSTEM_PROMPT, prompt=f"Sample pages:\n\n{sample}",
+                               max_tokens=600, for_spec_parsing=True)
+    except Exception:
+        return None
+    return table_layout.layout_from_description(result)
+
+
 def discover_pattern_via_ai(sample_text: str, progress_callback=None, budget: "CallBudget" = None):
     """
     Called once per genuinely new spec format (not matched by any hardcoded or previously
@@ -1053,6 +1091,7 @@ def parse_spec_hybrid(
     rule_units, unmatched_sections = parse_spec_rule_based(raw_text)
     ruleset_used = "BTEC-style (Unit/Learning aim/P-M-D)" if rule_units else "no hardcoded/learned pattern matched"
     newly_discovered_pattern = None
+    learned_layout_id = None
 
     if not rule_units:
         tlevel_units, tlevel_unmatched = parse_spec_rule_based_tlevel(raw_text)
@@ -1080,13 +1119,52 @@ def parse_spec_hybrid(
             ruleset_used = style["ruleset"]
             reader_extras, reader_problems, reader_notes = style["extras"], style["problems"], style["notes"]
 
-    if not rule_units and known_patterns:
-        for pattern in known_patterns:
+    known_layouts = [p["layout"] for p in (known_patterns or []) if p.get("layout")]
+    text_patterns = [p for p in (known_patterns or []) if not p.get("layout") and p.get("unit_header_regex")]
+    if not rule_units and text_patterns:
+        for pattern in text_patterns:
             units, unmatched = apply_dynamic_pattern(raw_text, pattern)
             if units:
                 rule_units, unmatched_sections = units, unmatched
                 ruleset_used = f"learned pattern: {pattern.get('label', 'unnamed')}"
                 break
+
+    # Stage 5: table layouts - first ones learned from earlier specs (no AI, no discovery),
+    # then working out a new one from the page layout, then (one short call) asking AI to
+    # describe it. Whichever reads the spec, CourseCraft's own code copies every line.
+    if not rule_units and pdf_path:
+        layout_used, layout_result, how = None, None, None
+        for layout in known_layouts:
+            if table_layout.layout_fits(pdf_path, layout):
+                found = table_layout.read_with_layout(pdf_path, layout)
+                if found and table_layout.looks_like_content(found, table_layout.document_words(pdf_path)):
+                    layout_used, layout_result, how = layout, found, "learned"
+                    break
+        if not layout_used:
+            if progress_callback:
+                progress_callback("No known format matched - working out this spec's table layout from the page layout...")
+            layout_used, layout_result = table_layout.discover_layout(pdf_path)
+            how = "discovered" if layout_used else None
+        if not layout_used and not budget.cancelled():
+            described = describe_table_layout_via_ai(pdf_path, progress_callback=progress_callback, budget=budget)
+            if described and table_layout.layout_fits(pdf_path, described):
+                found = table_layout.read_with_layout(pdf_path, described)
+                if found and table_layout.looks_like_content(found, table_layout.document_words(pdf_path)):
+                    layout_used, layout_result, how = described, found, "ai"
+        if layout_used:
+            rule_units, unmatched_sections = layout_result["units"], []
+            reader_notes = list(reader_notes) + layout_result["notes"]
+            reader_problems = list(reader_problems) + layout_result["problems"]
+            if how == "learned":
+                learned_layout_id = layout_used.get("format_id")
+                ruleset_used = f"learned layout: {layout_used.get('label', 'table')}"
+                reader_notes.append("Read with a table layout CourseCraft learned from an earlier spec - no AI needed.")
+            else:
+                ruleset_used = f"new layout ({'worked out from the page layout' if how == 'discovered' else 'described by AI'}): {layout_used.get('label', 'table')}"
+                newly_discovered_pattern = {**layout_used, "label": f"Table: {layout_used.get('label', 'table')}"[:255]}
+                newly_discovered_pattern.pop("format_id", None)
+                reader_problems.append("New layout: CourseCraft worked out how this spec's tables are laid out and read every line itself. "
+                                       "As it is the first spec in this layout, check one or two units against the PDF and tick them.")
 
     if not rule_units and not budget.cancelled():
         discovered = discover_pattern_via_ai(raw_text, progress_callback=progress_callback, budget=budget)
@@ -1158,6 +1236,7 @@ def parse_spec_hybrid(
         "ai_call_budget": budget.limit,
         "ruleset_used": ruleset_used,
         "newly_discovered_pattern": newly_discovered_pattern,
+        "learned_layout_id": learned_layout_id,
         "was_cancelled": was_cancelled,
         "budget_stopped_early": budget_stopped_early,
     }
