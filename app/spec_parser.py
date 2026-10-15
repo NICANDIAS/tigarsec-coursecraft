@@ -795,6 +795,31 @@ def _add_outcomes(target: dict, los: list) -> None:
                 crit["code"] = f"C{n}"
 
 
+def explain_ai_error(message: str) -> str:
+    """Turns an AI error into one plain-English sentence (plus the short technical reason) so a
+    lecturer knows what to try next instead of just "it failed"."""
+    text = str(message or "")
+    low = text.lower()
+    if "max_tokens" in low or "cut off" in low:
+        plain = "the AI's answer was too long for one go. Try fewer pages at a time."
+    elif "429" in low or "rate limit" in low or "rate_limit" in low or "too many requests" in low:
+        plain = "the AI service is busy or its usage limit was reached. Wait a minute and try again."
+    elif "credit" in low or "quota" in low or "billing" in low or "insufficient" in low:
+        plain = "the AI account has run out of credit or quota. An admin needs to check the AI settings."
+    elif "401" in low or "403" in low or "api key" in low or "api_key" in low or "authentication" in low or "unauthorized" in low:
+        plain = "the AI service did not accept the key. An admin needs to check the AI settings."
+    elif "timed out" in low or "timeout" in low:
+        plain = "the AI service took too long to answer. Try again, or try fewer pages."
+    elif "connection" in low or "refused" in low or "resolve" in low:
+        plain = "CourseCraft could not reach the AI service. Check that it is running and online."
+    elif "valid json" in low or "empty response" in low:
+        plain = "the AI's answer was not in the expected format. Try again, or try fewer pages."
+    else:
+        plain = "the AI service returned an error."
+    detail = text.split(":", 1)[-1].strip().splitlines()[0][:160] if ":" in text else text[:160]
+    return f"{plain} (Technical detail: {detail})"
+
+
 def combine_ai_pieces(units: list[dict], one_unit_name: str = "") -> tuple[list[dict], bool]:
     """AI reads a piece in excerpts, and an excerpt that starts mid-unit can come back as a
     separate "Unknown unit", or as a second copy of the outcome it continues. For a piece the
@@ -1137,7 +1162,13 @@ def read_piece(text: str, unit_name: str = "", max_ai_calls: int = 4, allow_ai: 
             units, method = [{"name": name or "New unit", "learning_outcomes": groups}], "rules: numbered criteria (1.1, 1.2 ...)"
     if not units and allow_ai and normal.strip():
         budget = CallBudget(max_ai_calls)
-        found, ok = _ai_parse_text_block(normal, name or "pasted section", budget=budget)
+        errors = []
+
+        def remember_error(message):
+            if "failed twice" in message:
+                errors.append(message)
+                print(f"[spec_parser] read_piece: {message}", flush=True)  # visible in `docker compose logs app`
+        found, ok = _ai_parse_text_block(normal, name or "pasted section", progress_callback=remember_error, budget=budget)
         units = [u for u in found if u.get("learning_outcomes")]
         units, joined = combine_ai_pieces(units, name)
         if joined:
@@ -1148,6 +1179,8 @@ def read_piece(text: str, unit_name: str = "", max_ai_calls: int = 4, allow_ai: 
         method = f"AI ({budget.used} call(s))"
         if not ok:
             notes.append("Part of this text could not be read by AI - check the preview carefully.")
+        if errors:
+            notes.append(f"Why: {explain_ai_error(errors[0])}")
     if not units:
         return {"units": [], "method": method or "nothing recognised", "notes": notes or [
             "Nothing that looks like units, outcomes or criteria was found in this text."]}
