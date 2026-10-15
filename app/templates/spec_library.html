@@ -10,9 +10,15 @@ and re-parsed repeatedly.</p>
   {% if specs %}
     {% for spec in specs %}
       <div class="list-item">
-        <a href="/spec-library/{{ spec.id }}">{{ spec.label }}</a>
+        <span>
+          <a href="/spec-library/{{ spec.id }}">{{ spec.label }}</a>
+          {% if spec.reparsed_from_id %}<span class="muted" style="font-size:0.85rem;"> — new version of spec #{{ spec.reparsed_from_id }}</span>{% endif %}
+        </span>
         <span style="display:flex;align-items:center;gap:8px;">
-          {% if spec.parse_status == "parsed" %}
+          {% set legacy_partial = (not spec.parse_quality) and spec.parse_progress and ("skipped" in spec.parse_progress or "safety limit" in spec.parse_progress) %}
+          {% if spec.parse_status == "parsed" and ((spec.parse_quality and spec.parse_quality.verdict == "needs_review") or legacy_partial) %}
+            <span class="badge badge-needs_review">Needs review</span>
+          {% elif spec.parse_status == "parsed" %}
             <span class="badge badge-released">Parsed</span>
           {% elif spec.parse_status == "parsing" %}
             <span class="badge badge-needs_review">Parsing…</span>

@@ -1,0 +1,13 @@
+{
+ "source_pdf": "cityguilds_6502_l4.pdf",
+ "ruleset_used": "no hardcoded/learned pattern matched",
+ "verdict": "failed",
+ "rule_based_unit_count": 0,
+ "sections_needing_ai": 21,
+ "totals": {
+  "units": 0,
+  "learning_outcomes": 0,
+  "criteria": 0
+ },
+ "units": []
+}

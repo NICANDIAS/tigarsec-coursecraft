@@ -118,7 +118,7 @@ def fetch_spec_from_url(url: str, upload_dir: str) -> tuple[str, str]:
     with open(temp_path, "wb") as f:
         f.write(content)
 
-    text = extract_text(temp_path, filename)
+    text = extract_text(temp_path, filename, include_table_copies=False)  # spec text: no duplicate table copies
     label = os.path.splitext(url_filename)[0] or parsed.netloc
     return text, label
 

@@ -24,3 +24,6 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# Golden spec tests - publisher PDFs stay local; only golden/expected/*.json is committed
+golden/pdfs/

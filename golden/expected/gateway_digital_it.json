@@ -1,0 +1,1553 @@
+{
+ "source_pdf": "gateway_digital_it.pdf",
+ "ruleset_used": "Gateway Qualifications-style (Unit Number/Unit Aim/decimal criteria)",
+ "verdict": "good",
+ "rule_based_unit_count": 42,
+ "sections_needing_ai": 0,
+ "totals": {
+  "units": 39,
+  "learning_outcomes": 104,
+  "criteria": 180
+ },
+ "units": [
+  {
+   "name": "Unit H/650/4998: Project Management (Digital Business Solutions)",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.1",
+       "e9da9403c3"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.1",
+       "3653a69050"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "34fe9755f9"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit J/618/5181: Business Processes",
+   "learning_outcomes": [
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.3",
+       "fae81fe3cd"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit L/618/5182: CRM Databases",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "c8bf3b3bfb"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.3",
+       "3a1590dcfe"
+      ],
+      [
+       "2.4",
+       "5d43aecb74"
+      ],
+      [
+       "2.5",
+       "03a7d15996"
+      ],
+      [
+       "2.6",
+       "49a3bbe59e"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "bf4a494e89"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit R/618/5183: Data Analytics",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.3",
+       "259740a0bd"
+      ],
+      [
+       "1.4",
+       "81643e4db6"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "8ff5a35f51"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.3",
+       "72bd1d2d5d"
+      ],
+      [
+       "3.4",
+       "b37787fd3d"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit Y/618/5184: Digital Accounting",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.3",
+       "65c41ada0c"
+      ],
+      [
+       "1.4",
+       "aefa4a801e"
+      ],
+      [
+       "1.5",
+       "197ef7fb2c"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.3",
+       "f09357fcb6"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit D/618/5185: Systems Analysis",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "6de86a89cd"
+      ],
+      [
+       "1.3",
+       "49a778ab44"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "357681a5bf"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit H/618/5186: Web Development",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "318fb0e4e3"
+      ],
+      [
+       "1.3",
+       "b333ef778a"
+      ],
+      [
+       "1.4",
+       "c4c7f36c59"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.3",
+       "f6b2c3ad84"
+      ],
+      [
+       "2.4",
+       "0da4f9b710"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "75dcc689df"
+      ],
+      [
+       "3.3",
+       "9c4dd8e118"
+      ],
+      [
+       "3.4",
+       "a62f7cde78"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit R/650/5008: Project Management (Games Technologies)",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.1",
+       "dbe2578e2b"
+      ],
+      [
+       "1.2",
+       "b3aa08bb16"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.1",
+       "3b611c27b3"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.1",
+       "09a0c21a38"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit J/618/5195: 3D Game Models",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "51772f050d"
+      ],
+      [
+       "1.3",
+       "e526f1d704"
+      ],
+      [
+       "1.4",
+       "a310b50a7b"
+      ],
+      [
+       "1.5",
+       "0ba3a066ca"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "eec26718fa"
+      ],
+      [
+       "2.3",
+       "81672c6a74"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit L/618/5196: Concept Art and Digital: Graphics for Games",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.3",
+       "20c1dfbed0"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "e040666666"
+      ],
+      [
+       "2.3",
+       "fc6fcc3ddd"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "3c18f43d2e"
+      ],
+      [
+       "3.3",
+       "4080708778"
+      ]
+     ]
+    },
+    {
+     "code": "general-4",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "4.2",
+       "e8a8700da5"
+      ],
+      [
+       "4.3",
+       "967dccaa0a"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit D/618/5199: Games Engines",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.3",
+       "2416dfc0c0"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "1c4fe2abe9"
+      ],
+      [
+       "2.3",
+       "9ca95acb41"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "1c4fe2abe9"
+      ],
+      [
+       "3.3",
+       "5d2725f537"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit Y/618/5203: Mobile Games Development",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "d523fd79c4"
+      ],
+      [
+       "1.3",
+       "50617bbeab"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "8266177704"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.3",
+       "5250610b0d"
+      ],
+      [
+       "3.4",
+       "0399d67579"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit H/618/5205: The Games Industry",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "ec6a4c4447"
+      ],
+      [
+       "1.3",
+       "b1ee3ec96a"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "36ea136622"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "6f962d9d42"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit T/618/5208: Virtual and Augmented Reality",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "4554c9b2c4"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "67d554faff"
+      ],
+      [
+       "2.3",
+       "d9a61c8a94"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.3",
+       "89eb7be2d1"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit T/650/5009: Project Management (Networking and Cyber Security)",
+   "learning_outcomes": [
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.1",
+       "84ef26c779"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit M/618/5210: Access Control",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "4198e8522b"
+      ],
+      [
+       "1.3",
+       "053572d0eb"
+      ],
+      [
+       "1.4",
+       "8ab280e1a9"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "4acb912fe9"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "7a3a9744bd"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit T/618/5211: Data Communications",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "0132347087"
+      ],
+      [
+       "1.3",
+       "3d08a6449a"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "77485241bb"
+      ],
+      [
+       "2.3",
+       "be5670892a"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "d9fdde992f"
+      ]
+     ]
+    },
+    {
+     "code": "general-802",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "802.11",
+       "4e8891ef9f"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit F/618/5213: Ethical Hacking",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "266b57dc5d"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "909e63f729"
+      ],
+      [
+       "3.3",
+       "9e9637311e"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit Y/618/5217: Network Management",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "6337d6fc59"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "7ebb372eb7"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "4b77d4d8be"
+      ],
+      [
+       "3.3",
+       "bcc563b0cd"
+      ],
+      [
+       "3.4",
+       "9d70fba1ec"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit D/618/5218: Network Threats and Vulnerabilities",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "5dc0991397"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "7c55edc2fc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit H/618/5219: Networking",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.3",
+       "93538311bc"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "03264ce82d"
+      ],
+      [
+       "2.3",
+       "41abf88605"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "44b5b396c0"
+      ],
+      [
+       "3.3",
+       "a69b571fa1"
+      ]
+     ]
+    },
+    {
+     "code": "general-4",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "4.2",
+       "14f35ced5c"
+      ]
+     ]
+    },
+    {
+     "code": "general-5",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "5.2",
+       "b08013083b"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit D/650/5010: Project Management (Social Media for Ecommerce)",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.1",
+       "e84f6501ba"
+      ],
+      [
+       "1.2",
+       "01561d667d"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "41592112f0"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit Y/618/5220: Content Management Systems",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.3",
+       "5729a64200"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "6cea012759"
+      ]
+     ]
+    },
+    {
+     "code": "general-4",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "4.3",
+       "e1904e2a10"
+      ]
+     ]
+    },
+    {
+     "code": "general-5",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "5.2",
+       "654272d5a6"
+      ],
+      [
+       "5.3",
+       "ef34fc13ea"
+      ],
+      [
+       "5.4",
+       "a9a6cf7a50"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit D/618/5221: Content Marketing",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.3",
+       "c7f5321e94"
+      ],
+      [
+       "1.4",
+       "8ce009c730"
+      ],
+      [
+       "1.5",
+       "17b63dcab5"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "2e471930e8"
+      ],
+      [
+       "2.3",
+       "ed38daec9d"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "a9ba95871e"
+      ],
+      [
+       "3.3",
+       "e163b4adce"
+      ],
+      [
+       "3.4",
+       "179a93208b"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit H/618/5608: Digital Graphics and Animation",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "d2da3e4a76"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "233248cb8d"
+      ],
+      [
+       "2.3",
+       "4a837a2984"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "30a5ec1014"
+      ],
+      [
+       "3.3",
+       "69730b1e9c"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit L/618/5232: Marketing Digital",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "482ad3048a"
+      ],
+      [
+       "1.3",
+       "1845b25891"
+      ],
+      [
+       "1.4",
+       "6c3a14f737"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "98a74daaab"
+      ],
+      [
+       "2.3",
+       "6d21d4105e"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit Y/618/5234: Digital Marketing Metrics and Analytics",
+   "learning_outcomes": [
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "283a69f352"
+      ],
+      [
+       "2.3",
+       "4c5c2297fd"
+      ],
+      [
+       "2.4",
+       "a4a7feb910"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit D/618/5235: Social Media Marketing (SMM)",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "22fde03afc"
+      ],
+      [
+       "1.3",
+       "3dda5f4f84"
+      ],
+      [
+       "1.4",
+       "a9addec2dc"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "589db2062b"
+      ],
+      [
+       "2.3",
+       "df52416aaf"
+      ],
+      [
+       "2.4",
+       "1fb92ece20"
+      ],
+      [
+       "2.5",
+       "6f88b5a69f"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "b01e14146c"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit F/618/5180: Project Management",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.3",
+       "76c52ec6f7"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "83520137c8"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "e36d211df0"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit K/618/5237: JavaScript",
+   "learning_outcomes": [
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "1c62d42077"
+      ],
+      [
+       "2.3",
+       "bd54e3c038"
+      ],
+      [
+       "2.4",
+       "0f51bf15f2"
+      ],
+      [
+       "2.5",
+       "8ccfbddace"
+      ],
+      [
+       "2.6",
+       "a4e724f267"
+      ],
+      [
+       "2.7",
+       "107b469184"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit M/618/5238: Maths for Computing",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "c45601993b"
+      ],
+      [
+       "1.3",
+       "557eb47dad"
+      ],
+      [
+       "1.4",
+       "3567091a31"
+      ],
+      [
+       "1.5",
+       "9c26a635eb"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "b79f58134f"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "d0cc171f67"
+      ],
+      [
+       "3.3",
+       "c03ae7851c"
+      ]
+     ]
+    },
+    {
+     "code": "general-4",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "4.2",
+       "5cd1ce08ca"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit T/618/5239: Object Oriented Programming",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "cafe05c112"
+      ]
+     ]
+    },
+    {
+     "code": "general-4",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "4.3",
+       "07d7a06bd4"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit K/618/5240: Programming Implementation",
+   "learning_outcomes": [
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "0d13d27699"
+      ],
+      [
+       "2.3",
+       "a87d098e3e"
+      ],
+      [
+       "2.4",
+       "254908786e"
+      ],
+      [
+       "2.5",
+       "e1942366ff"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "f86f217ec7"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit K/618/5190: Robot Technology",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "d859a59495"
+      ],
+      [
+       "1.3",
+       "a28cb87efc"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "a7c9723fb6"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit M/618/5241: Software Testing",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "3c56bbb4b5"
+      ],
+      [
+       "1.3",
+       "f09d589174"
+      ],
+      [
+       "1.4",
+       "b9256b75a4"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.3",
+       "23792f6758"
+      ],
+      [
+       "2.4",
+       "c581a4dd73"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit J/650/5013: Project Management (IT Systems Infrastructure)",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.1",
+       "56a731dd12"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.1",
+       "15ebb76b12"
+      ],
+      [
+       "2.2",
+       "cb9923fac4"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.1",
+       "daeb205ec1"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit T/618/5242: Cloud Technologies",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "3429efdf8b"
+      ],
+      [
+       "1.3",
+       "8545ab9950"
+      ],
+      [
+       "1.4",
+       "770678bff3"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "f2c4bbcea0"
+      ],
+      [
+       "2.3",
+       "4b591a8dcc"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.2",
+       "2552a667a4"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit A/618/5243: System Management and Support",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "7d1f983cd2"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.2",
+       "9945af6ffd"
+      ]
+     ]
+    },
+    {
+     "code": "general-3",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "3.3",
+       "daba6d5904"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Unit R/618/5247: System Security and Encryption",
+   "learning_outcomes": [
+    {
+     "code": "general-1",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "1.2",
+       "ab6a1efff6"
+      ]
+     ]
+    },
+    {
+     "code": "general-2",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "2.3",
+       "5aba26191b"
+      ]
+     ]
+    },
+    {
+     "code": "general-4",
+     "title": "General content (not further sub-grouped in the source document)",
+     "criteria": [
+      [
+       "4.2",
+       "ef92aec354"
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

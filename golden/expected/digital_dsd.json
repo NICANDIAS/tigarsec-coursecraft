@@ -1,0 +1,1234 @@
+{
+ "source_pdf": "digital_dsd.pdf",
+ "ruleset_used": "T-Level-style (Core Component/Occupational Specialisms/Content area)",
+ "verdict": "needs_review",
+ "rule_based_unit_count": 8,
+ "sections_needing_ai": 1,
+ "totals": {
+  "units": 8,
+  "learning_outcomes": 48,
+  "criteria": 223
+ },
+ "units": [
+  {
+   "name": "Core Component - Content area 1: Problem solving",
+   "learning_outcomes": [
+    {
+     "code": "1.1",
+     "title": "Computational thinking",
+     "criteria": [
+      [
+       "1.1.1",
+       "a739bf0e64"
+      ],
+      [
+       "1.1.2",
+       "6704cdcfe0"
+      ],
+      [
+       "1.1.3",
+       "75768a7077"
+      ],
+      [
+       "1.1.4",
+       "e421199ffc"
+      ],
+      [
+       "1.1.5",
+       "181e928c6a"
+      ],
+      [
+       "1.1.6",
+       "67a6884f4f"
+      ],
+      [
+       "1.1.7",
+       "de90f95396"
+      ],
+      [
+       "1.1.8",
+       "18ee73b9b1"
+      ],
+      [
+       "1.1.9",
+       "f5e00640f1"
+      ],
+      [
+       "1.1.10",
+       "f804408a99"
+      ],
+      [
+       "1.1.11",
+       "771429fe45"
+      ],
+      [
+       "1.1.12",
+       "bd0b4a2f7d"
+      ],
+      [
+       "1.1.13",
+       "e3905eda88"
+      ],
+      [
+       "1.1.14",
+       "15eda7fded"
+      ],
+      [
+       "1.1.15",
+       "31d39d0c5b"
+      ],
+      [
+       "1.1.16",
+       "ef6fcdf474"
+      ],
+      [
+       "1.1.17",
+       "801146d40e"
+      ]
+     ]
+    },
+    {
+     "code": "1.2",
+     "title": "Algorithmic design",
+     "criteria": [
+      [
+       "1.2.1",
+       "3185e3cb66"
+      ],
+      [
+       "1.2.2",
+       "a8ec1a4af7"
+      ],
+      [
+       "1.2.3",
+       "81ef99c67e"
+      ],
+      [
+       "1.2.4",
+       "bdff2204ec"
+      ],
+      [
+       "1.2.5",
+       "9c700246ae"
+      ],
+      [
+       "1.2.6",
+       "72d617d7af"
+      ],
+      [
+       "1.2.7",
+       "c96e961ff2"
+      ],
+      [
+       "1.2.8",
+       "90d324e408"
+      ],
+      [
+       "1.2.9",
+       "3dc5642eaf"
+      ],
+      [
+       "1.2.10",
+       "0c3ff864fe"
+      ],
+      [
+       "1.2.11",
+       "6d4055aa2d"
+      ],
+      [
+       "1.2.12",
+       "ea96fcc79d"
+      ]
+     ]
+    },
+    {
+     "code": "1.3",
+     "title": "Strategies",
+     "criteria": [
+      [
+       "1.3.1",
+       "1b14b7079c"
+      ],
+      [
+       "1.3.2",
+       "bbc3a62330"
+      ],
+      [
+       "1.3.3",
+       "133ae69f1e"
+      ],
+      [
+       "1.3.4",
+       "a772f95ad8"
+      ],
+      [
+       "1.3.5",
+       "21bac8d969"
+      ],
+      [
+       "1.3.6",
+       "fa8e5b990d"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Core Component - Content area 2: Introduction to programming",
+   "learning_outcomes": [
+    {
+     "code": "2.1",
+     "title": "Standard data types",
+     "criteria": [
+      [
+       "2.1.1",
+       "6f22f294a7"
+      ]
+     ]
+    },
+    {
+     "code": "2.2",
+     "title": "Variables and constants",
+     "criteria": [
+      [
+       "2.2.1",
+       "97eb25c957"
+      ],
+      [
+       "2.2.2",
+       "48fc323caa"
+      ],
+      [
+       "2.2.3",
+       "5a70afe22c"
+      ],
+      [
+       "2.2.4",
+       "cf069b546e"
+      ],
+      [
+       "2.2.5",
+       "f428e36be5"
+      ],
+      [
+       "2.2.6",
+       "72a0137784"
+      ],
+      [
+       "2.2.7",
+       "a3e9b12302"
+      ],
+      [
+       "2.2.8",
+       "c5c5eb30a4"
+      ],
+      [
+       "2.2.9",
+       "c2a439406f"
+      ]
+     ]
+    },
+    {
+     "code": "2.3",
+     "title": "Data structures",
+     "criteria": [
+      [
+       "2.3.1",
+       "bade938131"
+      ],
+      [
+       "2.3.2",
+       "3c3c53e181"
+      ],
+      [
+       "2.3.3",
+       "b047eb892e"
+      ],
+      [
+       "2.3.4",
+       "74a087a20f"
+      ]
+     ]
+    },
+    {
+     "code": "2.4",
+     "title": "Operators",
+     "criteria": [
+      [
+       "2.4.1",
+       "36b3d2a733"
+      ],
+      [
+       "2.4.2",
+       "b68f05f002"
+      ],
+      [
+       "2.4.3",
+       "72198f4755"
+      ],
+      [
+       "2.4.4",
+       "8bc77ffd3e"
+      ],
+      [
+       "2.4.5",
+       "929a2f478b"
+      ],
+      [
+       "2.4.6",
+       "f42fbdba11"
+      ],
+      [
+       "2.4.7",
+       "911dba735b"
+      ]
+     ]
+    },
+    {
+     "code": "2.5",
+     "title": "Input and output",
+     "criteria": [
+      [
+       "2.5.1",
+       "e2a6799813"
+      ],
+      [
+       "2.5.2",
+       "a641a4928e"
+      ],
+      [
+       "2.5.3",
+       "412306d0a4"
+      ],
+      [
+       "2.5.4",
+       "d7bdf1490e"
+      ],
+      [
+       "2.5.5",
+       "b0cf2ed187"
+      ]
+     ]
+    },
+    {
+     "code": "2.6",
+     "title": "Actions",
+     "criteria": [
+      [
+       "2.6.1",
+       "6e6a44ac14"
+      ],
+      [
+       "2.6.2",
+       "aa45a29543"
+      ],
+      [
+       "2.6.3",
+       "2698e8184f"
+      ],
+      [
+       "2.6.4",
+       "cc8223393d"
+      ],
+      [
+       "2.6.5",
+       "838411b50e"
+      ],
+      [
+       "2.6.6",
+       "5facf5083c"
+      ],
+      [
+       "2.6.7",
+       "3076deea5e"
+      ],
+      [
+       "2.6.8",
+       "fb5d2531b1"
+      ]
+     ]
+    },
+    {
+     "code": "2.7",
+     "title": "Functions and procedures",
+     "criteria": [
+      [
+       "2.7.1",
+       "11cf98b228"
+      ],
+      [
+       "2.7.2",
+       "8b986186f4"
+      ],
+      [
+       "2.7.3",
+       "b0b31f6d72"
+      ],
+      [
+       "2.7.4",
+       "5ab5ad3276"
+      ],
+      [
+       "2.7.5",
+       "574a174591"
+      ],
+      [
+       "2.7.6",
+       "fa22b97e91"
+      ],
+      [
+       "2.7.7",
+       "bae83bff6e"
+      ]
+     ]
+    },
+    {
+     "code": "2.8",
+     "title": "Validation",
+     "criteria": [
+      [
+       "2.8.1",
+       "ae6b87de0b"
+      ],
+      [
+       "2.8.2",
+       "1c1918e9ee"
+      ],
+      [
+       "2.8.3",
+       "0fd2e17fe5"
+      ],
+      [
+       "2.8.4",
+       "bbd157be81"
+      ]
+     ]
+    },
+    {
+     "code": "2.9",
+     "title": "Design considerations and programming practices",
+     "criteria": [
+      [
+       "2.9.1",
+       "505a71a852"
+      ],
+      [
+       "2.9.2",
+       "e0f547a5b1"
+      ],
+      [
+       "2.9.3",
+       "f9a4060399"
+      ],
+      [
+       "2.9.4",
+       "db88b70e44"
+      ],
+      [
+       "2.9.5",
+       "89e88b1e07"
+      ],
+      [
+       "2.9.6",
+       "bda9fc2fb3"
+      ],
+      [
+       "2.9.7",
+       "c2f5e30a39"
+      ]
+     ]
+    },
+    {
+     "code": "2.10",
+     "title": "Robust code",
+     "criteria": [
+      [
+       "2.10.1",
+       "c7ef293e65"
+      ],
+      [
+       "2.10.2",
+       "ea4bd7b6a4"
+      ],
+      [
+       "2.10.3",
+       "f5ebada8bb"
+      ],
+      [
+       "2.10.4",
+       "344a623cb2"
+      ],
+      [
+       "2.10.5",
+       "1ba05a59ce"
+      ]
+     ]
+    },
+    {
+     "code": "2.11",
+     "title": "Common algorithms",
+     "criteria": [
+      [
+       "2.11.1",
+       "ff98f8e34b"
+      ],
+      [
+       "2.11.2",
+       "d53fbfc515"
+      ],
+      [
+       "2.11.3",
+       "20a8da379a"
+      ],
+      [
+       "2.11.4",
+       "4d3ba0f78d"
+      ],
+      [
+       "2.11.5",
+       "f79b1aefbf"
+      ],
+      [
+       "2.11.6",
+       "4b26b19620"
+      ],
+      [
+       "2.11.7",
+       "74fca5e387"
+      ]
+     ]
+    },
+    {
+     "code": "2.12.1",
+     "title": "Testing components",
+     "criteria": [
+      [
+       "2.12.1.1",
+       "8338dd619a"
+      ]
+     ]
+    },
+    {
+     "code": "2.12.2",
+     "title": "Testing methods",
+     "criteria": [
+      [
+       "2.12.2.1",
+       "54e7acfd84"
+      ],
+      [
+       "2.12.2.2",
+       "481e54f89d"
+      ]
+     ]
+    },
+    {
+     "code": "2.12.3",
+     "title": "Automation",
+     "criteria": [
+      [
+       "2.12.3.1",
+       "b9b4080319"
+      ]
+     ]
+    },
+    {
+     "code": "2.12.4",
+     "title": "Test data and test plan",
+     "criteria": [
+      [
+       "2.12.4.1",
+       "3e72c3bec8"
+      ],
+      [
+       "2.12.4.2",
+       "c0a2613223"
+      ],
+      [
+       "2.12.4.3",
+       "e05b1a5342"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Core Component - Content area 3: Emerging issues",
+   "learning_outcomes": [
+    {
+     "code": "3.1",
+     "title": "Impact of digital technologies",
+     "criteria": [
+      [
+       "3.1.1",
+       "511c3f0a79"
+      ],
+      [
+       "3.1.2",
+       "c09d1a4d85"
+      ],
+      [
+       "3.1.3",
+       "8d891a772d"
+      ],
+      [
+       "3.1.4",
+       "9223cb5d1e"
+      ]
+     ]
+    },
+    {
+     "code": "3.2",
+     "title": "Emerging technologies",
+     "criteria": [
+      [
+       "3.2.1",
+       "305f42c11a"
+      ],
+      [
+       "3.2.2",
+       "58a0f184c5"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Core Component - Content area 4: Legislation and regulatory requirements",
+   "learning_outcomes": [
+    {
+     "code": "4.1",
+     "title": "Legislation",
+     "criteria": [
+      [
+       "4.1.1",
+       "ee427cff3e"
+      ],
+      [
+       "4.1.2",
+       "4107255e94"
+      ],
+      [
+       "4.1.3",
+       "baabb2fb2b"
+      ],
+      [
+       "4.1.4",
+       "903c1e7153"
+      ],
+      [
+       "4.1.5",
+       "e756e6891f"
+      ],
+      [
+       "4.1.6",
+       "9b17168708"
+      ],
+      [
+       "4.1.7",
+       "39c6c3c60e"
+      ],
+      [
+       "4.1.8",
+       "b2db39b86e"
+      ]
+     ]
+    },
+    {
+     "code": "4.2",
+     "title": "Guidelines",
+     "criteria": [
+      [
+       "4.2.1",
+       "296275d573"
+      ],
+      [
+       "4.2.2",
+       "b77a487cd5"
+      ],
+      [
+       "4.2.3",
+       "0bcd21a68a"
+      ],
+      [
+       "4.2.4",
+       "3ffef3e4f9"
+      ],
+      [
+       "4.2.5",
+       "ed760f7d56"
+      ],
+      [
+       "4.2.6",
+       "e17b3e4ca0"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Core Component - Content area 5: Business context",
+   "learning_outcomes": [
+    {
+     "code": "5.1",
+     "title": "Business environment",
+     "criteria": [
+      [
+       "5.1.1",
+       "22ba4c2652"
+      ],
+      [
+       "5.1.2",
+       "3040d841b7"
+      ],
+      [
+       "5.1.3",
+       "c247a63102"
+      ]
+     ]
+    },
+    {
+     "code": "5.2",
+     "title": "Digital value to organisations",
+     "criteria": [
+      [
+       "5.2.1",
+       "3fbbe36c3d"
+      ],
+      [
+       "5.2.2",
+       "56cf7d0efa"
+      ]
+     ]
+    },
+    {
+     "code": "5.3",
+     "title": "Risk to organisations of using digital systems",
+     "criteria": [
+      [
+       "5.3.1",
+       "4f54e53d16"
+      ],
+      [
+       "5.3.2",
+       "a5cc425ad5"
+      ]
+     ]
+    },
+    {
+     "code": "5.4",
+     "title": "Technical change management",
+     "criteria": [
+      [
+       "5.4.1",
+       "41fa6e4593"
+      ],
+      [
+       "5.4.2",
+       "bcb80b2ccb"
+      ],
+      [
+       "5.4.3",
+       "4814d9d50c"
+      ],
+      [
+       "5.4.4",
+       "64967386e0"
+      ],
+      [
+       "5.4.5",
+       "2f357a6acc"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Core Component - Content area 6: Data",
+   "learning_outcomes": [
+    {
+     "code": "6.1",
+     "title": "Data, information and knowledge",
+     "criteria": [
+      [
+       "6.1.1",
+       "2204332e52"
+      ],
+      [
+       "6.1.2",
+       "58cb3d4ab1"
+      ],
+      [
+       "6.1.3",
+       "d55ced17a5"
+      ],
+      [
+       "6.1.4",
+       "5519d8b6b4"
+      ],
+      [
+       "6.1.5",
+       "58a4f0e151"
+      ]
+     ]
+    },
+    {
+     "code": "6.2",
+     "title": "Methods of transforming data",
+     "criteria": [
+      [
+       "6.2.1",
+       "66c2b72cd2"
+      ]
+     ]
+    },
+    {
+     "code": "6.3",
+     "title": "Data taxonomy",
+     "criteria": [
+      [
+       "6.3.1",
+       "dcad91908d"
+      ],
+      [
+       "6.3.2",
+       "52041d43a8"
+      ],
+      [
+       "6.3.3",
+       "cec219169e"
+      ],
+      [
+       "6.3.4",
+       "81575ff884"
+      ],
+      [
+       "6.3.5",
+       "e87befd9a6"
+      ],
+      [
+       "6.3.6",
+       "f4a7686a33"
+      ]
+     ]
+    },
+    {
+     "code": "6.4",
+     "title": "Data types",
+     "criteria": [
+      [
+       "6.4.1",
+       "7ccc56fd47"
+      ],
+      [
+       "6.4.2",
+       "4128a27421"
+      ],
+      [
+       "6.4.3",
+       "c569ab3ba5"
+      ],
+      [
+       "6.4.4",
+       "a6db26c287"
+      ]
+     ]
+    },
+    {
+     "code": "6.5",
+     "title": "Data formats",
+     "criteria": [
+      [
+       "6.5.1",
+       "a9eba78ab7"
+      ],
+      [
+       "6.5.2",
+       "b1ad755902"
+      ]
+     ]
+    },
+    {
+     "code": "6.6",
+     "title": "Structures for storing data",
+     "criteria": [
+      [
+       "6.6.1",
+       "74f0a9ded4"
+      ],
+      [
+       "6.6.2",
+       "71008f1bb5"
+      ],
+      [
+       "6.6.3",
+       "0ada0557ff"
+      ],
+      [
+       "6.6.4",
+       "cf4404059e"
+      ]
+     ]
+    },
+    {
+     "code": "6.7",
+     "title": "Data dimensions and maintenance",
+     "criteria": [
+      [
+       "6.7.1",
+       "09a7f55486"
+      ],
+      [
+       "6.7.2",
+       "faa8d6b32a"
+      ],
+      [
+       "6.7.3",
+       "c4d16b798a"
+      ],
+      [
+       "6.7.4",
+       "b4bd6c42b4"
+      ],
+      [
+       "6.7.5",
+       "37e9167b38"
+      ],
+      [
+       "6.7.6",
+       "de09d83759"
+      ]
+     ]
+    },
+    {
+     "code": "6.8",
+     "title": "Data systems",
+     "criteria": [
+      [
+       "6.8.1",
+       "8bbc160154"
+      ],
+      [
+       "6.8.2",
+       "b1adca32ca"
+      ],
+      [
+       "6.8.3",
+       "4bf2a75918"
+      ],
+      [
+       "6.8.4",
+       "5796d90c45"
+      ],
+      [
+       "6.8.5",
+       "7d01ded398"
+      ],
+      [
+       "6.8.6",
+       "e05ced12a6"
+      ],
+      [
+       "6.8.7",
+       "9d7b7688a0"
+      ],
+      [
+       "6.8.8",
+       "e8eddaf145"
+      ]
+     ]
+    },
+    {
+     "code": "6.9",
+     "title": "Data visualisation",
+     "criteria": [
+      [
+       "6.9.1",
+       "c955c83aca"
+      ],
+      [
+       "6.9.2",
+       "5693a943e6"
+      ]
+     ]
+    },
+    {
+     "code": "6.10",
+     "title": "Data models",
+     "criteria": [
+      [
+       "6.10.1",
+       "f4c4f3b515"
+      ],
+      [
+       "6.10.2",
+       "0043addb35"
+      ],
+      [
+       "6.10.3",
+       "146b1b711c"
+      ],
+      [
+       "6.10.4",
+       "15f949f3a8"
+      ]
+     ]
+    },
+    {
+     "code": "6.11",
+     "title": "Data access across platforms",
+     "criteria": [
+      [
+       "6.11.1",
+       "6ae960ef0b"
+      ],
+      [
+       "6.11.2",
+       "51cdaac2c9"
+      ],
+      [
+       "6.11.3",
+       "695621030a"
+      ]
+     ]
+    },
+    {
+     "code": "6.12",
+     "title": "Data analysis tools",
+     "criteria": [
+      [
+       "6.12.1",
+       "cd2e7406bf"
+      ],
+      [
+       "6.12.2",
+       "57c88cd357"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Core Component - Content area 7: Digital environments",
+   "learning_outcomes": [
+    {
+     "code": "7.1",
+     "title": "Hardware",
+     "criteria": [
+      [
+       "7.1.1",
+       "8c34bb9ed6"
+      ],
+      [
+       "7.1.2",
+       "2ee31f240c"
+      ]
+     ]
+    },
+    {
+     "code": "7.2",
+     "title": "Software",
+     "criteria": [
+      [
+       "7.2.1",
+       "5770fd9a8e"
+      ],
+      [
+       "7.2.2",
+       "ee7e3359a2"
+      ],
+      [
+       "7.2.3",
+       "f0cb742af6"
+      ],
+      [
+       "7.2.4",
+       "147fa7a82c"
+      ]
+     ]
+    },
+    {
+     "code": "7.3",
+     "title": "Networks",
+     "criteria": [
+      [
+       "7.3.1",
+       "990fbc11e1"
+      ],
+      [
+       "7.3.2",
+       "157e797ff9"
+      ],
+      [
+       "7.3.3",
+       "739586c3b7"
+      ],
+      [
+       "7.3.4",
+       "1c26c65709"
+      ],
+      [
+       "7.3.5",
+       "2e0182427a"
+      ],
+      [
+       "7.3.6",
+       "0cd93173ce"
+      ],
+      [
+       "7.3.7",
+       "a70d7044c6"
+      ],
+      [
+       "7.3.8",
+       "dfcf9e8171"
+      ],
+      [
+       "7.3.9",
+       "73aed5509b"
+      ],
+      [
+       "7.3.10",
+       "9db0ede641"
+      ],
+      [
+       "7.3.11",
+       "93dd44b066"
+      ]
+     ]
+    },
+    {
+     "code": "7.4",
+     "title": "Virtual environments",
+     "criteria": [
+      [
+       "7.4.1",
+       "e672e034e1"
+      ],
+      [
+       "7.4.2",
+       "89e13708ba"
+      ],
+      [
+       "7.4.3",
+       "dcddc8bf7d"
+      ],
+      [
+       "7.4.4",
+       "850e26a987"
+      ]
+     ]
+    },
+    {
+     "code": "7.5",
+     "title": "Cloud environments",
+     "criteria": [
+      [
+       "7.5.1",
+       "a527ae81b1"
+      ],
+      [
+       "7.5.2",
+       "476845a100"
+      ],
+      [
+       "7.5.3",
+       "dcafaa0635"
+      ]
+     ]
+    },
+    {
+     "code": "7.6",
+     "title": "Resilient digital environments",
+     "criteria": [
+      [
+       "7.6.1",
+       "90254f8aff"
+      ],
+      [
+       "7.6.2",
+       "1cb704e8db"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Core Component - Content area 8: Security",
+   "learning_outcomes": [
+    {
+     "code": "8.1",
+     "title": "Security risks",
+     "criteria": [
+      [
+       "8.1.1",
+       "0bf90afc28"
+      ],
+      [
+       "8.1.2",
+       "9c18a73cc6"
+      ],
+      [
+       "8.1.3",
+       "5a15383138"
+      ]
+     ]
+    },
+    {
+     "code": "8.2",
+     "title": "Types of threats and vulnerabilities",
+     "criteria": [
+      [
+       "8.2.1",
+       "8c673b1be1"
+      ],
+      [
+       "8.2.2",
+       "e4d8b6ddbd"
+      ],
+      [
+       "8.2.3",
+       "a8f4042dd2"
+      ],
+      [
+       "8.2.4",
+       "294c7a05d9"
+      ],
+      [
+       "8.2.5",
+       "f19eb0230b"
+      ]
+     ]
+    },
+    {
+     "code": "8.3",
+     "title": "Threat mitigation",
+     "criteria": [
+      [
+       "8.3.1",
+       "808a42ee96"
+      ],
+      [
+       "8.3.2",
+       "a136d1f694"
+      ]
+     ]
+    },
+    {
+     "code": "8.4",
+     "title": "Interrelationship of components required for effective security",
+     "criteria": [
+      [
+       "8.4.1",
+       "b71613aa40"
+      ],
+      [
+       "8.4.2",
+       "2a4584e527"
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ spec.label }} - TIGARSEC CourseCraft{% endblock %}
 {% block content %}
+{# Safe defaults: any route that renders this page without the Stage 1 values still works. #}
+{% set usage = usage | default({"in_use": False, "counts": {}, "course_names": []}) %}
+{% set usage_text = usage_text | default("") %}
+{% set family = family | default({"parent": None, "children": []}) %}
 <p><a href="/spec-library">&larr; Spec library</a></p>
 <h1>{{ spec.label }}</h1>
 
@@ -8,8 +12,26 @@
      data-spec-id="{{ spec.id }}"
      data-initial-status="{{ spec.parse_status }}">
   <div id="status-display">
+    {% set q = spec.parse_quality %}
+    {# Specs parsed before Stage 1 have no quality report - their saved summary still says if parts were skipped. #}
+    {% set legacy_partial = (not q) and spec.parse_progress and ("skipped" in spec.parse_progress or "safety limit" in spec.parse_progress) %}
     {% if spec.parse_status == "parsed" %}
-      <p><span class="badge badge-released">Parsed</span> — <span id="unit-count">{{ spec.structured_json.units|length }}</span> unit(s) found.</p>
+      {% if legacy_partial %}
+        <p><span class="badge badge-needs_review">Needs review</span> — <span id="unit-count">{{ spec.structured_json.units|length }}</span> unit(s) found,
+        but parts of this spec were skipped (details below). Check it before using it for planning or marking.</p>
+      {% elif q and q.verdict == "needs_review" %}
+        <p><span class="badge badge-needs_review">Needs review</span> — <span id="unit-count">{{ spec.structured_json.units|length }}</span> unit(s) found,
+        but parts of this spec may be missing or wrong. Check it before using it for planning or marking.</p>
+        <ul class="parse-problems">
+          {% for problem in q.problems %}<li>{{ problem }}</li>{% endfor %}
+        </ul>
+      {% else %}
+        <p><span class="badge badge-released">Parsed</span> — <span id="unit-count">{{ spec.structured_json.units|length }}</span> unit(s) found.</p>
+      {% endif %}
+      {% if q %}
+        <p class="muted">Found {{ q.units }} unit(s), {{ q.learning_outcomes }} learning outcome(s), {{ q.criteria }} criteria{% if q.ruleset_used %} — read as: {{ q.ruleset_used }}{% endif %}.</p>
+        {% for note in q.notes %}<p class="muted">{{ note }}</p>{% endfor %}
+      {% endif %}
       {% if teacher.role == "admin" %}
         {% if spec.generated_by_provider %}
           {% set provider_names = {"anthropic": "Anthropic", "ollama": "Ollama (free/local)", "azure_openai": "Azure OpenAI", "openai_compatible": "an OpenAI-compatible endpoint"} %}
@@ -18,7 +40,7 @@
           <p class="muted">Parsed entirely via rule-based matching - no AI was needed for this document.</p>
         {% endif %}
       {% endif %}
-      {% if spec.parse_progress and ("skipped" in spec.parse_progress or "safety limit" in spec.parse_progress) %}
+      {% if legacy_partial %}
         <div class="error-box" style="border-color:var(--warning);color:var(--warning);">{{ spec.parse_progress }}</div>
       {% endif %}
     {% elif spec.parse_status == "parsing" %}
@@ -34,16 +56,32 @@
     {% elif spec.parse_status == "cancelled" %}
       <p><span class="badge badge-failed">Cancelled</span> {{ spec.parse_progress }}</p>
     {% elif spec.parse_status == "failed" %}
+      <p><span class="badge badge-failed">Not usable</span></p>
       <div class="error-box">Parsing failed: {{ spec.parse_error }}</div>
     {% else %}
       <p><span class="badge badge-uploaded">Not parsed</span></p>
     {% endif %}
   </div>
 
+  {% if family.parent %}
+    <p class="version-note">This is a re-parsed version of
+      <a href="/spec-library/{{ family.parent.id }}">{{ family.parent.label }}</a>.
+      {% if spec.parse_status == "parsed" %}<a href="/spec-library/{{ spec.id }}/compare">See what changed</a>.{% endif %}
+      Courses and other records still use the original - moving them over will come in a later update.</p>
+  {% endif %}
+  {% if family.children %}
+    <p class="version-note">Newer re-parsed version(s):
+      {% for child in family.children %}<a href="/spec-library/{{ child.id }}">{{ child.label }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  {% endif %}
+
   {% if can_upload and spec.parse_status != "parsing" %}
+    {% if usage.in_use %}
+      <p class="muted">This spec is in use ({{ usage_text }}). Re-parsing it creates a <strong>new version</strong> -
+      this one stays exactly as it is, so nothing linked to it can break.</p>
+    {% endif %}
     <form method="post" action="/spec-library/{{ spec.id }}/reparse" style="display:inline-block;margin-right:8px;">
       <button class="btn btn-secondary" type="submit">
-        {% if spec.parse_status == "parsed" %}Re-parse with AI{% else %}Parse with AI{% endif %}
+        {% if usage.in_use %}Re-parse as a new version{% elif spec.parse_status == "parsed" %}Re-parse with AI{% else %}Parse with AI{% endif %}
       </button>
     </form>
     <form method="post" action="/spec-library/{{ spec.id }}/delete" style="display:inline-block;"

@@ -138,6 +138,10 @@ class SpecVersion(Base):
     parse_progress_updated_at = Column(DateTime, nullable=True)  # heartbeat - if this stops moving, it's actually stuck, not just slow
     cancel_requested = Column(Boolean, default=False, nullable=False)
     generated_by_provider = Column(String(50), nullable=True)  # which AI provider actually parsed this - spec parsing has its own optional override slot (Admin: AI Provider), separate from marking/drafts
+    # Stage 1 (Oct 2026) - all nullable, so every spec that existed before keeps working exactly as before.
+    parse_quality = Column(JSON, nullable=True)  # plain-English honesty report from spec_parser.assess_parse_quality: verdict good/needs_review/failed, counts, problems. Kept OUT of structured_json on purpose - marking and IV send structured_json to the AI, and this report must not leak into those prompts
+    reparsed_from_id = Column(Integer, ForeignKey("spec_versions.id"), nullable=True)  # set when "Re-parse" was pressed on a spec already IN USE: the re-parse becomes this NEW version and the original is left untouched, so nothing linked to it (courses, schemes of work, marks, exemplars, timetabling) can break. Null = an original upload
+    source_file_path = Column(String(1000), nullable=True)  # the uploaded PDF/DOCX kept on disk - future spec readers (Media grade grids, A level tables) need the real page layout, not just the extracted text. Null for specs uploaded before this existed, or pasted as text
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 

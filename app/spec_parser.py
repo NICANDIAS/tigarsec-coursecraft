@@ -173,9 +173,35 @@ def _normalize_text(text: str) -> str:
     return _strip_repeated_boilerplate_lines(text)
 
 
+def _split_oversized(paragraph: str, chunk_size: int) -> list[str]:
+    """A "paragraph" can be huge when a PDF has few blank lines (confirmed: the Media spec
+    produced one 94,675-character piece, which no AI call could ever process - so the whole
+    document was silently skipped). Split it at LINE breaks so no piece is bigger than
+    chunk_size; a single line longer than that is cut as a last resort."""
+    if len(paragraph) <= chunk_size:
+        return [paragraph]
+    pieces, current = [], ""
+    for line in paragraph.split("\n"):
+        while len(line) > chunk_size:
+            if current:
+                pieces.append(current)
+                current = ""
+            pieces.append(line[:chunk_size])
+            line = line[chunk_size:]
+        if current and len(current) + len(line) + 1 > chunk_size:
+            pieces.append(current)
+            current = line
+        else:
+            current = f"{current}\n{line}" if current else line
+    if current.strip():
+        pieces.append(current)
+    return pieces
+
+
 def chunk_text(text: str, chunk_size: int = CHUNK_CHAR_SIZE) -> list[str]:
-    """Splits on paragraph boundaries so chunks don't cut sentences/tables in half where avoidable."""
-    paragraphs = re.split(r"\n\s*\n", text)
+    """Splits on paragraph boundaries so chunks don't cut sentences/tables in half where avoidable.
+    No chunk is ever bigger than chunk_size (see _split_oversized)."""
+    paragraphs = [piece for para in re.split(r"\n\s*\n", text) for piece in _split_oversized(para, chunk_size)]
     chunks = []
     current = ""
     for para in paragraphs:
@@ -628,6 +654,132 @@ def apply_dynamic_pattern(raw_text: str, pattern: dict) -> tuple[list[dict], lis
     return units, unmatched
 
 
+TABLE_COPY_LABEL_RE = re.compile(r"^\[Table \d+ on this page, reconstructed from the document's actual grid for accuracy\]$")
+
+
+def strip_table_copies(text: str) -> tuple[str, int]:
+    """
+    Removes the extra "[Table N on this page, reconstructed...]" copies that the PDF
+    extractor adds for marking (see docx_annotator._extract_pdf_page_text). For a spec they
+    are harmful: the parser reads the same criteria twice. New spec uploads no longer get
+    these copies at all; this cleans text that was ALREADY saved with them (any spec
+    uploaded since the 14 Sep 2026 extractor change), so a re-parse is clean too.
+
+    A copy = the label line, then the rows that follow it. Rows are " | "-joined cells, so
+    we drop following lines that contain "|" or are blank, and stop at the first normal
+    line. Known limit: a ONE-column table has no "|" in its rows, so its rows stay (they
+    are rare, and harmless duplicates of a single line). Returns (clean_text, copies_removed).
+    """
+    lines = text.split("\n")
+    out = []
+    removed = 0
+    i = 0
+    while i < len(lines):
+        if TABLE_COPY_LABEL_RE.match(lines[i].strip()):
+            removed += 1
+            i += 1
+            while i < len(lines) and ("|" in lines[i] or not lines[i].strip()):
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out), removed
+
+
+def dedupe_criteria(units: list[dict]) -> int:
+    """Safety net: inside ONE learning outcome a criterion code should appear once. Keeps the
+    first copy (from the normal text, which reads cleanest) and drops later repeats.
+    Returns how many were dropped. Codes are never renamed, so nothing linked to them moves."""
+    dropped = 0
+    for unit in units:
+        for lo in unit.get("learning_outcomes", []):
+            seen = set()
+            kept = []
+            for crit in lo.get("criteria", []):
+                code = (crit.get("code") or "").strip().lower()
+                if code and code in seen:
+                    dropped += 1
+                    continue
+                if code:
+                    seen.add(code)
+                kept.append(crit)
+            lo["criteria"] = kept
+    return dropped
+
+
+def _looks_unknown(value: str) -> bool:
+    return (value or "").strip().lower().startswith("unknown")
+
+
+def assess_parse_quality(result: dict, total_chars: int) -> dict:
+    """
+    Plain-English honesty report for one parse. verdict is one of:
+      "failed"       - nothing usable was found (0 units)
+      "needs_review" - something usable, but parts were skipped or look wrong
+      "good"         - nothing suspicious detected
+    "good" means "no warning signs", not "a human has checked every line" - that is what
+    the review screen (Stage 2) is for.
+    """
+    units = result.get("units", [])
+    lo_count = sum(len(u.get("learning_outcomes", [])) for u in units)
+    crit_count = sum(len(lo.get("criteria", [])) for u in units for lo in u.get("learning_outcomes", []))
+    skipped_chars = result.get("failed_section_chars", 0)
+    skipped_pct = round(100 * skipped_chars / total_chars, 1) if total_chars else 0.0
+
+    problems = []
+    if result.get("failed_sections"):
+        problems.append(
+            f"{len(result['failed_sections'])} part(s) of the document could not be read and were skipped "
+            f"(about {skipped_pct}% of the text): {', '.join(result['failed_sections'])[:400]}"
+        )
+    if result.get("budget_stopped_early"):
+        problems.append(
+            f"Stopped at the safety limit of {result.get('ai_call_budget')} AI calls - the rest of the document was not read."
+        )
+    unknown_units = [u.get("name") for u in units if _looks_unknown(u.get("name"))]
+    if unknown_units:
+        problems.append(f"{len(unknown_units)} unit(s) have no real name (shown as 'Unknown unit').")
+    unknown_los = sum(1 for u in units for lo in u.get("learning_outcomes", [])
+                      if _looks_unknown(lo.get("code")) or _looks_unknown(lo.get("title")))
+    if unknown_los:
+        problems.append(f"{unknown_los} learning outcome(s) have no real code or title (shown as 'Unknown').")
+    empty_units = [u.get("name") for u in units if not u.get("learning_outcomes")]
+    if empty_units:
+        problems.append(f"{len(empty_units)} unit(s) have no learning outcomes: {', '.join(empty_units)[:300]}")
+    empty_los = sum(1 for u in units for lo in u.get("learning_outcomes", []) if not lo.get("criteria"))
+    if empty_los:
+        problems.append(f"{empty_los} learning outcome(s) have no criteria.")
+
+    notes = []
+    if result.get("table_copies_removed"):
+        notes.append(f"Ignored {result['table_copies_removed']} duplicate table copies in the saved text.")
+    if result.get("duplicate_criteria_removed"):
+        notes.append(f"Removed {result['duplicate_criteria_removed']} repeated criteria (same code twice in one learning outcome).")
+    if result.get("ai_fallback_section_count"):
+        notes.append(f"{result['ai_fallback_section_count']} section(s) were read by AI rather than by rules - worth a quick check.")
+
+    if not units:
+        verdict = "failed"
+    elif problems:
+        verdict = "needs_review"
+    else:
+        verdict = "good"
+
+    return {
+        "verdict": verdict,
+        "units": len(units),
+        "learning_outcomes": lo_count,
+        "criteria": crit_count,
+        "ruleset_used": result.get("ruleset_used"),
+        "sections_sent_to_ai": result.get("ai_fallback_section_count", 0),
+        "ai_calls_used": result.get("ai_calls_used", 0),
+        "text_skipped_chars": skipped_chars,
+        "text_skipped_percent": skipped_pct,
+        "problems": problems,
+        "notes": notes,
+    }
+
+
 def parse_spec_hybrid(
     raw_text: str,
     progress_callback=None,
@@ -658,7 +810,9 @@ def parse_spec_hybrid(
     if progress_callback:
         progress_callback("Running pattern-based extraction...")
 
+    raw_text, table_copies_removed = strip_table_copies(raw_text)
     raw_text = _normalize_text(raw_text)
+    total_chars = len(raw_text)
     rule_units, unmatched_sections = parse_spec_rule_based(raw_text)
     ruleset_used = "BTEC-style (Unit/Learning aim/P-M-D)" if rule_units else "no hardcoded/learned pattern matched"
     newly_discovered_pattern = None
@@ -694,6 +848,7 @@ def parse_spec_hybrid(
 
     ai_unit_lists = [rule_units]
     failed_labels = []
+    failed_section_chars = 0
     budget_stopped_early = False
     was_cancelled = False
 
@@ -714,6 +869,7 @@ def parse_spec_hybrid(
             ai_unit_lists.append(units_found)
             if not ok:
                 failed_labels.append(section["context"])
+                failed_section_chars += len(section["text"])
     else:
         if progress_callback:
             progress_callback(f"Pattern-based extraction ({ruleset_used}) found {len(rule_units)} unit(s) - no AI needed.")
@@ -728,7 +884,15 @@ def parse_spec_hybrid(
     if budget.exhausted():
         budget_stopped_early = True
 
+    # Sections never reached because the budget ran out / parse was cancelled count as
+    # skipped text too - otherwise the report would under-state how much was lost.
+    attempted = len(ai_unit_lists) - 1
+    for section in unmatched_sections[attempted:]:
+        failed_labels.append(section["context"])
+        failed_section_chars += len(section["text"])
+
     merged_units = _merge_unit_results(ai_unit_lists)
+    duplicate_criteria_removed = dedupe_criteria(merged_units)
 
     result = {
         "units": merged_units,
@@ -743,6 +907,10 @@ def parse_spec_hybrid(
     }
     if failed_labels:
         result["failed_sections"] = failed_labels
+    result["failed_section_chars"] = failed_section_chars
+    result["table_copies_removed"] = table_copies_removed
+    result["duplicate_criteria_removed"] = duplicate_criteria_removed
+    result["quality"] = assess_parse_quality(result, total_chars)
     return result
 
 

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}What changed - {{ spec.label }} - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/spec-library/{{ spec.id }}">&larr; Back to {{ spec.label }}</a></p>
+<h1>What changed in this re-parse</h1>
+
+<div class="card">
+  <p>Comparing <strong>{{ spec.label }}</strong> (new) with the original
+  <a href="/spec-library/{{ parent.id }}">{{ parent.label }}</a>.</p>
+  {% if parent_usage_text %}
+    <p class="muted">The original is still in use ({{ parent_usage_text }}) and has not been changed.</p>
+  {% endif %}
+  <p class="muted">Units are matched by their exact name, learning outcomes and criteria by their code -
+  the same way schemes of work, marking and timetabling link to them.</p>
+
+  {% if report.same %}
+    <p><span class="badge badge-released">No differences</span> Same units, learning outcomes, criteria and wording.</p>
+  {% else %}
+    <ul>
+      <li>{{ report.units_added|length }} unit(s) only in the new version</li>
+      <li>{{ report.units_removed|length }} unit(s) only in the original</li>
+      <li>{{ report.units|length }} unit(s) in both, with differences inside</li>
+    </ul>
+  {% endif %}
+</div>
+
+{% if report.units_removed %}
+  <div class="card">
+    <h2>Units only in the original <span class="badge badge-failed">Important</span></h2>
+    <p class="muted">Anything linked to these unit names (schemes of work, timetabling, teacher
+    qualifications, exemplars) would lose its link if courses were moved to the new version.</p>
+    <ul>{% for name in report.units_removed %}<li>{{ name }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+{% if report.units_added %}
+  <div class="card">
+    <h2>Units only in the new version</h2>
+    <ul>{% for name in report.units_added %}<li>{{ name }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+{% for u in report.units %}
+  <div class="card">
+    <h2>{{ u.name }}</h2>
+    {% if u.los_removed %}<p><strong>Learning outcomes only in the original:</strong> {{ u.los_removed|join(", ") }}</p>{% endif %}
+    {% if u.los_added %}<p><strong>Learning outcomes only in the new version:</strong> {{ u.los_added|join(", ") }}</p>{% endif %}
+    {% if u.criteria_removed %}<p><strong>Criteria only in the original ({{ u.criteria_removed|length }}):</strong> {{ u.criteria_removed|join(", ") }}</p>{% endif %}
+    {% if u.criteria_added %}<p><strong>Criteria only in the new version ({{ u.criteria_added|length }}):</strong> {{ u.criteria_added|join(", ") }}</p>{% endif %}
+    {% if u.criteria_changed %}<p><strong>Wording changed ({{ u.criteria_changed|length }}):</strong> {{ u.criteria_changed|join(", ") }}</p>{% endif %}
+  </div>
+{% endfor %}
+{% endblock %}

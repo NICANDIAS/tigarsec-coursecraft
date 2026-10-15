@@ -16,6 +16,7 @@ from ..auth import get_current_teacher, require_spec_uploader
 from ..docx_annotator import extract_text
 from ..llm_gateway import get_effective_provider
 from ..spec_parser import parse_spec_hybrid
+from ..spec_versions import spec_usage, usage_sentence, version_family, compare_units
 from ..web_fetch import fetch_spec_from_url, UnsafeURLError
 
 router = APIRouter()
@@ -59,6 +60,7 @@ async def upload_spec(
 ):
     raw_text = pasted_text.strip()
     label_from_source = None
+    source_file_path = None
 
     if spec_file is not None and spec_file.filename:
         os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -67,7 +69,9 @@ async def upload_spec(
         contents = await spec_file.read()
         with open(temp_path, "wb") as f:
             f.write(contents)
-        raw_text = extract_text(temp_path, spec_file.filename)
+        # No duplicate table copies for specs - they made the parser read every criterion twice.
+        raw_text = extract_text(temp_path, spec_file.filename, include_table_copies=False)
+        source_file_path = temp_path
 
     elif source_url.strip():
         try:
@@ -90,6 +94,7 @@ async def upload_spec(
         uploaded_by_teacher_id=teacher.id,
         label=label or label_from_source or "Untitled spec",
         raw_text=raw_text,
+        source_file_path=source_file_path,
     )
     db.add(spec)
     db.commit()
@@ -159,6 +164,9 @@ def _run_parse_job(spec_id: int):
             if ai_calls_used > 0:
                 spec.generated_by_provider = get_effective_provider(for_spec_parsing=True)
 
+            quality = result.get("quality") or {}
+            spec.parse_quality = quality
+
             if result.get("was_cancelled"):
                 spec.parse_status = "cancelled"
                 spec.parse_progress = (
@@ -192,6 +200,20 @@ def _run_parse_job(spec_id: int):
                     ))
                     summary += " (New format learned and saved for future specs.)"
 
+                if unit_count == 0:
+                    # Honesty fix: this used to show a green "Parsed" with nothing usable in it.
+                    # "failed" is an existing status every screen already understands, and it
+                    # keeps an empty spec out of the course / IV / timetabling dropdowns.
+                    spec.parse_status = "failed"
+                    spec.parse_progress = summary
+                    problems = " ".join(quality.get("problems", []))
+                    spec.parse_error = (
+                        "CourseCraft could not find any units in this document, so it has not been marked as parsed. "
+                        + (problems + " " if problems else "")
+                        + "This spec's layout is not supported yet - nothing else in CourseCraft was changed."
+                    )
+                    db.commit()
+                    return
                 spec.parse_status = "parsed"
                 spec.parse_progress = summary
             spec.parse_error = None
@@ -227,16 +249,39 @@ def reparse_spec(
     db: Session = Depends(get_db),
     teacher: Teacher = Depends(require_spec_uploader),
 ):
+    """
+    A spec that is IN USE (anything links to it - see spec_versions.LINKED_TABLES) is never
+    overwritten: the re-parse becomes a NEW version and the original stays exactly as it was.
+    A spec nothing uses yet (e.g. a fresh upload that parsed badly) is re-parsed in place,
+    as before, so the library doesn't fill up with copies.
+    """
     spec = db.get(SpecVersion, spec_id)
-    if spec:
-        spec.parse_status = "parsing"
-        spec.parse_progress = "Queued..."
-        spec.parse_progress_updated_at = datetime.datetime.utcnow()
-        spec.parse_error = None
-        spec.cancel_requested = False
+    if not spec or spec.parse_status == "parsing":
+        return RedirectResponse(url=f"/spec-library/{spec_id}", status_code=303)
+
+    target = spec
+    if spec_usage(db, spec.id)["in_use"]:
+        version_count = db.query(SpecVersion).filter(SpecVersion.reparsed_from_id == spec.id).count()
+        target = SpecVersion(
+            uploaded_by_teacher_id=teacher.id,
+            label=f"{spec.label} (re-parse {version_count + 1}, {datetime.date.today():%d %b %Y})"[:255],
+            raw_text=spec.raw_text,
+            source_file_path=spec.source_file_path,
+            reparsed_from_id=spec.id,
+        )
+        db.add(target)
         db.commit()
-        background_tasks.add_task(_run_parse_job, spec.id)
-    return RedirectResponse(url=f"/spec-library/{spec_id}", status_code=303)
+        db.refresh(target)
+
+    target.parse_status = "parsing"
+    target.parse_progress = "Queued..."
+    target.parse_progress_updated_at = datetime.datetime.utcnow()
+    target.parse_error = None
+    target.parse_quality = None
+    target.cancel_requested = False
+    db.commit()
+    background_tasks.add_task(_run_parse_job, target.id)
+    return RedirectResponse(url=f"/spec-library/{target.id}", status_code=303)
 
 
 @router.get("/spec-library/{spec_id}", response_class=HTMLResponse)
@@ -250,10 +295,36 @@ def view_spec(
     spec = db.get(SpecVersion, spec_id)
     can_upload = teacher.role in ("admin", "curriculum_manager")
     exemplars = db.query(ExamExemplar).filter(ExamExemplar.spec_version_id == spec_id).order_by(ExamExemplar.created_at.desc()).all() if spec else []
+    usage = spec_usage(db, spec_id) if spec else {"counts": {}, "course_names": [], "in_use": False}
+    family = version_family(db, spec) if spec else {"parent": None, "children": []}
     return templates.TemplateResponse(
         "spec_detail.html",
         {"request": request, "teacher": teacher, "spec": spec, "can_upload": can_upload,
-         "delete_error": delete_error or None, "exemplars": exemplars},
+         "delete_error": delete_error or None, "exemplars": exemplars,
+         "usage": usage, "usage_text": usage_sentence(usage), "family": family},
+    )
+
+
+@router.get("/spec-library/{spec_id}/compare", response_class=HTMLResponse)
+def compare_spec_versions(
+    spec_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """Read-only "what changed" page: this re-parsed version vs the version it came from."""
+    spec = db.get(SpecVersion, spec_id)
+    parent = db.get(SpecVersion, spec.reparsed_from_id) if spec and spec.reparsed_from_id else None
+    if not spec or not parent:
+        return RedirectResponse(url=f"/spec-library/{spec_id}", status_code=303)
+    report = compare_units(
+        (parent.structured_json or {}).get("units", []),
+        (spec.structured_json or {}).get("units", []),
+    )
+    return templates.TemplateResponse(
+        "spec_compare.html",
+        {"request": request, "teacher": teacher, "spec": spec, "parent": parent, "report": report,
+         "parent_usage_text": usage_sentence(spec_usage(db, parent.id))},
     )
 
 
@@ -277,7 +348,13 @@ def delete_spec(
     courses_using = db.query(Course).filter(Course.spec_version_id == spec_id).all()
     submissions_using_count = db.query(Submission).filter(Submission.spec_version_id == spec_id).count()
 
-    if courses_using or submissions_using_count:
+    other_usage = {
+        label: n for label, n in spec_usage(db, spec_id)["counts"].items()
+        if label not in ("course(s)", "marked submission(s)")
+    }
+    newer_versions = db.query(SpecVersion).filter(SpecVersion.reparsed_from_id == spec_id).count()
+
+    if courses_using or submissions_using_count or other_usage or newer_versions:
         parts = []
         if courses_using:
             names = ", ".join(c.name for c in courses_using)
@@ -287,6 +364,13 @@ def delete_spec(
                 f"{submissions_using_count} submission(s) were marked against it - that history is kept "
                 f"permanently by design, so this spec can't be deleted while those exist"
             )
+        if other_usage:
+            parts.append(
+                "linked to " + ", ".join(f"{n} {label}" for label, n in other_usage.items())
+                + " - deleting it would leave those records pointing at nothing"
+            )
+        if newer_versions:
+            parts.append(f"the original of {newer_versions} newer re-parsed version(s) - delete those first")
         message = "Can't delete - this spec is " + "; and ".join(parts) + "."
         return RedirectResponse(url=f"/spec-library/{spec_id}?delete_error={quote(message)}", status_code=303)
 

@@ -195,7 +195,7 @@ def _extract_checkbox_summary(page, checkboxes: list) -> str:
     return " | ".join(entries)
 
 
-def _extract_pdf_page_text(page, checkboxes: list | None = None) -> str:
+def _extract_pdf_page_text(page, checkboxes: list | None = None, include_table_copies: bool = True) -> str:
     """
     One page's text via pdfplumber - genuinely more robust than pypdf's plain
     extract_text() for anything with unusual internal text positioning. Confirmed by
@@ -218,8 +218,12 @@ def _extract_pdf_page_text(page, checkboxes: list | None = None) -> str:
     it otherwise) get a clear "☑ Label | ☐ Label" summary appended too.
     """
     text = (page.extract_text() or "").strip()
+    # include_table_copies=False is used ONLY for spec uploads: a spec parser reads every
+    # line, so a second copy of each table made it read every criterion twice (confirmed:
+    # T Level DSS came out with 966 "criteria" instead of ~490). Marking, IV and SOW
+    # templates keep the copies (default True) - unchanged behaviour for them.
     try:
-        tables = page.extract_tables()
+        tables = page.extract_tables() if include_table_copies else []
     except Exception:
         tables = []
     table_blocks = []
@@ -242,7 +246,7 @@ def _extract_pdf_page_text(page, checkboxes: list | None = None) -> str:
     return text
 
 
-def extract_text_from_pdf(file_path: str) -> str:
+def extract_text_from_pdf(file_path: str, include_table_copies: bool = True) -> str:
     try:
         import pdfplumber
         checkboxes_by_page = _get_checkbox_fields_by_page(file_path)
@@ -253,7 +257,7 @@ def extract_text_from_pdf(file_path: str) -> str:
             checkboxes_by_page = _get_vector_checkboxes_by_page(file_path)
         with pdfplumber.open(file_path) as pdf:
             return "\n".join(
-                _extract_pdf_page_text(page, checkboxes_by_page.get(i))
+                _extract_pdf_page_text(page, checkboxes_by_page.get(i), include_table_copies=include_table_copies)
                 for i, page in enumerate(pdf.pages)
             )
     except Exception:
@@ -265,12 +269,14 @@ def extract_text_from_pdf(file_path: str) -> str:
         return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 
-def extract_text(file_path: str, filename: str) -> str:
+def extract_text(file_path: str, filename: str, include_table_copies: bool = True) -> str:
+    """include_table_copies only affects PDFs - see _extract_pdf_page_text. Spec uploads
+    pass False; every other caller keeps the default (unchanged behaviour)."""
     lower = filename.lower()
     if lower.endswith(".docx"):
         return extract_text_from_docx(file_path)
     elif lower.endswith(".pdf"):
-        return extract_text_from_pdf(file_path)
+        return extract_text_from_pdf(file_path, include_table_copies=include_table_copies)
     elif lower.endswith(".txt"):
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             return f.read()
