@@ -495,7 +495,8 @@ def parse_spec_rule_based_gateway(raw_text: str) -> tuple[list[dict], list[dict]
     return units, unmatched
 
 
-def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: "CallBudget" = None) -> tuple[list[dict], bool]:
+def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: "CallBudget" = None,
+                         stats: dict | None = None) -> tuple[list[dict], bool]:
     """Runs the AI-chunking fallback over one unmatched section (not the whole document).
     Returns (units_found, succeeded). Stops early (succeeded=False) if the shared call
     budget runs out or cancellation is requested, rather than continuing indefinitely."""
@@ -503,13 +504,20 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
     all_units_lists = []
     any_chunk_failed = False
 
+    def count_skipped(chunk_list):
+        # Only the pieces that were really NOT read count as skipped (stats["failed_chars"]).
+        if stats is not None:
+            stats["failed_chars"] = stats.get("failed_chars", 0) + sum(len(c) for c in chunk_list)
+
     for i, chunk in enumerate(chunks, start=1):
         if budget and budget.exhausted():
+            count_skipped(chunks[i - 1:])
             any_chunk_failed = True
             if progress_callback:
                 progress_callback(f"Stopped: reached the {budget.limit}-call safety limit for this parse.")
             break
         if budget and budget.cancelled():
+            count_skipped(chunks[i - 1:])
             any_chunk_failed = True
             if progress_callback:
                 progress_callback("Parsing cancelled.")
@@ -536,6 +544,7 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
             all_units_lists.append(result.get("units", []))
         else:
             any_chunk_failed = True
+            count_skipped([chunk])
             if progress_callback:
                 progress_callback(f"'{label}' part {i} of {len(chunks)} failed twice, skipping: {last_error}")
 
@@ -733,8 +742,9 @@ def assess_parse_quality(result: dict, total_chars: int) -> dict:
     problems = list(result.get("reader_problems") or [])
     if result.get("failed_sections"):
         problems.append(
-            f"{len(result['failed_sections'])} part(s) of the document could not be read and were skipped "
-            f"(about {skipped_pct}% of the text): {', '.join(result['failed_sections'])[:400]}"
+            f"About {skipped_pct}% of the document's text could not be read and was skipped "
+            f"(in: {', '.join(result['failed_sections'])[:400]}). Use 'Review and edit' to check what was found, "
+            f"or 'Add a unit' to read the missing part from its pages."
         )
     if result.get("budget_stopped_early"):
         problems.append(
@@ -886,11 +896,15 @@ def parse_spec_hybrid(
             if budget.exhausted():
                 budget_stopped_early = True
                 break
-            units_found, ok = _ai_parse_text_block(section["text"], section["context"], progress_callback, budget=budget)
+            stats = {}
+            units_found, ok = _ai_parse_text_block(section["text"], section["context"], progress_callback, budget=budget, stats=stats)
             ai_unit_lists.append(units_found)
             if not ok:
                 failed_labels.append(section["context"])
-                failed_section_chars += len(section["text"])
+                # Was: the WHOLE section counted as skipped even when most of it was read
+                # (an A level read 65 criteria yet showed "100% skipped"). Now only the
+                # pieces that really failed or were never reached count.
+                failed_section_chars += stats.get("failed_chars", len(section["text"]))
     else:
         if progress_callback:
             progress_callback(f"Pattern-based extraction ({ruleset_used}) found {len(rule_units)} unit(s) - no AI needed.")

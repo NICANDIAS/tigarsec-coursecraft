@@ -3,7 +3,7 @@ Small automatic tests for the Stage 1 parser changes. No AI, no database, no PDF
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_parser_stage1.py
-Expected last line: "ALL 9 TESTS PASSED"
+Expected last line: "ALL 10 TESTS PASSED"
 """
 import sys
 import types
@@ -126,6 +126,32 @@ def full_parse_never_reports_parsed_for_a_document_it_cannot_read():
     assert result["units"] == []
     assert result["quality"]["verdict"] == "failed", result["quality"]
     assert result["quality"]["text_skipped_chars"] > 0
+
+
+@test
+def partly_read_document_reports_only_the_unread_part():
+    # AI reads the first piece, then fails on the rest: the report must NOT say 100% skipped.
+    calls = {"n": 0}
+
+    def half_working_ai(**kwargs):
+        if not kwargs.get("prompt", "").startswith("This excerpt is from"):
+            raise RuntimeError("layout discovery fails")  # the one-off "work out the layout" call
+        calls["n"] += 1
+        if calls["n"] <= 2:  # the first reading call (and its retry slot) works
+            return {"units": [{"name": "Component 1", "learning_outcomes": [
+                {"code": "LO1", "title": "Enterprise", "criteria": [{"code": "1", "description": "Explain enterprise"}]}]}]}
+        raise RuntimeError("AI failed")
+
+    original = sp.complete_json
+    sp.complete_json = half_working_ai
+    try:
+        text = "\n".join(f"Explain topic number {i} in some detail for learners" for i in range(800))  # ~4 chunks
+        result = sp.parse_spec_hybrid(text, max_ai_calls=15)
+    finally:
+        sp.complete_json = original
+    pct = result["quality"]["text_skipped_percent"]
+    assert result["units"] and 0 < pct < 100, pct
+    assert result["quality"]["verdict"] == "needs_review"
 
 
 if __name__ == "__main__":
