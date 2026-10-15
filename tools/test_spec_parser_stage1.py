@@ -3,7 +3,7 @@ Small automatic tests for the Stage 1 parser changes. No AI, no database, no PDF
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_parser_stage1.py
-Expected last line: "ALL 15 TESTS PASSED"
+Expected last line: "ALL 16 TESTS PASSED"
 """
 import sys
 import types
@@ -282,6 +282,39 @@ def a_failed_ai_read_says_why_in_plain_english():
     why = [n for n in result["notes"] if n.startswith("Why:")]
     assert why and "busy or its usage limit" in why[0], result["notes"]
     assert "cut off" not in sp.explain_ai_error("x") and "too long" in sp.explain_ai_error("hit the max_tokens limit")
+
+
+
+@test
+def a_piece_whose_answer_is_too_long_is_read_in_halves():
+    # Real case (A level pages 13-20): many short criteria per page, so the AI's answer for a
+    # 6,000-character piece was cut off ("max_tokens") twice and the piece was lost.
+    import re as _re
+    topics = [f"Topic{t}" for t in range(6)]
+    text = "\n".join(f"{topic} Explain point {n} about {topic.lower()} for learners" for topic in topics for n in range(25))
+
+    def ai(**kwargs):
+        excerpt = kwargs["prompt"].split(":\n\n", 2)[-1].split("\n\n", 1)[-1]
+        if len(excerpt) > 2500:
+            raise ValueError("[Provider used: anthropic] The response was cut off before it finished, because it hit the max_tokens limit")
+        los = {}
+        for line in excerpt.splitlines():
+            m = _re.match(r"(Topic\d) (Explain point \d+ .*)", line)
+            if m:
+                los.setdefault(m.group(1), []).append({"code": "x", "description": m.group(2)})
+        return {"units": [{"name": "Unknown unit", "learning_outcomes": [
+            {"code": "LO", "title": k, "criteria": v} for k, v in los.items()]}]}
+
+    original = sp.complete_json
+    sp.complete_json = ai
+    try:
+        result = sp.read_piece(text, "Component 1: Business Functions", max_ai_calls=20)
+    finally:
+        sp.complete_json = original
+    los = result["units"][0]["learning_outcomes"]
+    assert [lo["title"] for lo in los] == topics, [lo["title"] for lo in los]
+    assert all(len(lo["criteria"]) == 25 for lo in los), [len(lo["criteria"]) for lo in los]
+    assert not any("could not be read" in n for n in result["notes"]), result["notes"]
 
 
 if __name__ == "__main__":
