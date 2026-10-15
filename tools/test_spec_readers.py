@@ -1,10 +1,10 @@
 """
 Tests for the spec style readers (Stage 2). No AI, no database.
-The Media tests use golden/pdfs/media_btec_cmp.pdf if it is there (SKIP otherwise).
+The Media, C&G and A level tests use their PDFs in golden/pdfs/ if they are there (SKIP otherwise).
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_readers.py
-Expected last line: "ALL 12 TESTS PASSED" (or fewer run + SKIP lines if the PDF is missing)
+Expected last line: "ALL 16 TESTS PASSED" (or fewer run + SKIP lines if the PDF is missing)
 """
 import sys
 import types
@@ -19,9 +19,11 @@ sys.modules["app.llm_gateway"] = _stub
 from app import spec_parser as sp  # noqa: E402
 from app.spec_readers import btec_practice as bp  # noqa: E402
 from app.spec_readers import lo_ac_units as loac  # noqa: E402
+from app.spec_readers import content_amplification as ca  # noqa: E402
 
 MEDIA_PDF = ROOT / "golden" / "pdfs" / "media_btec_cmp.pdf"
 CG_PDF = ROOT / "golden" / "pdfs" / "cityguilds_6502_l4.pdf"
+AL_PDF = ROOT / "golden" / "pdfs" / "alevel_business_eduqas.pdf"
 TESTS, SKIPPED = [], []
 _media_cache = {}
 
@@ -194,6 +196,69 @@ def lo_ac_fingerprint_ignores_other_styles():
     media_like = "A1: Skills (405 GLH)\nA1.1 Explore ideas\nAC1: Informing ideas\n"
     assert not loac.looks_like(media_like)
     assert not loac.looks_like("3   Core Component\nContent area 1: X\n1.1.1 Know.\n")
+
+
+
+def al_result():
+    if not AL_PDF.exists():
+        raise Skip("golden/pdfs/alevel_business_eduqas.pdf not found")
+    if "al" not in _media_cache:
+        from app.docx_annotator import extract_text_from_pdf
+        raw = extract_text_from_pdf(str(AL_PDF), include_table_copies=False)
+        _media_cache["al"] = sp.parse_spec_hybrid(raw, known_patterns=[], max_ai_calls=1, pdf_path=str(AL_PDF))
+    return _media_cache["al"]
+
+
+@test
+def alevel_components_topics_and_statements():
+    r = al_result()
+    units = r["units"]
+    assert r["ruleset_used"].startswith("Content / Amplification"), r["ruleset_used"]
+    assert [u["name"] for u in units] == ["Component 1: Business Opportunities and Functions", "Component 2: Business Analysis and Strategy",
+                                         "Component 3: Business in a Changing World", "Appendix A: Quantitative skills"]
+    assert [len(u["learning_outcomes"]) for u in units] == [43, 10, 12, 1]
+    assert [sum(len(lo["criteria"]) for lo in u["learning_outcomes"]) for u in units] == [225, 79, 79, 9]
+    c1 = {}
+    for lo in units[0]["learning_outcomes"]:
+        c1.setdefault(lo["title"], lo)  # first one: "Business finance" is also a topic under Finance (as in the spec)
+    # the three topics a lecturer checked by hand against the PDF (incl. one that runs onto the next page)
+    assert len(c1["Business location"]["criteria"]) == 3 and len(c1["Business finance"]["criteria"]) == 3
+    rc = c1["Business revenue and costs"]["criteria"]
+    assert len(rc) == 12 and rc[-1]["description"] == "Evaluate the usefulness of break-even to a business and its stakeholders"
+    assert rc[0]["code"] == "8.1" and c1["Business revenue and costs"]["code"] == "LO8"
+    assert units[0]["assessment"] == "Written examination: 2 hours 15 minutes, 33⅓% of qualification"
+    assert r["quality"]["verdict"] == "good" and r["quality"]["ai_calls_used"] == 0
+
+
+@test
+def alevel_tricky_layouts():
+    units = al_result()["units"]
+    titles = [lo["title"] for u in units for lo in u["learning_outcomes"]]
+    # two topics in one ruled box are kept apart; a hyphen at a line end is joined
+    assert "Analysing non-financial performance" in titles and "Aims and objectives" in titles
+    # a heading row over sub-topics ("PEST factors") is carried into their names
+    assert "PEST factors - Economic" in titles and "PEST factors" not in titles
+    markets = next(lo for lo in units[0]["learning_outcomes"] if lo["title"] == "Markets")["criteria"]
+    assert any(c["description"].endswith("ranging from perfect competition to monopoly") for c in markets)
+    assert not any(c["description"][0].islower() for u in units[:3] for lo in u["learning_outcomes"] for c in lo["criteria"])
+
+
+@test
+def alevel_assessment_objectives_and_weightings():
+    exam = al_result()["extras"]["assessment"]
+    assert [a["code"] for a in exam["objectives"]] == ["AO1", "AO2", "AO3", "AO4"]
+    assert exam["objectives"][3]["description"].startswith("Evaluate quantitative and qualitative information")
+    assert exam["weightings"][-1] == {"name": "Overall weighting", "AO1": "24-26%", "AO2": "24-26%", "AO3": "24-26%", "AO4": "24-26%"}
+    assert len(exam["components"]) == 3
+
+
+@test
+def content_amplification_needs_the_pdf_and_its_own_layout():
+    assert ca.read("Content Amplification\n" * 5, None) is None  # no PDF: the columns can't be told apart
+    assert not ca.looks_like("Unit 401 Planning\nThe learner will:\nThe learner can:")
+    blocks = ca._blocks([{"text": "Explain", "top": 100, "x0": 0, "size": 11}, {"text": "it", "top": 112.6, "x0": 0, "size": 11},
+                         {"text": "Next", "top": 128.5, "x0": 0, "size": 11}], rules=[120])
+    assert [t for _, t in blocks] == ["Explain it", "Next"]  # wrapped line joined; a ruled line splits
 
 
 if __name__ == "__main__":
