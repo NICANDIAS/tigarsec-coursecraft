@@ -528,6 +528,7 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
     budget runs out or cancellation is requested, rather than continuing indefinitely."""
     chunks = chunk_text(text)
     all_units_lists = []
+    last_seen = None  # (unit name, title) of the last learning outcome found so far
     any_chunk_failed = False
 
     def count_skipped(chunk_list):
@@ -554,14 +555,19 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
         context = ""
         if i > 1:
             # A chunk can start part-way through a topic (the topic name was at the end of the
-            # previous chunk). Show the AI where the last one stopped so it files these
-            # criteria under the right outcome instead of a nameless "Unknown" one.
+            # previous chunk). Show the AI where the last one stopped, and the exact title of the
+            # last outcome found, so it files these criteria under that SAME outcome.
             tail = [l for l in chunks[i - 2].splitlines() if l.strip()][-6:]
             context = ("For context only - the previous excerpt ended with these lines (already "
-                       "extracted, do NOT extract them again):\n" + "\n".join(tail)[-700:] +
-                       "\n\nIf this excerpt begins part-way through a unit or learning outcome, "
-                       "use that same unit name and learning outcome title for the content that "
-                       "continues it.\n\n")
+                       "extracted, do NOT extract them again):\n" + "\n".join(tail)[-700:] + "\n\n")
+            if last_seen:
+                context += (f'The last learning outcome found so far is titled "{last_seen[1]}" in the unit '
+                            f'"{last_seen[0]}". If this excerpt begins by continuing that learning outcome, '
+                            'use EXACTLY that title and unit name for it and add "continues_previous": true '
+                            'to that learning outcome.\n\n')
+            else:
+                context += ("If this excerpt begins part-way through a unit or learning outcome, use that "
+                            "same unit name and learning outcome title for the content that continues it.\n\n")
         for attempt in (1, 2):
             if progress_callback:
                 suffix = " (retry)" if attempt == 2 else ""
@@ -578,7 +584,16 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
                 last_error = e
                 continue
         if result is not None:
-            all_units_lists.append(result.get("units", []))
+            found = result.get("units", []) or []
+            for unit in found:
+                for lo in unit.get("learning_outcomes", []) or []:
+                    if lo.pop("continues_previous", False) and last_seen:
+                        unit["name"], lo["title"] = last_seen
+            for unit in reversed(found):
+                if unit.get("learning_outcomes"):
+                    last_seen = ((unit.get("name") or "Unknown unit"), unit["learning_outcomes"][-1].get("title") or "")
+                    break
+            all_units_lists.append(found)
         else:
             any_chunk_failed = True
             count_skipped([chunk])
@@ -781,25 +796,56 @@ def _add_outcomes(target: dict, los: list) -> None:
 
 
 def combine_ai_pieces(units: list[dict], one_unit_name: str = "") -> tuple[list[dict], bool]:
-    """AI reads a piece in excerpts, and an excerpt that starts mid-unit comes back as a
-    separate "Unknown unit". For a piece the person named (they told us it is ONE unit), all
-    parts become that one unit. Otherwise an "Unknown unit" part is joined to the unit before
-    it. Returns (units, changed)."""
-    if len(units) < 2:
-        return units, False
-    if one_unit_name:
-        first = {k: v for k, v in units[0].items() if k != "learning_outcomes"}
-        first["learning_outcomes"] = []
+    """AI reads a piece in excerpts, and an excerpt that starts mid-unit can come back as a
+    separate "Unknown unit", or as a second copy of the outcome it continues. For a piece the
+    person named (they told us it is ONE unit), all parts become that one unit; otherwise an
+    "Unknown unit" part is joined to the unit before it. In every unit, outcomes with the same
+    title are joined into one. Returns (units, changed)."""
+    if one_unit_name and units:
+        groups = [units]
+    else:
+        groups = []
         for unit in units:
+            if groups and _looks_unknown(unit.get("name")):
+                groups[-1].append(unit)
+            else:
+                groups.append([unit])
+    combined, before = [], sum(len(u.get("learning_outcomes", [])) for u in units)
+    for group in groups:
+        first = {k: v for k, v in group[0].items() if k != "learning_outcomes"}
+        first["learning_outcomes"] = []
+        for unit in group:
             _add_outcomes(first, unit.get("learning_outcomes", []))
-        return [first], True
-    combined = []
+        combined.append(first)
+    after = sum(len(u["learning_outcomes"]) for u in combined)
+    return combined, len(combined) != len(units) or after != before
+
+
+_TIDY_CODE_RE = re.compile(r"^[A-Za-z]{0,3}\d{1,3}(?:\.\d{1,3}){0,2}[a-z]?$")
+
+
+def tidy_ai_codes(units: list[dict]) -> int:
+    """AI sometimes invents codes such as "LO-revenue-costs" or mixes "1" and "C1" in one list.
+    Where a unit's outcome codes (or an outcome's criterion codes) are not short and unique,
+    number them LO1, LO2 ... / C1, C2 ... instead. Only used for AI-read pieces, where the
+    spec has no codes of its own. Returns how many lists were renumbered."""
+    def messy(codes):
+        clean = [(c or "").strip() for c in codes]
+        return any(not _TIDY_CODE_RE.match(c) for c in clean) or len({c.lower() for c in clean}) != len(clean)
+    changed = 0
     for unit in units:
-        if combined and _looks_unknown(unit.get("name")):
-            _add_outcomes(combined[-1], unit.get("learning_outcomes", []))
-        else:
-            combined.append(unit)
-    return combined, len(combined) != len(units)
+        los = unit.get("learning_outcomes", [])
+        if messy([lo.get("code") for lo in los]):
+            for n, lo in enumerate(los, start=1):
+                lo["code"] = f"LO{n}"
+            changed += 1
+        for lo in los:
+            crits = lo.get("criteria", [])
+            if messy([c.get("code") for c in crits]):
+                for n, crit in enumerate(crits, start=1):
+                    crit["code"] = f"C{n}"
+                changed += 1
+    return changed
 
 
 def _looks_unknown(value: str) -> bool:
@@ -1097,6 +1143,8 @@ def read_piece(text: str, unit_name: str = "", max_ai_calls: int = 4, allow_ai: 
         if joined:
             notes.append("The AI read this in parts; the parts were joined back together"
                          + (f" as one unit, '{name}'." if name else "."))
+        if tidy_ai_codes(units):
+            notes.append("This spec has no codes of its own here, so outcomes and criteria were numbered LO1, LO2 ... and C1, C2 ...")
         method = f"AI ({budget.used} call(s))"
         if not ok:
             notes.append("Part of this text could not be read by AI - check the preview carefully.")

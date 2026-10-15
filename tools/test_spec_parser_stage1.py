@@ -3,7 +3,7 @@ Small automatic tests for the Stage 1 parser changes. No AI, no database, no PDF
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_parser_stage1.py
-Expected last line: "ALL 13 TESTS PASSED"
+Expected last line: "ALL 14 TESTS PASSED"
 """
 import sys
 import types
@@ -231,6 +231,41 @@ def separate_named_units_from_ai_stay_separate_without_a_typed_name():
     finally:
         sp.complete_json = original
     assert [u["name"] for u in result["units"]] == ["Unit 1: Alpha", "Unit 2: Beta"]
+
+
+
+@test
+def a_renamed_continuation_is_joined_and_odd_codes_are_tidied():
+    # Real case, 2nd try: the AI called the continued outcome "Business sources of finance" and
+    # gave codes like "LO-revenue-costs". It is now told the exact last title and can flag it.
+    prompts = []
+
+    def ai(**kwargs):
+        prompts.append(kwargs["prompt"])
+        if len(prompts) == 1:
+            return {"units": [{"name": "Unknown unit", "learning_outcomes": [
+                {"code": "LO6", "title": "Business location", "criteria": [{"code": "1", "description": "Explain location factors"}]},
+                {"code": "LO7", "title": "Business finance", "criteria": [{"code": "1", "description": "Explain the sources of finance"}]}]}]}
+        return {"units": [{"name": "Unknown unit", "learning_outcomes": [
+            {"code": "LO-sources-of-finance", "title": "Business sources of finance", "continues_previous": True, "criteria": [
+                {"code": "a", "description": "Analyse each source of finance"},
+                {"code": "b", "description": "Evaluate different sources of finance"}]},
+            {"code": "LO-revenue-costs", "title": "Business revenue and costs", "criteria": [
+                {"code": "x", "description": "Explain what is meant by break-even"}]}]}]}
+
+    text = "\n".join(f"Explain topic number {i} in some detail for learners" for i in range(150))
+    original = sp.complete_json
+    sp.complete_json = ai
+    try:
+        result = sp.read_piece(text, "Component 1: Business Opportunities")
+    finally:
+        sp.complete_json = original
+    assert 'titled "Business finance"' in prompts[1], prompts[1][:400]
+    los = result["units"][0]["learning_outcomes"]
+    assert [lo["title"] for lo in los] == ["Business location", "Business finance", "Business revenue and costs"], [lo["title"] for lo in los]
+    assert [lo["code"] for lo in los] == ["LO6", "LO7", "LO8"] or [lo["code"] for lo in los] == ["LO1", "LO2", "LO3"], [lo["code"] for lo in los]
+    assert [c["code"] for c in los[1]["criteria"]] == ["C1", "C2", "C3"], los[1]["criteria"]
+    assert all("continues_previous" not in lo for lo in los)
 
 
 if __name__ == "__main__":
