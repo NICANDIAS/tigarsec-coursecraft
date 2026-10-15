@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Check before adding - {{ spec.label }} - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/spec-library/{{ spec.id }}/add-unit">&larr; Try different pages or text</a></p>
+<h1>Check before adding</h1>
+
+<div class="card">
+  <p>Read from <strong>{{ source }}</strong> using <strong>{{ result.method }}</strong>.
+  {% if result.method and result.method.startswith("AI") %}
+    <span class="badge badge-needs_review">Read by AI - check carefully</span>
+  {% elif result.units %}
+    <span class="badge badge-released">Read by rules</span>
+  {% endif %}</p>
+  {% for note in result.notes %}<p class="muted">{{ note }}</p>{% endfor %}
+</div>
+
+{% if not result.units %}
+  <div class="error-box">Nothing to add was found. Go back and try a different page range, or paste the unit's
+  text instead.</div>
+{% else %}
+  <form method="post" action="/spec-library/{{ spec.id }}/add-unit/confirm">
+    <input type="hidden" name="units_json" value="{{ units_json }}">
+    <input type="hidden" name="source" value="{{ source }}">
+    {% for unit in result.units %}
+      {% set k = loop.index0 %}
+      {% set criteria_count = unit.learning_outcomes|map(attribute="criteria")|map("length")|sum %}
+      <div class="card">
+        <label style="font-weight:normal;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" name="include-{{ k }}" checked style="width:auto;margin:0;">
+          <strong>Add this unit</strong>
+          <span class="muted">({{ unit.learning_outcomes|length }} learning outcome(s), {{ criteria_count }} criteria)</span>
+        </label>
+        <label for="name-{{ k }}" style="margin-top:10px;">Unit name</label>
+        <input type="text" id="name-{{ k }}" name="name-{{ k }}" value="{{ unit.name or '' }}" required>
+        {% if unit.name in existing_names %}
+          <p style="color:var(--warning);">A unit with this name is already in the spec - rename it or untick it.</p>
+        {% endif %}
+        <details {% if result.units|length == 1 %}open{% endif %}>
+          <summary>Show what was found</summary>
+          {% for lo in unit.learning_outcomes %}
+            <p style="margin-top:10px;"><strong>{{ lo.code }}</strong> — {{ lo.title }}</p>
+            <ul>
+              {% for c in lo.criteria %}
+                <li><strong>{{ c.code }}</strong> {{ c.description.split(" - ")[0] if c.get("bands") else c.description }}
+                  {% if c.get("bands") %}<span class="muted">(with {{ c.bands|length }} grade bands)</span>{% endif %}</li>
+              {% else %}
+                <li class="muted">No criteria found for this learning outcome.</li>
+              {% endfor %}
+            </ul>
+          {% endfor %}
+        </details>
+      </div>
+    {% endfor %}
+    <div class="card">
+      <button class="btn" type="submit">Add the ticked unit(s)</button>
+      <p class="muted" style="margin-top:8px;">You can still fix any wording afterwards on the review screen.</p>
+    </div>
+  </form>
+{% endif %}
+{% endblock %}

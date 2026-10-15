@@ -119,4 +119,25 @@
   </div>
 </fieldset>
 </form>
+
+{% if not locked %}
+  <div class="card">
+    <form method="post" action="/spec-library/{{ spec.id }}/review/unit/{{ unit_index }}/delete"
+          onsubmit="return confirm('Delete the whole unit \'{{ unit.name|replace("'", "") }}\' from this spec? This is recorded in the change list.');">
+      <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete this unit</button>
+      <span class="muted">Use this for a unit that was read by mistake (e.g. part of the next unit).</span>
+    </form>
+  </div>
+{% endif %}
+
+<script>
+/* Text boxes grow to fit their text, so nothing is hidden behind a scroll bar. */
+(function () {
+  document.querySelectorAll("textarea").forEach(function (t) {
+    function grow() { t.style.height = "auto"; t.style.height = (t.scrollHeight + 4) + "px"; }
+    t.addEventListener("input", grow);
+    grow();
+  });
+})();
+</script>
 {% endblock %}

@@ -32,6 +32,22 @@
   {% endif %}
 </div>
 
+{% set attention = unit_problems | default({}) %}
+{% set needs_fix = attention.values()|select|list %}
+{% if needs_fix %}
+  <div class="card">
+    <h2>Needs your attention ({{ needs_fix|length }} unit{{ "s" if needs_fix|length != 1 else "" }})</h2>
+    <p class="muted">Only these need fixing - everything else looks complete.</p>
+    <ul>
+      {% for i, problems in attention.items() if problems %}
+        {% for problem in problems %}
+          <li>{{ problem }} <a href="/spec-library/{{ spec.id }}/review/unit/{{ i }}">Fix this &rarr;</a></li>
+        {% endfor %}
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
 <div class="card">
   <h2>Units</h2>
   {% for unit in spec.structured_json.units %}
@@ -41,13 +57,22 @@
         <a href="/spec-library/{{ spec.id }}/review/unit/{{ loop.index0 }}">{{ unit.name }}</a>
         <span class="muted"> — {{ unit.learning_outcomes|length }} learning outcome(s), {{ criteria_count }} criteria</span>
       </span>
-      {% if unit.name in reviewed %}
+      {% if attention.get(loop.index0) %}
+        <span class="badge badge-needs_review">Needs attention</span>
+      {% elif unit.name in reviewed %}
         <span class="badge badge-released">Checked</span>
       {% else %}
         <span class="badge badge-uploaded">Not checked yet</span>
       {% endif %}
     </div>
+  {% else %}
+    <p class="muted">No units yet.</p>
   {% endfor %}
+  {% if not usage.in_use %}
+    <div style="margin-top:14px;">
+      <a class="btn btn-secondary" href="/spec-library/{{ spec.id }}/add-unit">Add a unit from {% if has_pdf | default(false) %}pages or {% endif %}pasted text</a>
+    </div>
+  {% endif %}
 </div>
 
 {% if log %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Add a unit - {{ spec.label }} - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/spec-library/{{ spec.id }}">&larr; Back to {{ spec.label }}</a></p>
+<h1>Add a unit</h1>
+
+{% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
+{% if locked %}
+  <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
+    This spec is in use ({{ usage_text }}), so units can't be added to it. Go to
+    <a href="/spec-library/{{ spec.id }}/review">Review and edit</a> and choose "Make an editable copy".
+  </div>
+{% else %}
+  <div class="card">
+    <p>Point CourseCraft at the part of the spec that has the unit. It reads just that part and shows you
+    what it found - <strong>nothing is saved until you press "Add"</strong> on the next page.</p>
+    <p class="muted">Tip: one unit is usually 2-6 pages. Smaller pieces are read more accurately.</p>
+  </div>
+
+  <form method="post" action="/spec-library/{{ spec.id }}/add-unit/preview" class="read-form">
+    {% if has_pdf %}
+      <div class="card">
+        <h2>Option 1 - Read these pages <span class="badge badge-released">Quickest</span></h2>
+        <p class="muted">Open the spec PDF, find where the unit starts and ends, and type the page numbers
+        shown by your PDF viewer (this PDF has {{ page_count }} pages).</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:0 0 140px;">
+            <label for="first_page">First page</label>
+            <input type="number" id="first_page" name="first_page" min="1" max="{{ page_count }}" inputmode="numeric">
+          </div>
+          <div style="flex:0 0 140px;">
+            <label for="last_page">Last page</label>
+            <input type="number" id="last_page" name="last_page" min="1" max="{{ page_count }}" inputmode="numeric">
+          </div>
+        </div>
+        <p class="muted">Up to {{ max_pages }} pages at a time.</p>
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <h2>{% if has_pdf %}Option 2 - {% endif %}Paste the unit</h2>
+      <p class="muted">{% if has_pdf %}Use this if the pages are messy (two columns, odd layout).{% else %}No PDF is stored for this spec, so paste instead.{% endif %}
+      Copy the unit's text from the PDF (outcomes and criteria are enough) and paste it here.</p>
+      <label for="pasted_text">Unit text</label>
+      <textarea id="pasted_text" name="pasted_text" rows="8" data-autogrow></textarea>
+    </div>
+
+    <div class="card">
+      <label for="unit_name">Unit name (optional)</label>
+      <input type="text" id="unit_name" name="unit_name" placeholder="e.g. Unit 401: Planning to meet the needs of learners">
+      <p class="muted">Leave blank to use the name printed in the spec. You can change it on the next page.</p>
+      <button class="btn" type="submit" id="read-button">Read</button>
+      <p class="muted" id="read-wait" hidden>Reading... this takes a few seconds, or up to a minute if AI is needed.</p>
+    </div>
+  </form>
+{% endif %}
+
+<script>
+(function () {
+  const form = document.querySelector(".read-form");
+  if (form) form.addEventListener("submit", function () {
+    const button = document.getElementById("read-button");
+    button.disabled = true; button.textContent = "Reading...";
+    document.getElementById("read-wait").hidden = false;
+  });
+  document.querySelectorAll("textarea[data-autogrow]").forEach(function (t) {
+    function grow() { t.style.height = "auto"; t.style.height = (t.scrollHeight + 4) + "px"; }
+    t.addEventListener("input", grow); grow();
+  });
+})();
+</script>
+{% endblock %}

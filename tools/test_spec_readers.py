@@ -4,7 +4,7 @@ The Media tests use golden/pdfs/media_btec_cmp.pdf if it is there (SKIP otherwis
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_readers.py
-Expected last line: "ALL 8 TESTS PASSED" (or fewer run + SKIP lines if the PDF is missing)
+Expected last line: "ALL 12 TESTS PASSED" (or fewer run + SKIP lines if the PDF is missing)
 """
 import sys
 import types
@@ -18,8 +18,10 @@ sys.modules["app.llm_gateway"] = _stub
 
 from app import spec_parser as sp  # noqa: E402
 from app.spec_readers import btec_practice as bp  # noqa: E402
+from app.spec_readers import lo_ac_units as loac  # noqa: E402
 
 MEDIA_PDF = ROOT / "golden" / "pdfs" / "media_btec_cmp.pdf"
+CG_PDF = ROOT / "golden" / "pdfs" / "cityguilds_6502_l4.pdf"
 TESTS, SKIPPED = [], []
 _media_cache = {}
 
@@ -142,6 +144,56 @@ def extra_unit_keys_survive_merging():
     assert merged[0]["code"] == "A1" and merged[0]["glh"] == 405
     plain = sp._merge_unit_results([[{"name": "U1", "learning_outcomes": []}]])
     assert plain == [{"name": "U1", "learning_outcomes": []}], "old-style units must come out unchanged"
+
+
+def cg_result():
+    if not CG_PDF.exists():
+        raise Skip("golden/pdfs/cityguilds_6502_l4.pdf not found")
+    if "cg" not in _media_cache:
+        from app.docx_annotator import extract_text_from_pdf
+        raw = extract_text_from_pdf(str(CG_PDF), include_table_copies=False)
+        _media_cache["cg"] = sp.parse_spec_hybrid(raw, known_patterns=[], max_ai_calls=1, pdf_path=str(CG_PDF))
+    return _media_cache["cg"]
+
+
+@test
+def cityguilds_units_outcomes_and_criteria():
+    r = cg_result()
+    assert [u["code"] for u in r["units"]] == ["301", "401", "402", "403", "404"]
+    u401 = r["units"][1]
+    assert u401["name"] == "Unit 401: Planning to meet the needs of learners in education and training", u401["name"]
+    assert (u401["level"], u401["credits"], u401["glh"], u401["group"]) == (4, 3, 15, "mandatory")
+    assert u401["learning_outcomes"][2]["title"] == "be able to implement the minimum core in planning inclusive teaching and learning"
+    assert [c["code"] for c in u401["learning_outcomes"][1]["criteria"]] == ["2.1", "2.2", "2.3", "2.4", "2.5"]
+    assert u401["aim"].startswith("The purpose of the unit is to enable the learner to agree")
+    assert r["quality"]["verdict"] == "good" and r["quality"]["ai_calls_used"] == 0
+
+
+@test
+def cityguilds_rules_and_listed_optional_units():
+    extras = cg_result()["extras"]
+    assert extras["qualification"]["rules"][0].startswith("candidates must achieve a minimum of 36 credits")
+    listed = {u["number"]: u for u in extras["qualification"]["units_listed"]}
+    assert listed["307"]["group"] == "optional" and listed["301"]["group"] == "mandatory"
+    assert extras["grading"]["type"] == "met_not_met"
+    assert any("optional unit pack" in n for n in cg_result()["quality"]["notes"])
+
+
+@test
+def footer_filter_keeps_repeated_real_lines():
+    lines = ["Aim: The purpose of the unit is to enable the"] * 5 + ["education and training"] * 6 + \
+            [f"City & Guilds Level 4 Certificate in Education and Training (6502) {n}" for n in range(20, 26)]
+    kept = loac._drop_running_footers(lines)
+    assert kept.count("Aim: The purpose of the unit is to enable the") == 5
+    assert kept.count("education and training") == 6
+    assert not any("City & Guilds Level 4" in l for l in kept), "page footers must go"
+
+
+@test
+def lo_ac_fingerprint_ignores_other_styles():
+    media_like = "A1: Skills (405 GLH)\nA1.1 Explore ideas\nAC1: Informing ideas\n"
+    assert not loac.looks_like(media_like)
+    assert not loac.looks_like("3   Core Component\nContent area 1: X\n1.1.1 Know.\n")
 
 
 if __name__ == "__main__":

@@ -81,6 +81,8 @@
     {% endif %}
     {% if spec.parse_status == "parsed" and spec.structured_json %}
       <a class="btn" href="/spec-library/{{ spec.id }}/review" style="margin-right:8px;">Review and edit</a>
+    {% elif spec.parse_status == "failed" and not usage.in_use %}
+      <a class="btn" href="/spec-library/{{ spec.id }}/add-unit" style="margin-right:8px;">Build it from pages or pasted text</a>
     {% endif %}
     <form method="post" action="/spec-library/{{ spec.id }}/reparse" style="display:inline-block;margin-right:8px;"
           {% if not usage.in_use and spec.parse_quality and spec.parse_quality.get("edited") %}onsubmit="return confirm('This spec has been edited by hand. Re-parsing it reads the document again and REPLACES those edits. Continue?');"{% endif %}>
@@ -192,6 +194,21 @@
         <p><strong>Module {{ module.code }}</strong> — {{ module.title }} <span class="muted">(units {{ module.units|join(", ") }})</span></p>
       {% endfor %}
       {% if qual.get("pass_rule") %}<p><strong>Pass rule:</strong> {{ qual.pass_rule }}</p>{% endif %}
+      {% for rule in qual.get("rules", []) %}<p><strong>Rules of combination:</strong> {{ rule }}</p>{% endfor %}
+      {% if qual.get("units_listed") %}
+        {% set in_spec = spec.structured_json.units|map(attribute="code")|list %}
+        <details>
+          <summary>All {{ qual.units_listed|length }} units listed in the qualification structure</summary>
+          <table>
+            <tr><th>Unit</th><th>Group</th><th>Credits</th><th>GLH</th><th>Level</th><th>Details in this document?</th></tr>
+            {% for u in qual.units_listed %}
+              <tr><td>{{ u.number }}</td><td>{{ u.get("group", "") }}</td><td>{{ u.get("credits", "") }}</td>
+                  <td>{{ u.get("glh", "") }}</td><td>{{ u.get("level", "") }}</td>
+                  <td>{{ "Yes" if u.number in in_spec else "No - separate unit pack" }}</td></tr>
+            {% endfor %}
+          </table>
+        </details>
+      {% endif %}
       {% if grading and grading.get("points") %}
         <table>
           <tr><th>Points per criterion</th>{% for band in grading.bands %}<th>{{ band }}</th>{% endfor %}</tr>
@@ -246,7 +263,19 @@
     {% for unit in spec.structured_json.units %}
       <div class="card" id="unit-{{ loop.index }}">
         <h2>{{ unit.name }}</h2>
-        {% if unit.get("glh") %}<p class="muted">{{ unit.glh }} guided learning hours{% if unit.get("module") %} · Module {{ unit.module }}{% endif %}</p>{% endif %}
+        {% set facts = [] %}
+        {% if unit.get("group") %}{% set _ = facts.append(unit.group|capitalize) %}{% endif %}
+        {% if unit.get("level") %}{% set _ = facts.append("Level " ~ unit.level) %}{% endif %}
+        {% if unit.get("credits") %}{% set _ = facts.append(unit.credits ~ " credits") %}{% endif %}
+        {% if unit.get("glh") %}{% set _ = facts.append(unit.glh ~ " guided learning hours") %}{% endif %}
+        {% if unit.get("module") %}{% set _ = facts.append("Module " ~ unit.module) %}{% endif %}
+        {% if unit.get("uan") %}{% set _ = facts.append("UAN " ~ unit.uan) %}{% endif %}
+        {% if facts %}<p class="muted">{{ facts|join(" · ") }}</p>{% endif %}
+        {% if unit.get("aim") %}<p><strong>Aim:</strong> {{ unit.aim }}</p>{% endif %}
+        {% if unit.get("guidance") %}
+          <details style="margin-bottom:10px;"><summary>Delivery and assessment guidance from the spec</summary>
+            <p class="muted">{{ unit.guidance }}</p></details>
+        {% endif %}
         {% for lo in unit.learning_outcomes %}
           <p><strong>{{ lo.code }}</strong> — {{ lo.title }}
             {% if lo.get("content_area") %}<span class="muted"> · taught through: {{ lo.content_area }}{% if unit.get("module") %} (Module {{ unit.module }} content){% endif %}</span>{% endif %}</p>

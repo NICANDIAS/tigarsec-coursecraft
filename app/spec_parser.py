@@ -22,7 +22,7 @@ parse for a breakdown of how much was caught by rules vs sent to AI.
 import os
 import re
 from .llm_gateway import complete_json
-from .spec_readers import btec_practice
+from .spec_readers import btec_practice, lo_ac_units
 
 # Hard ceiling on total AI calls per document during parsing (across discovery + all
 # per-section fallback chunks combined). This is the actual fix for "parsing took hours" -
@@ -816,6 +816,10 @@ def parse_spec_hybrid(
         progress_callback("Running pattern-based extraction...")
 
     raw_text, table_copies_removed = strip_table_copies(raw_text)
+    # Text BEFORE the general clean-up below: that clean-up deletes every line repeated 4+
+    # times, which also deletes real words in some layouts (wrapped unit titles, the
+    # "Aim:" line every unit shares). Readers that do their own careful footer removal use this.
+    lightly_cleaned = raw_text.replace("\x0c", "\n").replace("\r\n", "\n")
     raw_text = _normalize_text(raw_text)
     total_chars = len(raw_text)
     rule_units, unmatched_sections = parse_spec_rule_based(raw_text)
@@ -839,6 +843,8 @@ def parse_spec_hybrid(
     reader_extras, reader_problems, reader_notes = {}, [], []
     if not rule_units:
         style = btec_practice.read(raw_text, pdf_path)
+        if not (style and style["units"]):
+            style = lo_ac_units.read(lightly_cleaned, pdf_path)
         if style and style["units"]:
             rule_units, unmatched_sections = style["units"], style["unmatched"]
             ruleset_used = style["ruleset"]
@@ -940,3 +946,63 @@ def parse_spec_chunked(raw_text: str, progress_callback=None) -> dict:
     if not ok:
         result["failed_chunks"] = True
     return result
+
+
+def read_piece(text: str, unit_name: str = "", max_ai_calls: int = 4, allow_ai: bool = True) -> dict:
+    """
+    Stage 3 fix tool: read a SMALL piece of a spec (a few pages, or text a person pasted)
+    and return the unit(s) in it, for a preview the person approves before anything is saved.
+
+    Rules first, AI last: every rule-based reader is tried; if none fits, decimal-numbered
+    criteria ("1.1 ...") are taken as one unit; only then is AI used, on this small piece
+    only (where it is far more reliable than on a whole document), capped at max_ai_calls.
+    Returns {"units", "method", "notes"}. Never raises for a bad piece - units may be [].
+    """
+    notes = []
+    piece, _ = strip_table_copies(text or "")
+    light = piece.replace("\x0c", "\n").replace("\r\n", "\n")
+    normal = _normalize_text(piece)
+    name = (unit_name or "").strip()
+
+    attempts = [
+        ("rules: unit / learning outcome / assessment criteria", lambda: (lo_ac_units.read(light) or {}).get("units")),
+        ("rules: BTEC 'Practice' style", lambda: (btec_practice.read(normal) or {}).get("units")),
+        ("rules: BTEC units (learning aims, P/M/D)", lambda: parse_spec_rule_based(normal)[0]),
+        ("rules: T Level content areas", lambda: parse_spec_rule_based_tlevel(normal)[0]),
+        ("rules: Gateway units", lambda: parse_spec_rule_based_gateway(normal)[0]),
+    ]
+    units, method = [], None
+    for label, attempt in attempts:
+        try:
+            found = attempt() or []
+        except Exception:
+            found = []
+        if found:
+            units, method = found, label
+            break
+
+    if not units:
+        single = lo_ac_units.read_unit_text(light, name or "New unit")
+        if single:
+            units, method = [single], "rules: learning outcomes / assessment criteria (no unit header)"
+    if not units:
+        groups, found = _extract_decimal_tree(normal)
+        if found and sum(len(g["criteria"]) for g in groups) >= 2:
+            units, method = [{"name": name or "New unit", "learning_outcomes": groups}], "rules: numbered criteria (1.1, 1.2 ...)"
+    if not units and allow_ai and normal.strip():
+        budget = CallBudget(max_ai_calls)
+        found, ok = _ai_parse_text_block(normal, name or "pasted section", budget=budget)
+        units = [u for u in found if u.get("learning_outcomes")]
+        method = f"AI ({budget.used} call(s))"
+        if not ok:
+            notes.append("Part of this text could not be read by AI - check the preview carefully.")
+    if not units:
+        return {"units": [], "method": method or "nothing recognised", "notes": notes or [
+            "Nothing that looks like units, outcomes or criteria was found in this text."]}
+
+    dedupe_criteria(units)
+    if name and len(units) == 1:
+        units[0]["name"] = name
+    if any((u.get("name") or "").lower().startswith("unknown") for u in units):
+        notes.append("A unit has no real name - type one before adding it.")
+    return {"units": units, "method": method, "notes": notes}

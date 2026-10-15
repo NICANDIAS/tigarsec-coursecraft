@@ -269,6 +269,23 @@ def extract_text_from_pdf(file_path: str, include_table_copies: bool = True) -> 
         return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 
+def pdf_page_count(file_path: str) -> int:
+    try:
+        return len(PdfReader(file_path).pages)
+    except Exception:
+        return 0
+
+
+def extract_text_from_pdf_pages(file_path: str, first: int, last: int) -> str:
+    """Text of pages first..last (1-based, inclusive) - used by the spec "read these pages"
+    fix tool. Same extraction as a spec upload (no duplicate table copies)."""
+    import pdfplumber
+    with pdfplumber.open(file_path) as pdf:
+        first = max(1, first)
+        last = min(len(pdf.pages), last)
+        return "\n".join(_extract_pdf_page_text(pdf.pages[i], None, include_table_copies=False) for i in range(first - 1, last))
+
+
 def extract_text(file_path: str, filename: str, include_table_copies: bool = True) -> str:
     """include_table_copies only affects PDFs - see _extract_pdf_page_text. Spec uploads
     pass False; every other caller keeps the default (unchanged behaviour)."""

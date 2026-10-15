@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 import traceback
 import datetime
@@ -13,11 +14,11 @@ from ..database import get_db, SessionLocal
 from ..models import Teacher, SpecVersion, Course, Submission, DiscoveredSpecFormat, ExamExemplar, AuditLogEntry
 from ..course_access import get_course_for_teacher
 from ..auth import get_current_teacher, require_spec_uploader
-from ..docx_annotator import extract_text
+from ..docx_annotator import extract_text, extract_text_from_pdf_pages, pdf_page_count
 from ..llm_gateway import get_effective_provider
-from ..spec_parser import parse_spec_hybrid
+from ..spec_parser import parse_spec_hybrid, read_piece
 from ..spec_versions import spec_usage, usage_sentence, version_family, compare_units
-from ..spec_editing import edit_unit, updated_quality
+from ..spec_editing import edit_unit, updated_quality, clean_units_payload, structure_problems
 from ..web_fetch import fetch_spec_from_url, UnsafeURLError
 
 router = APIRouter()
@@ -456,10 +457,13 @@ def review_spec(
     if not spec or not spec.structured_json:
         return RedirectResponse(url=f"/spec-library/{spec_id}", status_code=303)
     usage = spec_usage(db, spec_id)
+    units = (spec.structured_json or {}).get("units", [])
+    unit_problems = {i: structure_problems([u]) for i, u in enumerate(units)}
     return templates.TemplateResponse(
         "spec_review.html",
         {"request": request, "teacher": teacher, "spec": spec, "usage": usage, "usage_text": usage_sentence(usage),
-         "reviewed": (spec.parse_quality or {}).get("reviewed_units", []), "log": _spec_edit_log(db, spec_id)},
+         "reviewed": (spec.parse_quality or {}).get("reviewed_units", []), "log": _spec_edit_log(db, spec_id),
+         "unit_problems": unit_problems, "has_pdf": bool(_spec_pdf(spec))},
     )
 
 
@@ -568,3 +572,168 @@ def make_editable_copy(
                          detail=f"spec {copy.id}: created as an editable copy of spec {spec.id}"))
     db.commit()
     return RedirectResponse(url=f"/spec-library/{copy.id}/review", status_code=303)
+
+
+# ----------------------------------------------------------------------------- add a unit (Stage 3)
+MAX_PIECE_PAGES = 15        # small pieces are where reading (and AI) is reliable
+MAX_PASTE_CHARS = 40000
+
+
+def _spec_pdf(spec):
+    path = spec.source_file_path if spec else None
+    return path if path and path.lower().endswith(".pdf") and os.path.exists(path) else None
+
+
+def _save_units(db, spec, units, teacher, reviewed=None):
+    """Stores a new units list and refreshes the honesty report (JSON columns need a new object)."""
+    spec.structured_json = {**(spec.structured_json or {}), "units": units}
+    if reviewed is None:
+        reviewed = (spec.parse_quality or {}).get("reviewed_units", [])
+    quality = updated_quality(spec.parse_quality or {"problems": [], "notes": []}, units, reviewed, teacher.name or teacher.email)
+    quality["edited"] = True
+    spec.parse_quality = quality
+    if units and spec.parse_status != "parsed":
+        spec.parse_status = "parsed"  # e.g. a spec that read as "Not usable" now has units a person added
+        spec.parse_error = None
+    elif not units:
+        spec.parse_status = "failed"
+        spec.parse_error = "This spec has no units. Use 'Add a unit' to read them from the PDF's pages or from pasted text."
+
+
+@router.get("/spec-library/{spec_id}/add-unit", response_class=HTMLResponse)
+def add_unit_page(
+    spec_id: int,
+    request: Request,
+    error: str = "",
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    spec = db.get(SpecVersion, spec_id)
+    if not spec:
+        return RedirectResponse(url="/spec-library", status_code=303)
+    usage = spec_usage(db, spec_id)
+    pdf = _spec_pdf(spec)
+    return templates.TemplateResponse(
+        "spec_add_unit.html",
+        {"request": request, "teacher": teacher, "spec": spec, "locked": usage["in_use"], "usage_text": usage_sentence(usage),
+         "has_pdf": bool(pdf), "page_count": pdf_page_count(pdf) if pdf else 0, "max_pages": MAX_PIECE_PAGES,
+         "error": error or None},
+    )
+
+
+@router.post("/spec-library/{spec_id}/add-unit/preview", response_class=HTMLResponse)
+def add_unit_preview(
+    spec_id: int,
+    request: Request,
+    first_page: str = Form(""),
+    last_page: str = Form(""),
+    pasted_text: str = Form(""),
+    unit_name: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    """Reads a few pages (or pasted text) and shows what was found. Nothing is saved here."""
+    spec = db.get(SpecVersion, spec_id)
+    back = f"/spec-library/{spec_id}/add-unit"
+    if not spec:
+        return RedirectResponse(url="/spec-library", status_code=303)
+    if spec_usage(db, spec_id)["in_use"]:
+        return RedirectResponse(url=f"{back}?error={quote('This spec is in use - make an editable copy first.')}", status_code=303)
+
+    pdf = _spec_pdf(spec)
+    if first_page.strip():
+        if not pdf:
+            return RedirectResponse(url=f"{back}?error={quote('No PDF is stored for this spec - paste the text instead.')}", status_code=303)
+        try:
+            first = int(first_page)
+            last = int(last_page or first_page)
+        except ValueError:
+            return RedirectResponse(url=f"{back}?error={quote('Page numbers must be whole numbers.')}", status_code=303)
+        total = pdf_page_count(pdf)
+        if first < 1 or last < first or last > total:
+            return RedirectResponse(url=f"{back}?error={quote(f'Choose pages between 1 and {total}, first page before last.')}", status_code=303)
+        if last - first + 1 > MAX_PIECE_PAGES:
+            return RedirectResponse(url=f"{back}?error={quote(f'Please choose at most {MAX_PIECE_PAGES} pages at a time (one unit is usually 2-6 pages).')}", status_code=303)
+        text = extract_text_from_pdf_pages(pdf, first, last)
+        source = f"pages {first}-{last}" if last != first else f"page {first}"
+    elif pasted_text.strip():
+        if len(pasted_text) > MAX_PASTE_CHARS:
+            return RedirectResponse(url=f"{back}?error={quote('That is a lot of text - paste one unit at a time.')}", status_code=303)
+        text, source = pasted_text, "pasted text"
+    else:
+        return RedirectResponse(url=f"{back}?error={quote('Enter page numbers or paste some text first.')}", status_code=303)
+
+    result = read_piece(text, unit_name.strip()[:500])
+    existing = {u.get("name") for u in (spec.structured_json or {}).get("units", [])}
+    return templates.TemplateResponse(
+        "spec_add_unit_preview.html",
+        {"request": request, "teacher": teacher, "spec": spec, "result": result, "source": source,
+         "units_json": json.dumps(result["units"]), "existing_names": existing},
+    )
+
+
+@router.post("/spec-library/{spec_id}/add-unit/confirm")
+async def add_unit_confirm(
+    spec_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    spec = db.get(SpecVersion, spec_id)
+    back = f"/spec-library/{spec_id}/add-unit"
+    if not spec:
+        return RedirectResponse(url="/spec-library", status_code=303)
+    if spec_usage(db, spec_id)["in_use"]:
+        return RedirectResponse(url=f"{back}?error={quote('This spec is in use - make an editable copy first.')}", status_code=303)
+    form = await request.form()
+    try:
+        data = json.loads(form.get("units_json") or "[]")
+    except (TypeError, ValueError):
+        data = None
+    units, errors = clean_units_payload(data)
+    chosen = []
+    for k, unit in enumerate(units):
+        if not form.get(f"include-{k}"):
+            continue
+        new_name = str(form.get(f"name-{k}") or unit["name"]).strip()[:500]
+        unit["name"] = new_name
+        chosen.append(unit)
+    existing = list((spec.structured_json or {}).get("units", []))
+    names = [u.get("name", "").lower() for u in existing] + [u["name"].lower() for u in chosen]
+    if not chosen:
+        errors.append("Tick at least one unit to add.")
+    if any(not u["name"] for u in chosen):
+        errors.append("Every unit needs a name.")
+    if len(set(names)) != len(names):
+        errors.append("Two units would have the same name - give each a different name.")
+    if errors:
+        return RedirectResponse(url=f"{back}?error={quote(' '.join(sorted(set(errors))))}", status_code=303)
+
+    _save_units(db, spec, existing + chosen, teacher)
+    db.add(AuditLogEntry(actor=teacher.email, action="spec_edit",
+                         detail=f"spec {spec_id}: added unit(s) {', '.join(repr(u['name']) for u in chosen)} "
+                                f"({sum(len(u['learning_outcomes']) for u in chosen)} learning outcome(s)) from {str(form.get('source') or 'a preview')[:60]}"))
+    db.commit()
+    return RedirectResponse(url=f"/spec-library/{spec_id}/review?saved={quote(', '.join(u['name'] for u in chosen))}", status_code=303)
+
+
+@router.post("/spec-library/{spec_id}/review/unit/{unit_index}/delete")
+def delete_spec_unit(
+    spec_id: int,
+    unit_index: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    spec = db.get(SpecVersion, spec_id)
+    units = list((spec.structured_json or {}).get("units", [])) if spec else []
+    if not spec or not 0 <= unit_index < len(units):
+        return RedirectResponse(url=f"/spec-library/{spec_id}/review", status_code=303)
+    if spec_usage(db, spec_id)["in_use"]:
+        return RedirectResponse(url=f"/spec-library/{spec_id}/review/unit/{unit_index}?error={quote('This spec is in use, so units cannot be deleted. Make an editable copy instead.')}", status_code=303)
+    removed = units.pop(unit_index)
+    reviewed = [n for n in (spec.parse_quality or {}).get("reviewed_units", []) if n != removed.get("name")]
+    _save_units(db, spec, units, teacher, reviewed)
+    db.add(AuditLogEntry(actor=teacher.email, action="spec_edit",
+                         detail=f"spec {spec_id}: unit '{removed.get('name')}' deleted ({len(removed.get('learning_outcomes', []))} learning outcome(s))"))
+    db.commit()
+    return RedirectResponse(url=f"/spec-library/{spec_id}/review?saved={quote('Deleted ' + str(removed.get('name')))}", status_code=303)
