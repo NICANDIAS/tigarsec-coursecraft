@@ -73,7 +73,8 @@ specification (e.g. Pearson BTEC/T-Level) into structured data. You are being gi
 of a larger document - other excerpts are being processed separately (some by pattern-matching,
 some by you) and will be merged later.
 
-Return ONLY raw JSON (no markdown fences, no commentary) matching exactly this shape:
+Return ONLY raw JSON (no markdown fences, no commentary), written compactly with no indentation \
+or line breaks, matching exactly this shape:
 {
   "units": [
     {
@@ -521,43 +522,73 @@ def parse_spec_rule_based_gateway(raw_text: str) -> tuple[list[dict], list[dict]
     return units, unmatched
 
 
+def _too_long(error) -> bool:
+    text = str(error).lower()
+    return "max_tokens" in text or "cut off" in text
+
+
+def _halves(chunk: str) -> list[str]:
+    """Splits a piece at the line nearest its middle (used when the AI's answer for it was too
+    long). Returns [] if it can't be split usefully."""
+    lines = chunk.split("\n")
+    if len(lines) < 4 or len(chunk) < MIN_SPLIT_CHARS:
+        return []
+    total, middle = 0, len(lines) // 2
+    for n, line in enumerate(lines):
+        total += len(line) + 1
+        if total >= len(chunk) / 2:
+            middle = max(1, min(n + 1, len(lines) - 1))
+            break
+    return ["\n".join(lines[:middle]), "\n".join(lines[middle:])]
+
+
+MIN_SPLIT_CHARS = 800
+
+
 def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: "CallBudget" = None,
                          stats: dict | None = None) -> tuple[list[dict], bool]:
     """Runs the AI-chunking fallback over one unmatched section (not the whole document).
     Returns (units_found, succeeded). Stops early (succeeded=False) if the shared call
-    budget runs out or cancellation is requested, rather than continuing indefinitely."""
-    chunks = chunk_text(text)
+    budget runs out or cancellation is requested, rather than continuing indefinitely.
+    If the AI's answer for a piece is too long (it lists many short criteria), that piece is
+    split in half and each half is read on its own - retrying the same piece would only be
+    cut off again."""
+    queue = chunk_text(text)
     all_units_lists = []
     last_seen = None  # (unit name, title) of the last learning outcome found so far
+    previous_chunk = None
     any_chunk_failed = False
+    done = 0
 
     def count_skipped(chunk_list):
         # Only the pieces that were really NOT read count as skipped (stats["failed_chars"]).
         if stats is not None:
             stats["failed_chars"] = stats.get("failed_chars", 0) + sum(len(c) for c in chunk_list)
 
-    for i, chunk in enumerate(chunks, start=1):
+    while queue:
         if budget and budget.exhausted():
-            count_skipped(chunks[i - 1:])
+            count_skipped(queue)
             any_chunk_failed = True
             if progress_callback:
                 progress_callback(f"Stopped: reached the {budget.limit}-call safety limit for this parse.")
             break
         if budget and budget.cancelled():
-            count_skipped(chunks[i - 1:])
+            count_skipped(queue)
             any_chunk_failed = True
             if progress_callback:
                 progress_callback("Parsing cancelled.")
             break
+        chunk = queue.pop(0)
+        i, total = done + 1, done + 1 + len(queue)
 
         result = None
         last_error = None
         context = ""
-        if i > 1:
+        if previous_chunk is not None:
             # A chunk can start part-way through a topic (the topic name was at the end of the
             # previous chunk). Show the AI where the last one stopped, and the exact title of the
             # last outcome found, so it files these criteria under that SAME outcome.
-            tail = [l for l in chunks[i - 2].splitlines() if l.strip()][-6:]
+            tail = [l for l in previous_chunk.splitlines() if l.strip()][-6:]
             context = ("For context only - the previous excerpt ended with these lines (already "
                        "extracted, do NOT extract them again):\n" + "\n".join(tail)[-700:] + "\n\n")
             if last_seen:
@@ -568,21 +599,34 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
             else:
                 context += ("If this excerpt begins part-way through a unit or learning outcome, use that "
                             "same unit name and learning outcome title for the content that continues it.\n\n")
+        split = []
         for attempt in (1, 2):
+            if budget and budget.exhausted():
+                break
             if progress_callback:
                 suffix = " (retry)" if attempt == 2 else ""
-                progress_callback(f"AI reviewing '{label}' - part {i} of {len(chunks)}{suffix}...")
+                progress_callback(f"AI reviewing '{label}' - part {i} of {total}{suffix}...")
             try:
                 if budget:
                     budget.use_one()
                 result = complete_json(
-                    system=SPEC_CHUNK_SYSTEM_PROMPT, prompt=f"This excerpt is from: {label}\n\n{context}Excerpt {i} of {len(chunks)}:\n\n{chunk}",
+                    system=SPEC_CHUNK_SYSTEM_PROMPT, prompt=f"This excerpt is from: {label}\n\n{context}Excerpt {i} of {total}:\n\n{chunk}",
                     max_tokens=4000, for_spec_parsing=True,
                 )
                 break
             except Exception as e:
                 last_error = e
+                if _too_long(e):
+                    split = _halves(chunk)
+                    if split:
+                        break
                 continue
+        if result is None and split:
+            if progress_callback:
+                progress_callback(f"'{label}' part {i}: the answer was too long, reading it in two halves.")
+            queue[:0] = split
+            continue
+        done += 1
         if result is not None:
             found = result.get("units", []) or []
             for unit in found:
@@ -594,13 +638,32 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
                     last_seen = ((unit.get("name") or "Unknown unit"), unit["learning_outcomes"][-1].get("title") or "")
                     break
             all_units_lists.append(found)
+            previous_chunk = chunk
         else:
             any_chunk_failed = True
             count_skipped([chunk])
+            previous_chunk = chunk
             if progress_callback:
-                progress_callback(f"'{label}' part {i} of {len(chunks)} failed twice, skipping: {last_error}")
+                progress_callback(f"'{label}' part {i} of {total} failed twice, skipping: {last_error}")
 
-    return _merge_unit_results(all_units_lists), not any_chunk_failed
+    return _merge_ai_results(all_units_lists), not any_chunk_failed
+
+
+def _merge_ai_results(all_units_lists: list[list[dict]]) -> list[dict]:
+    """Joins what the AI found in each excerpt. Like _merge_unit_results (units joined by
+    name), except that an outcome found again with the same title is the SAME outcome continued
+    in the next excerpt: its new criteria are ADDED to it, not thrown away as a duplicate."""
+    merged, order = {}, []
+    for units in all_units_lists:
+        for unit in units:
+            name = (unit.get("name") or "Unknown unit").strip()
+            key = name.lower()
+            if key not in merged:
+                merged[key] = {**{k: v for k, v in unit.items() if k not in ("name", "learning_outcomes")},
+                               "name": name, "learning_outcomes": []}
+                order.append(key)
+            _add_outcomes(merged[key], unit.get("learning_outcomes", []) or [])
+    return [merged[k] for k in order]
 
 
 DISCOVER_PATTERN_SYSTEM_PROMPT = """You are helping identify the structural pattern used in a course \
@@ -1119,7 +1182,7 @@ def parse_spec_chunked(raw_text: str, progress_callback=None) -> dict:
     return result
 
 
-def read_piece(text: str, unit_name: str = "", max_ai_calls: int = 4, allow_ai: bool = True) -> dict:
+def read_piece(text: str, unit_name: str = "", max_ai_calls: int = 10, allow_ai: bool = True) -> dict:
     """
     Stage 3 fix tool: read a SMALL piece of a spec (a few pages, or text a person pasted)
     and return the unit(s) in it, for a preview the person approves before anything is saved.
