@@ -3,7 +3,7 @@ Small automatic tests for the Stage 1 parser changes. No AI, no database, no PDF
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_parser_stage1.py
-Expected last line: "ALL 10 TESTS PASSED"
+Expected last line: "ALL 11 TESTS PASSED"
 """
 import sys
 import types
@@ -152,6 +152,29 @@ def partly_read_document_reports_only_the_unread_part():
     pct = result["quality"]["text_skipped_percent"]
     assert result["units"] and 0 < pct < 100, pct
     assert result["quality"]["verdict"] == "needs_review"
+
+
+@test
+def ai_outcomes_sharing_one_code_are_kept_and_numbered():
+    # Real case: AI labelled every learning outcome "LO". All but the first used to be dropped.
+    def ai(**kwargs):
+        if not kwargs.get("prompt", "").startswith("This excerpt is from"):
+            raise RuntimeError("layout discovery fails")
+        return {"units": [{"name": "Component 1", "learning_outcomes": [
+            {"code": "LO", "title": "Cash flow", "criteria": [{"code": "C1", "description": "Construct cash flow forecasts"}]},
+            {"code": "LO", "title": "Budgets", "criteria": [{"code": "C1", "description": "Explain budgets"}]},
+            {"code": "LO", "title": "Cash flow", "criteria": [{"code": "C1", "description": "Construct cash flow forecasts"}]},
+        ]}]}
+    original = sp.complete_json
+    sp.complete_json = ai
+    try:
+        result = sp.parse_spec_hybrid("Some business content\n" * 30, max_ai_calls=3)
+    finally:
+        sp.complete_json = original
+    los = result["units"][0]["learning_outcomes"]
+    assert [lo["title"] for lo in los] == ["Cash flow", "Budgets"], [lo["title"] for lo in los]  # true duplicate dropped, different title kept
+    assert [lo["code"] for lo in los] == ["LO1", "LO2"], [lo["code"] for lo in los]
+    assert any("numbered LO1" in n for n in result["quality"]["notes"])
 
 
 if __name__ == "__main__":

@@ -216,6 +216,26 @@ def chunk_text(text: str, chunk_size: int = CHUNK_CHAR_SIZE) -> list[str]:
     return chunks if chunks else [text]
 
 
+def _norm_title(title) -> str:
+    return " ".join((title or "").lower().split())
+
+
+def number_learning_outcomes(units: list[dict]) -> int:
+    """If a unit's learning outcomes have missing or repeated codes (common in AI output,
+    e.g. every one called "LO"), number THAT unit's outcomes LO1, LO2, ... so each can be
+    told apart, saved and linked. Units whose codes are already unique are not touched.
+    Returns how many units were renumbered."""
+    renumbered = 0
+    for unit in units:
+        los = unit.get("learning_outcomes", [])
+        codes = [(lo.get("code") or "").strip().lower() for lo in los]
+        if any(not c for c in codes) or len(set(codes)) != len(codes):
+            for n, lo in enumerate(los, start=1):
+                lo["code"] = f"LO{n}"
+            renumbered += 1
+    return renumbered
+
+
 def _merge_unit_results(all_units_lists: list[list[dict]]) -> list[dict]:
     """Merges units/LOs found across chunks/sources, deduping by (case-insensitive) name/code
     so a unit found by both the rule-based pass and an AI fallback doesn't end up duplicated."""
@@ -231,12 +251,18 @@ def _merge_unit_results(all_units_lists: list[list[dict]]) -> list[dict]:
                 extra = {k: v for k, v in unit.items() if k not in ("name", "learning_outcomes")}
                 merged[key] = {**extra, "name": name, "learning_outcomes": []}
                 order.append(key)
-            existing_lo_codes = {(lo.get("code") or "").lower() for lo in merged[key]["learning_outcomes"]}
+            # A learning outcome is a DUPLICATE only if both its code AND its title match one
+            # already kept (the same LO found twice, e.g. by rules and by AI). Before, a matching
+            # code alone was enough - so when AI labelled every outcome "LO", all but the first
+            # were silently thrown away. Different titles under one code are now kept, and
+            # number_learning_outcomes() gives them usable codes afterwards.
+            existing = {((lo.get("code") or "").lower(), _norm_title(lo.get("title")))
+                        for lo in merged[key]["learning_outcomes"]}
             for lo in unit.get("learning_outcomes", []):
-                lo_code = (lo.get("code") or "").lower()
-                if lo_code not in existing_lo_codes:
+                ident = ((lo.get("code") or "").lower(), _norm_title(lo.get("title")))
+                if ident not in existing:
                     merged[key]["learning_outcomes"].append(lo)
-                    existing_lo_codes.add(lo_code)
+                    existing.add(ident)
     return [merged[k] for k in order]
 
 
@@ -767,6 +793,8 @@ def assess_parse_quality(result: dict, total_chars: int) -> dict:
     notes = list(result.get("reader_notes") or [])
     if result.get("table_copies_removed"):
         notes.append(f"Ignored {result['table_copies_removed']} duplicate table copies in the saved text.")
+    if result.get("lo_units_renumbered"):
+        notes.append(f"Learning outcomes in {result['lo_units_renumbered']} unit(s) had missing or repeated codes, so they were numbered LO1, LO2, ...")
     if result.get("duplicate_criteria_removed"):
         notes.append(f"Removed {result['duplicate_criteria_removed']} repeated criteria (same code twice in one learning outcome).")
     if result.get("ai_fallback_section_count"):
@@ -927,6 +955,7 @@ def parse_spec_hybrid(
         failed_section_chars += len(section["text"])
 
     merged_units = _merge_unit_results(ai_unit_lists)
+    lo_units_renumbered = number_learning_outcomes(merged_units)
     duplicate_criteria_removed = dedupe_criteria(merged_units)
 
     result = {
@@ -945,6 +974,7 @@ def parse_spec_hybrid(
     result["failed_section_chars"] = failed_section_chars
     result["table_copies_removed"] = table_copies_removed
     result["duplicate_criteria_removed"] = duplicate_criteria_removed
+    result["lo_units_renumbered"] = lo_units_renumbered
     result["extras"] = reader_extras
     result["reader_problems"] = reader_problems
     result["reader_notes"] = reader_notes
@@ -1014,6 +1044,8 @@ def read_piece(text: str, unit_name: str = "", max_ai_calls: int = 4, allow_ai: 
         return {"units": [], "method": method or "nothing recognised", "notes": notes or [
             "Nothing that looks like units, outcomes or criteria was found in this text."]}
 
+    if number_learning_outcomes(units):
+        notes.append("Learning outcomes had missing or repeated codes, so they were numbered LO1, LO2, ...")
     dedupe_criteria(units)
     if name and len(units) == 1:
         units[0]["name"] = name
