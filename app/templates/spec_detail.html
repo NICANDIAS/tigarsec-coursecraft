@@ -220,6 +220,34 @@
     </div>
   {% endif %}
 
+  {% set exam = spec.structured_json.get("assessment") %}
+  {% if exam is mapping and (exam.get("objectives") or exam.get("components")) %}
+    <div class="card">
+      <h2>How it is assessed</h2>
+      {% if exam.get("components") %}
+        <table>
+          <tr><th>Component</th><th>Assessment</th></tr>
+          {% for c in exam.components %}<tr><td>{{ c.name }}</td><td>{{ c.assessment }}</td></tr>{% endfor %}
+        </table>
+      {% endif %}
+      {% if exam.get("objectives") %}
+        <h3 style="margin-top:14px;">Assessment objectives</h3>
+        <p class="muted">Exam answers are marked against these. Practice questions and feedback can name the objective they test.</p>
+        <table>
+          <tr><th style="width:70px;">Code</th><th>Learners must be able to</th></tr>
+          {% for ao in exam.objectives %}<tr><td><strong>{{ ao.code }}</strong></td><td>{{ ao.description }}</td></tr>{% endfor %}
+        </table>
+        {% if exam.get("weightings") %}
+          {% set codes = exam.objectives|map(attribute="code")|list %}
+          <table style="margin-top:10px;">
+            <tr><th>Weighting</th>{% for code in codes %}<th>{{ code }}</th>{% endfor %}</tr>
+            {% for row in exam.weightings %}<tr><td>{{ row.name }}</td>{% for code in codes %}<td>{{ row.get(code, "") }}</td>{% endfor %}</tr>{% endfor %}
+          </table>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endif %}
+
   <div class="card">
     <h2>Content areas</h2>
     <p class="muted">Quick overview — jump to a section, or scroll down for full criteria.</p>
@@ -270,6 +298,7 @@
         {% if unit.get("glh") %}{% set _ = facts.append(unit.glh ~ " guided learning hours") %}{% endif %}
         {% if unit.get("module") %}{% set _ = facts.append("Module " ~ unit.module) %}{% endif %}
         {% if unit.get("uan") %}{% set _ = facts.append("UAN " ~ unit.uan) %}{% endif %}
+        {% if unit.get("assessment") is string and unit.assessment %}{% set _ = facts.append(unit.assessment) %}{% endif %}
         {% if facts %}<p class="muted">{{ facts|join(" · ") }}</p>{% endif %}
         {% if unit.get("aim") %}<p><strong>Aim:</strong> {{ unit.aim }}</p>{% endif %}
         {% if unit.get("guidance") %}

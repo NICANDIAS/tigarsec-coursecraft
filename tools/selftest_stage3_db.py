@@ -7,7 +7,7 @@ Needs golden/pdfs/cityguilds_6502_l4.pdf and golden/pdfs/alevel_business_eduqas.
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/selftest_stage3_db.py
-Expected last line: "ALL STAGE 3+4 CHECKS PASSED (21)"
+Expected last line: "ALL STAGE 3+4 CHECKS PASSED (24)"
 """
 import asyncio
 import json
@@ -124,15 +124,33 @@ check("rules of combination stored", cg.structured_json["qualification"]["rules"
 html = r.view_spec(cg.id, get_request(f"/spec-library/{cg.id}"), "", db, admin).body.decode()
 check("spec page shows rules and the unit list", "Rules of combination" in html and "separate unit pack" in html)
 
+# --- A level (Content / Amplification tables) through the real parse job
+alp = SpecVersion(uploaded_by_teacher_id=admin.id, label="A level Business (PDF)",
+                  raw_text=extract_text(str(AL_PDF), "al.pdf", include_table_copies=False), source_file_path=str(AL_PDF))
+db.add(alp)
+db.commit()
+r._run_parse_job(alp.id)
+alp = fresh(alp.id)
+al_units = alp.structured_json["units"]
+check("A level parses from its tables: 'parsed', verdict good, no AI", alp.parse_status == "parsed"
+      and alp.parse_quality["verdict"] == "good" and alp.parse_quality["ai_calls_used"] == 0, alp.parse_quality)
+check("A level: 3 components + Appendix A, 392 statements", [u["code"] for u in al_units] == ["Component 1", "Component 2", "Component 3", "Appendix A"]
+      and sum(len(lo["criteria"]) for u in al_units for lo in u["learning_outcomes"]) == 392)
+html = r.view_spec(alp.id, get_request(f"/spec-library/{alp.id}"), "", db, admin).body.decode()
+check("spec page shows exams and assessment objectives", "How it is assessed" in html and "AO4" in html and "24-26%" in html)
+
 # --- Stage 3: a spec nothing could read -> build it from pages
+# (the same A level, but with no PDF stored: its tables can only be read from the page layout)
 al = SpecVersion(uploaded_by_teacher_id=admin.id, label="A level Business",
-                 raw_text=extract_text(str(AL_PDF), "al.pdf", include_table_copies=False), source_file_path=str(AL_PDF))
+                 raw_text=extract_text(str(AL_PDF), "al.pdf", include_table_copies=False), source_file_path=None)
 db.add(al)
 db.commit()
 r._run_parse_job(al.id)
 al = fresh(al.id)
 check("unreadable spec is 'failed' with a build button", al.parse_status == "failed"
       and "Build it from pages" in r.view_spec(al.id, get_request("/x"), "", db, admin).body.decode())
+al.source_file_path = str(AL_PDF)  # the PDF arrives later, so the page-range tool can be used
+db.commit()
 html = r.add_unit_page(al.id, get_request("/a"), "", db, admin).body.decode()
 check("add-unit page offers pages AND paste (PDF is stored)", "Read these pages" in html and "Paste the unit" in html)
 pasted = "1.1 Explain the meaning of enterprise\n1.2 Identify business opportunities\n1.3 Evaluate the impact of entrepreneurs"

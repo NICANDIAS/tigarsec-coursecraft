@@ -22,7 +22,7 @@ parse for a breakdown of how much was caught by rules vs sent to AI.
 import os
 import re
 from .llm_gateway import complete_json
-from .spec_readers import btec_practice, lo_ac_units
+from .spec_readers import btec_practice, content_amplification, lo_ac_units
 
 # Hard ceiling on total AI calls per document during parsing (across discovery + all
 # per-section fallback chunks combined). This is the actual fix for "parsing took hours" -
@@ -1073,6 +1073,8 @@ def parse_spec_hybrid(
         style = btec_practice.read(raw_text, pdf_path)
         if not (style and style["units"]):
             style = lo_ac_units.read(lightly_cleaned, pdf_path)
+        if not (style and style["units"]):
+            style = content_amplification.read(lightly_cleaned, pdf_path)
         if style and style["units"]:
             rule_units, unmatched_sections = style["units"], style["unmatched"]
             ruleset_used = style["ruleset"]
