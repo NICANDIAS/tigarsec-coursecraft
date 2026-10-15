@@ -57,7 +57,7 @@ def _fingerprint(text: str) -> str:
 def snapshot(pdf_path: Path) -> dict:
     # Same as a real spec upload: no duplicate table copies (see routers/specs.py upload_spec)
     raw = extract_text_from_pdf(str(pdf_path), include_table_copies=False)
-    result = spec_parser.parse_spec_hybrid(raw, known_patterns=[], max_ai_calls=1)
+    result = spec_parser.parse_spec_hybrid(raw, known_patterns=[], max_ai_calls=1, pdf_path=str(pdf_path))
     units = []
     for unit in result.get("units", []):
         units.append({
@@ -75,6 +75,8 @@ def snapshot(pdf_path: Path) -> dict:
         "source_pdf": pdf_path.name,
         "ruleset_used": result.get("ruleset_used"),
         "verdict": (result.get("quality") or {}).get("verdict"),
+        # grade grid, qualification sizes, teaching content etc. from a style reader
+        "extras_fingerprint": _fingerprint(json.dumps(result.get("extras") or {}, sort_keys=True)),
         "rule_based_unit_count": result.get("rule_based_unit_count"),
         "sections_needing_ai": result.get("ai_fallback_section_count"),
         "totals": {
@@ -89,7 +91,7 @@ def snapshot(pdf_path: Path) -> dict:
 def compare(expected: dict, actual: dict, limit: int = 15) -> list[str]:
     """Returns a list of human-readable differences (empty list = identical)."""
     diffs = []
-    for key in ("ruleset_used", "verdict", "rule_based_unit_count", "sections_needing_ai", "totals"):
+    for key in ("ruleset_used", "verdict", "extras_fingerprint", "rule_based_unit_count", "sections_needing_ai", "totals"):
         if expected.get(key) != actual.get(key):
             diffs.append(f"{key}: was {expected.get(key)!r}, now {actual.get(key)!r}")
 

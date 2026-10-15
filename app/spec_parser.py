@@ -22,6 +22,7 @@ parse for a breakdown of how much was caught by rules vs sent to AI.
 import os
 import re
 from .llm_gateway import complete_json
+from .spec_readers import btec_practice
 
 # Hard ceiling on total AI calls per document during parsing (across discovery + all
 # per-section fallback chunks combined). This is the actual fix for "parsing took hours" -
@@ -225,7 +226,10 @@ def _merge_unit_results(all_units_lists: list[list[dict]]) -> list[dict]:
             name = (unit.get("name") or "Unknown unit").strip()
             key = name.lower()
             if key not in merged:
-                merged[key] = {"name": name, "learning_outcomes": []}
+                # Keep any extra unit keys a reader added (code, module, glh...) - older
+                # results only have name + learning_outcomes, so they come out unchanged.
+                extra = {k: v for k, v in unit.items() if k not in ("name", "learning_outcomes")}
+                merged[key] = {**extra, "name": name, "learning_outcomes": []}
                 order.append(key)
             existing_lo_codes = {(lo.get("code") or "").lower() for lo in merged[key]["learning_outcomes"]}
             for lo in unit.get("learning_outcomes", []):
@@ -726,7 +730,7 @@ def assess_parse_quality(result: dict, total_chars: int) -> dict:
     skipped_chars = result.get("failed_section_chars", 0)
     skipped_pct = round(100 * skipped_chars / total_chars, 1) if total_chars else 0.0
 
-    problems = []
+    problems = list(result.get("reader_problems") or [])
     if result.get("failed_sections"):
         problems.append(
             f"{len(result['failed_sections'])} part(s) of the document could not be read and were skipped "
@@ -750,7 +754,7 @@ def assess_parse_quality(result: dict, total_chars: int) -> dict:
     if empty_los:
         problems.append(f"{empty_los} learning outcome(s) have no criteria.")
 
-    notes = []
+    notes = list(result.get("reader_notes") or [])
     if result.get("table_copies_removed"):
         notes.append(f"Ignored {result['table_copies_removed']} duplicate table copies in the saved text.")
     if result.get("duplicate_criteria_removed"):
@@ -786,6 +790,7 @@ def parse_spec_hybrid(
     known_patterns: list[dict] | None = None,
     max_ai_calls: int | None = None,
     cancel_check=None,
+    pdf_path: str | None = None,
 ) -> dict:
     """
     The main entry point. Order of attempts:
@@ -828,6 +833,16 @@ def parse_spec_hybrid(
         if gateway_units:
             rule_units, unmatched_sections = gateway_units, gateway_unmatched
             ruleset_used = "Gateway Qualifications-style (Unit Number/Unit Aim/decimal criteria)"
+
+    # Style readers (spec_readers/): tried only after the original three, so a spec those
+    # already handle is never touched by them. pdf_path lets a reader use the page layout.
+    reader_extras, reader_problems, reader_notes = {}, [], []
+    if not rule_units:
+        style = btec_practice.read(raw_text, pdf_path)
+        if style and style["units"]:
+            rule_units, unmatched_sections = style["units"], style["unmatched"]
+            ruleset_used = style["ruleset"]
+            reader_extras, reader_problems, reader_notes = style["extras"], style["problems"], style["notes"]
 
     if not rule_units and known_patterns:
         for pattern in known_patterns:
@@ -910,6 +925,9 @@ def parse_spec_hybrid(
     result["failed_section_chars"] = failed_section_chars
     result["table_copies_removed"] = table_copies_removed
     result["duplicate_criteria_removed"] = duplicate_criteria_removed
+    result["extras"] = reader_extras
+    result["reader_problems"] = reader_problems
+    result["reader_notes"] = reader_notes
     result["quality"] = assess_parse_quality(result, total_chars)
     return result
 

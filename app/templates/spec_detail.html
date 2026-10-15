@@ -64,7 +64,7 @@
   </div>
 
   {% if family.parent %}
-    <p class="version-note">This is a re-parsed version of
+    <p class="version-note">This is a newer version (re-parsed or edited copy) of
       <a href="/spec-library/{{ family.parent.id }}">{{ family.parent.label }}</a>.
       {% if spec.parse_status == "parsed" %}<a href="/spec-library/{{ spec.id }}/compare">See what changed</a>.{% endif %}
       Courses and other records still use the original - moving them over will come in a later update.</p>
@@ -79,7 +79,11 @@
       <p class="muted">This spec is in use ({{ usage_text }}). Re-parsing it creates a <strong>new version</strong> -
       this one stays exactly as it is, so nothing linked to it can break.</p>
     {% endif %}
-    <form method="post" action="/spec-library/{{ spec.id }}/reparse" style="display:inline-block;margin-right:8px;">
+    {% if spec.parse_status == "parsed" and spec.structured_json %}
+      <a class="btn" href="/spec-library/{{ spec.id }}/review" style="margin-right:8px;">Review and edit</a>
+    {% endif %}
+    <form method="post" action="/spec-library/{{ spec.id }}/reparse" style="display:inline-block;margin-right:8px;"
+          {% if not usage.in_use and spec.parse_quality and spec.parse_quality.get("edited") %}onsubmit="return confirm('This spec has been edited by hand. Re-parsing it reads the document again and REPLACES those edits. Continue?');"{% endif %}>
       <button class="btn btn-secondary" type="submit">
         {% if usage.in_use %}Re-parse as a new version{% elif spec.parse_status == "parsed" %}Re-parse with AI{% else %}Parse with AI{% endif %}
       </button>
@@ -170,6 +174,35 @@
 {% endif %}
 
 {% if spec.structured_json %}
+  {% set qual = spec.structured_json.get("qualification") %}
+  {% set grading = spec.structured_json.get("grading") %}
+  {% if qual %}
+    <div class="card">
+      <h2>Qualification structure</h2>
+      {% if qual.get("sizes") %}
+        <table>
+          <tr><th>Size</th><th>Hours (GLH)</th><th>Assessment units included</th></tr>
+          {% for size in qual.sizes %}
+            <tr><td>{{ size.name }}</td><td>{{ size.glh }}</td><td>{{ size.units|join(", ") }}</td></tr>
+          {% endfor %}
+        </table>
+        <p class="muted">A course only uses the units for its own size - e.g. a 540 Diploma cohort is not assessed on Module B.</p>
+      {% endif %}
+      {% for module in qual.get("modules", []) %}
+        <p><strong>Module {{ module.code }}</strong> — {{ module.title }} <span class="muted">(units {{ module.units|join(", ") }})</span></p>
+      {% endfor %}
+      {% if qual.get("pass_rule") %}<p><strong>Pass rule:</strong> {{ qual.pass_rule }}</p>{% endif %}
+      {% if grading and grading.get("points") %}
+        <table>
+          <tr><th>Points per criterion</th>{% for band in grading.bands %}<th>{{ band }}</th>{% endfor %}</tr>
+          {% for unit_code, pts in grading.points.items() %}
+            <tr><td>{{ unit_code }}</td>{% for band in grading.bands %}<td>{{ pts.get(band, "") }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </table>
+      {% endif %}
+    </div>
+  {% endif %}
+
   <div class="card">
     <h2>Content areas</h2>
     <p class="muted">Quick overview — jump to a section, or scroll down for full criteria.</p>
@@ -183,16 +216,54 @@
     </ul>
   </div>
 
+  {% set content_areas = spec.structured_json.get("content_areas") %}
+  {% if content_areas %}
+    <div class="card">
+      <h2>Teaching content</h2>
+      <p class="muted">The spec's own content for each module. It is <em>indicative</em> - examples to teach from,
+      not a checklist every learner must cover.</p>
+      {% for module, areas in content_areas.items() %}
+        <h3>Module {{ module }}</h3>
+        {% for area, body in areas.items() %}
+          <details style="margin-bottom:8px;">
+            <summary><strong>{{ area }}</strong> <span class="muted">({{ body["items"]|length }} points)</span></summary>
+            {% if body.summary %}<p class="muted">{{ body.summary }}</p>{% endif %}
+            <ul style="list-style:none;padding-left:0;">
+              {% for item in body["items"] %}
+                <li style="padding-left:{{ (item.level - 1) * 18 }}px;{% if item.level == 1 %}font-weight:600;margin-top:6px;{% endif %}">
+                  {{ "•○–·"[item.level - 1] }} {{ item.text }}
+                  {% if item.get("note") %}<div class="muted" style="font-weight:normal;">{{ item.note }}</div>{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
   <div id="units-display">
     {% for unit in spec.structured_json.units %}
       <div class="card" id="unit-{{ loop.index }}">
         <h2>{{ unit.name }}</h2>
+        {% if unit.get("glh") %}<p class="muted">{{ unit.glh }} guided learning hours{% if unit.get("module") %} · Module {{ unit.module }}{% endif %}</p>{% endif %}
         {% for lo in unit.learning_outcomes %}
-          <p><strong>{{ lo.code }}</strong> — {{ lo.title }}</p>
+          <p><strong>{{ lo.code }}</strong> — {{ lo.title }}
+            {% if lo.get("content_area") %}<span class="muted"> · taught through: {{ lo.content_area }}{% if unit.get("module") %} (Module {{ unit.module }} content){% endif %}</span>{% endif %}</p>
           <table>
             <tr><th style="width:80px;">Code</th><th>Description</th></tr>
             {% for c in lo.criteria %}
-              <tr><td>{{ c.code }}</td><td>{{ c.description }}</td></tr>
+              {% if c.get("bands") %}
+                <tr><td>{{ c.code }}</td><td>
+                  <strong>{{ c.description.split(" - ")[0] }}</strong>
+                  <table class="band-grid" style="margin-top:6px;">
+                    <tr>{% for band, text in c.bands.items() %}<th scope="col">{{ band }}</th>{% endfor %}</tr>
+                    <tr>{% for band, text in c.bands.items() %}<td style="vertical-align:top;">{{ text }}</td>{% endfor %}</tr>
+                  </table>
+                </td></tr>
+              {% else %}
+                <tr><td>{{ c.code }}</td><td>{{ c.description }}</td></tr>
+              {% endif %}
             {% endfor %}
           </table>
         {% endfor %}

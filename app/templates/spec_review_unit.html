@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ unit.name }} - Review - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/spec-library/{{ spec.id }}/review">&larr; All units of {{ spec.label }}</a></p>
+<h1>{{ unit.name }}</h1>
+<p class="muted">Unit {{ unit_index + 1 }} of {{ unit_count }}{% if unit.get("glh") %} · {{ unit.glh }} GLH{% endif %}</p>
+
+{% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
+{% if locked %}
+  <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
+    Read-only: this spec is in use ({{ usage_text }}). Go back and choose "Make an editable copy" to change it.
+  </div>
+{% endif %}
+
+<form method="post" action="/spec-library/{{ spec.id }}/review/unit/{{ unit_index }}">
+<fieldset {% if locked %}disabled{% endif %} style="border:none;padding:0;margin:0;">
+  <div class="card">
+    <label for="unit-name">Unit name</label>
+    <input type="text" id="unit-name" name="unit-name" value="{{ unit.name or '' }}" required>
+    <p class="muted">Schemes of work, timetabling and exemplars find a unit by this exact name.</p>
+  </div>
+
+  {% for lo in unit.learning_outcomes %}
+    {% set i = loop.index0 %}
+    <div class="card">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:0 0 120px;">
+          <label for="lo-{{ i }}-code">Code</label>
+          <input type="text" id="lo-{{ i }}-code" name="lo-{{ i }}-code" value="{{ lo.code or '' }}" required>
+        </div>
+        <div style="flex:1 1 300px;">
+          <label for="lo-{{ i }}-title">Learning outcome / objective</label>
+          <input type="text" id="lo-{{ i }}-title" name="lo-{{ i }}-title" value="{{ lo.title or '' }}">
+        </div>
+        <label style="font-weight:normal;display:flex;align-items:center;gap:6px;margin-bottom:12px;">
+          <input type="checkbox" name="lo-{{ i }}-delete" style="width:auto;margin:0;"> Delete this learning outcome
+        </label>
+      </div>
+      {% if lo.get("content_area") %}<p class="muted">Taught through: {{ lo.content_area }}</p>{% endif %}
+
+      {% for c in lo.criteria %}
+        {% set j = loop.index0 %}
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+            <div style="flex:0 0 120px;">
+              <label for="c-{{ i }}-{{ j }}-code">Criterion code</label>
+              <input type="text" id="c-{{ i }}-{{ j }}-code" name="c-{{ i }}-{{ j }}-code" value="{{ c.code or '' }}" required>
+            </div>
+            {% if c.get("bands") %}
+              <div style="flex:1 1 300px;">
+                <label for="c-{{ i }}-{{ j }}-title">Criterion title</label>
+                <input type="text" id="c-{{ i }}-{{ j }}-title" name="c-{{ i }}-{{ j }}-title" value="{{ (c.description or '').split(' - ')[0] }}">
+              </div>
+            {% endif %}
+            <label style="font-weight:normal;display:flex;align-items:center;gap:6px;margin-bottom:12px;">
+              <input type="checkbox" name="c-{{ i }}-{{ j }}-delete" style="width:auto;margin:0;"> Delete
+            </label>
+          </div>
+          {% if c.get("bands") %}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
+              {% for band, text in c.bands.items() %}
+                <div>
+                  <label for="c-{{ i }}-{{ j }}-band-{{ band }}">{{ band }}</label>
+                  <textarea id="c-{{ i }}-{{ j }}-band-{{ band }}" name="c-{{ i }}-{{ j }}-band-{{ band }}" rows="5">{{ text }}</textarea>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <label for="c-{{ i }}-{{ j }}-desc">Wording</label>
+            <textarea id="c-{{ i }}-{{ j }}-desc" name="c-{{ i }}-{{ j }}-desc" rows="2">{{ c.description or '' }}</textarea>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      <details style="margin-top:10px;">
+        <summary>Add a criterion to {{ lo.code }}</summary>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <div style="flex:0 0 120px;">
+            <label for="new-c-{{ i }}-code">Code</label>
+            <input type="text" id="new-c-{{ i }}-code" name="new-c-{{ i }}-code">
+          </div>
+          <div style="flex:1 1 300px;">
+            <label for="new-c-{{ i }}-desc">Wording</label>
+            <textarea id="new-c-{{ i }}-desc" name="new-c-{{ i }}-desc" rows="2"></textarea>
+          </div>
+        </div>
+      </details>
+    </div>
+  {% endfor %}
+
+  <div class="card">
+    <details>
+      <summary>Add a learning outcome</summary>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="flex:0 0 120px;">
+          <label for="new-lo-code">Code</label>
+          <input type="text" id="new-lo-code" name="new-lo-code">
+        </div>
+        <div style="flex:1 1 300px;">
+          <label for="new-lo-title">Title</label>
+          <input type="text" id="new-lo-title" name="new-lo-title">
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <label style="font-weight:normal;display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" name="reviewed" {% if is_reviewed %}checked{% endif %} style="width:auto;margin:0;">
+      <strong>I have checked this unit against the real spec</strong>
+    </label>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn" type="submit">Save</button>
+      {% if unit_index + 1 < unit_count %}
+        <button class="btn btn-secondary" type="submit" name="next" value="1">Save and go to next unit</button>
+      {% endif %}
+    </div>
+    <p class="muted" style="margin-top:8px;">Every saved change is recorded (who and what) in the change list and the admin logs.</p>
+  </div>
+</fieldset>
+</form>
+{% endblock %}

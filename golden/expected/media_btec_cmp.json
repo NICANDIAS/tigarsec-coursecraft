@@ -1,13 +1,235 @@
 {
  "source_pdf": "media_btec_cmp.pdf",
- "ruleset_used": "no hardcoded/learned pattern matched",
- "verdict": "failed",
- "rule_based_unit_count": 0,
- "sections_needing_ai": 1,
+ "ruleset_used": "BTEC 'Practice' style (modules / assessment units / shared grade grid)",
+ "verdict": "good",
+ "extras_fingerprint": "67d4f91dbf",
+ "rule_based_unit_count": 4,
+ "sections_needing_ai": 0,
  "totals": {
-  "units": 0,
-  "learning_outcomes": 0,
-  "criteria": 0
+  "units": 4,
+  "learning_outcomes": 20,
+  "criteria": 20
  },
- "units": []
+ "units": [
+  {
+   "name": "Assessment unit A1: Skills Development",
+   "learning_outcomes": [
+    {
+     "code": "A1.1",
+     "title": "Explore and develop investigation skills for informing ideas",
+     "criteria": [
+      [
+       "A1.AC1",
+       "675fcd26d6"
+      ]
+     ]
+    },
+    {
+     "code": "A1.2",
+     "title": "Explore and develop problem solving skills",
+     "criteria": [
+      [
+       "A1.AC2",
+       "df448e7ceb"
+      ]
+     ]
+    },
+    {
+     "code": "A1.3",
+     "title": "Explore and develop creative technical skills",
+     "criteria": [
+      [
+       "A1.AC3",
+       "785231d815"
+      ]
+     ]
+    },
+    {
+     "code": "A1.4",
+     "title": "Explore and develop professional skills and behaviours",
+     "criteria": [
+      [
+       "A1.AC4",
+       "fdc1bfe67f"
+      ]
+     ]
+    },
+    {
+     "code": "A1.5",
+     "title": "Explore and develop communication skills",
+     "criteria": [
+      [
+       "A1.AC5",
+       "c0e7f49775"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Assessment unit A2: Creative Project",
+   "learning_outcomes": [
+    {
+     "code": "A2.1",
+     "title": "Inform ideas in response to a creative brief",
+     "criteria": [
+      [
+       "A2.AC1",
+       "675fcd26d6"
+      ]
+     ]
+    },
+    {
+     "code": "A2.2",
+     "title": "Apply problem solving skills in response to a creative brief",
+     "criteria": [
+      [
+       "A2.AC2",
+       "df448e7ceb"
+      ]
+     ]
+    },
+    {
+     "code": "A2.3",
+     "title": "Apply technical skills in response to a creative brief",
+     "criteria": [
+      [
+       "A2.AC3",
+       "785231d815"
+      ]
+     ]
+    },
+    {
+     "code": "A2.4",
+     "title": "Demonstrate professional skills and behaviours in response to a creative brief",
+     "criteria": [
+      [
+       "A2.AC4",
+       "fdc1bfe67f"
+      ]
+     ]
+    },
+    {
+     "code": "A2.5",
+     "title": "Apply communication skills in response to a creative brief",
+     "criteria": [
+      [
+       "A2.AC5",
+       "c0e7f49775"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Assessment unit B1: Personal Progression",
+   "learning_outcomes": [
+    {
+     "code": "B1.1",
+     "title": "Inform ideas for progression into a creative career",
+     "criteria": [
+      [
+       "B1.AC1",
+       "675fcd26d6"
+      ]
+     ]
+    },
+    {
+     "code": "B1.2",
+     "title": "Apply problem solving practice to develop a strategy for career progression",
+     "criteria": [
+      [
+       "B1.AC2",
+       "df448e7ceb"
+      ]
+     ]
+    },
+    {
+     "code": "B1.3",
+     "title": "Create materials for career progression using technical practice",
+     "criteria": [
+      [
+       "B1.AC3",
+       "785231d815"
+      ]
+     ]
+    },
+    {
+     "code": "B1.4",
+     "title": "Demonstrate professional practice and behaviours in relation to career progression aspirations",
+     "criteria": [
+      [
+       "B1.AC4",
+       "fdc1bfe67f"
+      ]
+     ]
+    },
+    {
+     "code": "B1.5",
+     "title": "Apply communication skills to support progression into a creative career",
+     "criteria": [
+      [
+       "B1.AC5",
+       "c0e7f49775"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Assessment unit B2: Creative Industry Response",
+   "learning_outcomes": [
+    {
+     "code": "B2.1",
+     "title": "Inform ideas for a response to a creative industry brief",
+     "criteria": [
+      [
+       "B2.AC1",
+       "675fcd26d6"
+      ]
+     ]
+    },
+    {
+     "code": "B2.2",
+     "title": "Apply problem solving practice to develop solutions in response to a creative industry brief",
+     "criteria": [
+      [
+       "B2.AC2",
+       "df448e7ceb"
+      ]
+     ]
+    },
+    {
+     "code": "B2.3",
+     "title": "Apply technical practice in response to a creative industry brief",
+     "criteria": [
+      [
+       "B2.AC3",
+       "785231d815"
+      ]
+     ]
+    },
+    {
+     "code": "B2.4",
+     "title": "Demonstrate professional practice and behaviours in response to a creative industry brief",
+     "criteria": [
+      [
+       "B2.AC4",
+       "fdc1bfe67f"
+      ]
+     ]
+    },
+    {
+     "code": "B2.5",
+     "title": "Apply communication skills in response to a creative industry brief",
+     "criteria": [
+      [
+       "B2.AC5",
+       "c0e7f49775"
+      ]
+     ]
+    }
+   ]
+  }
+ ]
 }

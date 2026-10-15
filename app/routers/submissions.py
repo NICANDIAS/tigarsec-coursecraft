@@ -862,9 +862,11 @@ def _run_marking_job(run_id: int, submission_id: int, teacher_id: int):
             all_units = (spec.structured_json or {}).get("units", [])
             if submission.target_unit_name:
                 matching_units = [u for u in all_units if u.get("name") == submission.target_unit_name]
-                criteria_source = {"units": matching_units} if matching_units else spec.structured_json
+                criteria_source = {"units": matching_units} if matching_units else {"units": all_units}
             else:
-                criteria_source = spec.structured_json
+                # Only the units - a spec may also store teaching content and other extras
+                # (Stage 2), which would make this prompt far bigger for no marking benefit.
+                criteria_source = {"units": all_units}
 
             prompt_parts = [
                 f"Course specification (structured criteria - scoped to the relevant unit):\n{json.dumps(criteria_source, indent=2)}",

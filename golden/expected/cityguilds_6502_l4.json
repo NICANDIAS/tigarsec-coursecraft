@@ -2,6 +2,7 @@
  "source_pdf": "cityguilds_6502_l4.pdf",
  "ruleset_used": "no hardcoded/learned pattern matched",
  "verdict": "failed",
+ "extras_fingerprint": "bf21a9e8fb",
  "rule_based_unit_count": 0,
  "sections_needing_ai": 21,
  "totals": {

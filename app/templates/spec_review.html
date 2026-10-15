@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Review - {{ spec.label }} - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/spec-library/{{ spec.id }}">&larr; Back to {{ spec.label }}</a></p>
+<h1>Review and edit</h1>
+
+{% set q = spec.parse_quality or {} %}
+{% if request.query_params.get("saved") %}
+  <div class="card" role="status"><span class="badge badge-released">Saved</span> {{ request.query_params.get("saved") }}</div>
+{% endif %}
+
+<div class="card">
+  <p>Check each unit against the real spec. Fix anything CourseCraft read wrongly, then tick
+  <strong>"I have checked this unit"</strong>. When every unit is checked, the spec is marked as checked by a person.</p>
+  <p>
+    {% if q.get("verdict") == "needs_review" %}<span class="badge badge-needs_review">Needs review</span>
+    {% elif q.get("verdict") == "good" %}<span class="badge badge-released">Looks good</span>{% endif %}
+    {{ reviewed|length }} of {{ spec.structured_json.units|length }} unit(s) checked.
+  </p>
+  {% if q.get("problems") %}
+    <ul>{% for problem in q.problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if usage.in_use %}
+    <div class="error-box" style="border-color:var(--warning);color:var(--warning);">
+      This spec is in use ({{ usage_text }}), so it can't be edited here - a change such as renaming a unit
+      could break those links. You can still look through it, or make an editable copy: a new version you can
+      fix freely while this one stays exactly as it is.
+    </div>
+    <form method="post" action="/spec-library/{{ spec.id }}/editable-copy" style="margin-top:10px;">
+      <button class="btn" type="submit">Make an editable copy</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Units</h2>
+  {% for unit in spec.structured_json.units %}
+    {% set criteria_count = unit.learning_outcomes|map(attribute="criteria")|map("length")|sum %}
+    <div class="list-item">
+      <span>
+        <a href="/spec-library/{{ spec.id }}/review/unit/{{ loop.index0 }}">{{ unit.name }}</a>
+        <span class="muted"> — {{ unit.learning_outcomes|length }} learning outcome(s), {{ criteria_count }} criteria</span>
+      </span>
+      {% if unit.name in reviewed %}
+        <span class="badge badge-released">Checked</span>
+      {% else %}
+        <span class="badge badge-uploaded">Not checked yet</span>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+{% if log %}
+  <div class="card">
+    <h2>Recent changes</h2>
+    <ul>
+      {% for entry in log %}
+        <li><span class="muted">{{ entry.created_at.strftime("%d %b %Y %H:%M") if entry.created_at else "" }} · {{ entry.actor }}</span> — {{ entry.detail.split(": ", 1)[1] if ": " in entry.detail else entry.detail }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% endblock %}

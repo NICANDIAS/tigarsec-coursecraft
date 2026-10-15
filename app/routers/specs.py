@@ -10,13 +10,14 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from ..database import get_db, SessionLocal
-from ..models import Teacher, SpecVersion, Course, Submission, DiscoveredSpecFormat, ExamExemplar
+from ..models import Teacher, SpecVersion, Course, Submission, DiscoveredSpecFormat, ExamExemplar, AuditLogEntry
 from ..course_access import get_course_for_teacher
 from ..auth import get_current_teacher, require_spec_uploader
 from ..docx_annotator import extract_text
 from ..llm_gateway import get_effective_provider
 from ..spec_parser import parse_spec_hybrid
 from ..spec_versions import spec_usage, usage_sentence, version_family, compare_units
+from ..spec_editing import edit_unit, updated_quality
 from ..web_fetch import fetch_spec_from_url, UnsafeURLError
 
 router = APIRouter()
@@ -146,11 +147,16 @@ def _run_parse_job(spec_id: int):
                 for p in db.query(DiscoveredSpecFormat).all()
             ]
 
+            # The original file (kept since Stage 1) lets readers use the page layout, e.g.
+            # the Media grade grid. Specs uploaded before that have no file - readers cope.
+            pdf_path = spec.source_file_path if spec.source_file_path and os.path.exists(spec.source_file_path) else None
             result = parse_spec_hybrid(
                 spec.raw_text, progress_callback=progress, known_patterns=known_patterns,
-                cancel_check=is_cancelled,
+                cancel_check=is_cancelled, pdf_path=pdf_path,
             )
-            spec.structured_json = {"units": result.get("units", [])}
+            # "units" is what every tool reads; a style reader may add extras next to it
+            # (qualification sizes, grading scheme, teaching content).
+            spec.structured_json = {"units": result.get("units", []), **(result.get("extras") or {})}
             unit_count = len(result.get("units", []))
             rule_count = result.get("rule_based_unit_count", 0)
             ai_sections = result.get("ai_fallback_section_count", 0)
@@ -427,3 +433,138 @@ def detach_spec(
         course.spec_version_id = None
         db.commit()
     return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+
+
+# ----------------------------------------------------------------------------- review / edit (Stage 2)
+def _spec_edit_log(db: Session, spec_id: int, limit: int = 20):
+    return (
+        db.query(AuditLogEntry)
+        .filter(AuditLogEntry.action == "spec_edit", AuditLogEntry.detail.like(f"spec {spec_id}:%"))
+        .order_by(AuditLogEntry.id.desc()).limit(limit).all()
+    )
+
+
+@router.get("/spec-library/{spec_id}/review", response_class=HTMLResponse)
+def review_spec(
+    spec_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    """Overview for checking a parsed spec unit by unit."""
+    spec = db.get(SpecVersion, spec_id)
+    if not spec or not spec.structured_json:
+        return RedirectResponse(url=f"/spec-library/{spec_id}", status_code=303)
+    usage = spec_usage(db, spec_id)
+    return templates.TemplateResponse(
+        "spec_review.html",
+        {"request": request, "teacher": teacher, "spec": spec, "usage": usage, "usage_text": usage_sentence(usage),
+         "reviewed": (spec.parse_quality or {}).get("reviewed_units", []), "log": _spec_edit_log(db, spec_id)},
+    )
+
+
+@router.get("/spec-library/{spec_id}/review/unit/{unit_index}", response_class=HTMLResponse)
+def review_spec_unit(
+    spec_id: int,
+    unit_index: int,
+    request: Request,
+    error: str = "",
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    spec = db.get(SpecVersion, spec_id)
+    units = (spec.structured_json or {}).get("units", []) if spec else []
+    if not spec or not 0 <= unit_index < len(units):
+        return RedirectResponse(url=f"/spec-library/{spec_id}/review", status_code=303)
+    usage = spec_usage(db, spec_id)
+    return templates.TemplateResponse(
+        "spec_review_unit.html",
+        {"request": request, "teacher": teacher, "spec": spec, "unit": units[unit_index], "unit_index": unit_index,
+         "unit_count": len(units), "locked": usage["in_use"], "usage_text": usage_sentence(usage),
+         "is_reviewed": units[unit_index].get("name") in (spec.parse_quality or {}).get("reviewed_units", []),
+         "error": error or None},
+    )
+
+
+@router.post("/spec-library/{spec_id}/review/unit/{unit_index}")
+async def save_spec_unit(
+    spec_id: int,
+    unit_index: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    """Saves one unit's edits. Refused for a spec that is in use (see spec_editing.py)."""
+    spec = db.get(SpecVersion, spec_id)
+    units = list((spec.structured_json or {}).get("units", [])) if spec else []
+    back = f"/spec-library/{spec_id}/review/unit/{unit_index}"
+    if not spec or not 0 <= unit_index < len(units) or spec.parse_status == "parsing":
+        return RedirectResponse(url=f"/spec-library/{spec_id}/review", status_code=303)
+    if spec_usage(db, spec_id)["in_use"]:
+        return RedirectResponse(url=f"{back}?error={quote('This spec is in use, so it cannot be edited. Make an editable copy instead.')}", status_code=303)
+
+    form = {k: v for k, v in (await request.form()).items() if isinstance(v, str)}
+    old_name = units[unit_index].get("name")
+    others = {u.get("name") for i, u in enumerate(units) if i != unit_index}
+    new_unit, changes, errors = edit_unit(units[unit_index], form, others)
+    if errors:
+        return RedirectResponse(url=f"{back}?error={quote(' '.join(errors))}", status_code=303)
+
+    units[unit_index] = new_unit
+    reviewed = [n for n in (spec.parse_quality or {}).get("reviewed_units", []) if n != old_name]
+    if form.get("reviewed"):
+        reviewed.append(new_unit["name"])
+    if form.get("reviewed") and old_name not in (spec.parse_quality or {}).get("reviewed_units", []):
+        changes.append("marked as checked")
+    elif not form.get("reviewed") and old_name in (spec.parse_quality or {}).get("reviewed_units", []):
+        changes.append("check mark removed")
+
+    # JSON columns are only saved when a NEW object is assigned (in-place changes are missed).
+    spec.structured_json = {**spec.structured_json, "units": units}
+    quality = updated_quality(spec.parse_quality, units, reviewed, teacher.name or teacher.email)
+    if any(c not in ("marked as checked", "check mark removed") for c in changes):
+        quality["edited"] = True
+    spec.parse_quality = quality
+    if changes:
+        db.add(AuditLogEntry(
+            actor=teacher.email, action="spec_edit",
+            detail=f"spec {spec_id}: unit '{new_unit['name']}': " + "; ".join(changes),
+        ))
+    db.commit()
+    if form.get("next") == "1" and unit_index + 1 < len(units):
+        return RedirectResponse(url=f"/spec-library/{spec_id}/review/unit/{unit_index + 1}", status_code=303)
+    return RedirectResponse(url=f"/spec-library/{spec_id}/review?saved={quote(new_unit['name'])}", status_code=303)
+
+
+@router.post("/spec-library/{spec_id}/editable-copy")
+def make_editable_copy(
+    spec_id: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(require_spec_uploader),
+):
+    """For a spec IN USE: copies it (same units, nothing re-read) as a new version that can be
+    edited. The original stays exactly as it is, and so does everything linked to it."""
+    spec = db.get(SpecVersion, spec_id)
+    if not spec or not spec.structured_json:
+        return RedirectResponse(url=f"/spec-library/{spec_id}", status_code=303)
+    n = db.query(SpecVersion).filter(SpecVersion.reparsed_from_id == spec.id).count() + 1
+    quality = dict(spec.parse_quality or {})
+    quality["notes"] = list(quality.get("notes", [])) + [f"Editable copy of spec #{spec.id} made by {teacher.name or teacher.email}."]
+    copy = SpecVersion(
+        uploaded_by_teacher_id=teacher.id,
+        label=f"{spec.label} (edited copy {n}, {datetime.date.today():%d %b %Y})"[:255],
+        raw_text=spec.raw_text,
+        source_file_path=spec.source_file_path,
+        reparsed_from_id=spec.id,
+        structured_json=spec.structured_json,
+        parse_status="parsed",
+        parse_progress=f"Editable copy of spec #{spec.id} - nothing was re-read.",
+        parse_quality=quality,
+        generated_by_provider=spec.generated_by_provider,
+    )
+    db.add(copy)
+    db.commit()
+    db.add(AuditLogEntry(actor=teacher.email, action="spec_edit",
+                         detail=f"spec {copy.id}: created as an editable copy of spec {spec.id}"))
+    db.commit()
+    return RedirectResponse(url=f"/spec-library/{copy.id}/review", status_code=303)

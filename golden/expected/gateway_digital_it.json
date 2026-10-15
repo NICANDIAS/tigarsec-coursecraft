@@ -2,6 +2,7 @@
  "source_pdf": "gateway_digital_it.pdf",
  "ruleset_used": "Gateway Qualifications-style (Unit Number/Unit Aim/decimal criteria)",
  "verdict": "good",
+ "extras_fingerprint": "bf21a9e8fb",
  "rule_based_unit_count": 42,
  "sections_needing_ai": 0,
  "totals": {

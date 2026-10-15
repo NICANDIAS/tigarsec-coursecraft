@@ -157,7 +157,7 @@ def _run_iv_ai_assist(iv_request_id: int):
                 original_marks_summary += f"\n\nTeacher-provided summary of marks given:\n{iv_request.external_original_marks_summary}"
 
             prompt_parts = [
-                f"Course specification criteria:\n{json.dumps(spec.structured_json, indent=2) if spec.structured_json else 'Not parsed - proceed with general judgement.'}",
+                f"Course specification criteria:\n{json.dumps({'units': spec.structured_json.get('units', [])}, indent=2) if spec.structured_json else 'Not parsed - proceed with general judgement.'}",
                 f"Original marks/comments to verify:\n{original_marks_summary}",
                 f"Submission text:\n{submission_text[:12000]}",
             ]

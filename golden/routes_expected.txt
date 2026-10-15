@@ -45,6 +45,8 @@ GET    /spec-library  ->  specs.py:spec_library
 GET    /spec-library/new  ->  specs.py:new_spec_page
 GET    /spec-library/{spec_id}  ->  specs.py:view_spec
 GET    /spec-library/{spec_id}/compare  ->  specs.py:compare_spec_versions
+GET    /spec-library/{spec_id}/review  ->  specs.py:review_spec
+GET    /spec-library/{spec_id}/review/unit/{unit_index}  ->  specs.py:review_spec_unit
 GET    /spec-library/{spec_id}/status  ->  specs.py:spec_status
 GET    /submission-files/{file_id}/view  ->  submissions.py:view_submission_file
 GET    /submissions/{submission_id}/download  ->  submissions.py:download_annotated
@@ -127,8 +129,10 @@ POST   /settings/two-factor  ->  courses.py:update_two_factor
 POST   /spec-library/upload  ->  specs.py:upload_spec
 POST   /spec-library/{spec_id}/cancel-parse  ->  specs.py:cancel_parse
 POST   /spec-library/{spec_id}/delete  ->  specs.py:delete_spec
+POST   /spec-library/{spec_id}/editable-copy  ->  specs.py:make_editable_copy
 POST   /spec-library/{spec_id}/exam-exemplars/upload  ->  exam_exemplars.py:upload_exam_exemplar
 POST   /spec-library/{spec_id}/reparse  ->  specs.py:reparse_spec
+POST   /spec-library/{spec_id}/review/unit/{unit_index}  ->  specs.py:save_spec_unit
 POST   /submissions/{submission_id}/approve  ->  submissions.py:approve_submission
 POST   /submissions/{submission_id}/delete  ->  submissions.py:delete_submission
 POST   /submissions/{submission_id}/mark  ->  submissions.py:mark_submission

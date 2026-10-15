@@ -2,6 +2,7 @@
  "source_pdf": "digital_dsd.pdf",
  "ruleset_used": "T-Level-style (Core Component/Occupational Specialisms/Content area)",
  "verdict": "needs_review",
+ "extras_fingerprint": "bf21a9e8fb",
  "rule_based_unit_count": 8,
  "sections_needing_ai": 1,
  "totals": {
