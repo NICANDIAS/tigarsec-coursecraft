@@ -3,7 +3,7 @@ Small automatic tests for the Stage 1 parser changes. No AI, no database, no PDF
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_spec_parser_stage1.py
-Expected last line: "ALL 11 TESTS PASSED"
+Expected last line: "ALL 13 TESTS PASSED"
 """
 import sys
 import types
@@ -175,6 +175,62 @@ def ai_outcomes_sharing_one_code_are_kept_and_numbered():
     assert [lo["title"] for lo in los] == ["Cash flow", "Budgets"], [lo["title"] for lo in los]  # true duplicate dropped, different title kept
     assert [lo["code"] for lo in los] == ["LO1", "LO2"], [lo["code"] for lo in los]
     assert any("numbered LO1" in n for n in result["quality"]["notes"])
+
+
+
+@test
+def a_unit_split_between_ai_excerpts_comes_back_whole():
+    # Real case (A level Business, pages 8-12): the 2nd AI excerpt started part-way through
+    # "Business finance", came back as a separate "Unknown unit" and was missed in the preview.
+    prompts = []
+
+    def ai(**kwargs):
+        prompts.append(kwargs["prompt"])
+        if len(prompts) == 1:
+            return {"units": [{"name": "Business Opportunities and Functions", "learning_outcomes": [
+                {"code": "LO", "title": "Enterprise", "criteria": [{"code": "1", "description": "Explain the meaning of enterprise"}]},
+                {"code": "LO", "title": "Business finance", "criteria": [{"code": "C1", "description": "Explain the sources of finance"}]}]}]}
+        return {"units": [{"name": "Unknown unit", "learning_outcomes": [
+            {"code": "LO", "title": "Business finance", "criteria": [
+                {"code": "C1", "description": "Analyse the advantages and disadvantages of each source of finance"},
+                {"code": "C2", "description": "Explain the sources of finance"}]},
+            {"code": "LO", "title": "Business revenue and costs", "criteria": [
+                {"code": "C1", "description": "Explain what is meant by break-even"}]}]}]}
+
+    text = "\n".join(f"Explain topic number {i} in some detail for learners" for i in range(150))  # 2 excerpts
+    original = sp.complete_json
+    sp.complete_json = ai
+    try:
+        named = sp.read_piece(text, "Component 1: Business Opportunities")
+        prompts.clear()
+        unnamed = sp.read_piece(text, "")
+    finally:
+        sp.complete_json = original
+    assert len(prompts) == 2 and "previous excerpt ended with" in prompts[1] and "previous excerpt" not in prompts[0]
+    for result in (named, unnamed):
+        assert len(result["units"]) == 1, [u["name"] for u in result["units"]]
+        los = result["units"][0]["learning_outcomes"]
+        assert [lo["title"] for lo in los] == ["Enterprise", "Business finance", "Business revenue and costs"]
+        finance = [c["description"] for c in los[1]["criteria"]]
+        assert finance == ["Explain the sources of finance", "Analyse the advantages and disadvantages of each source of finance"], finance
+        assert [c["code"] for c in los[1]["criteria"]] == ["C1", "C2"]
+        assert any("joined back together" in n for n in result["notes"])
+    assert named["units"][0]["name"] == "Component 1: Business Opportunities"
+    assert unnamed["units"][0]["name"] == "Business Opportunities and Functions"
+
+
+@test
+def separate_named_units_from_ai_stay_separate_without_a_typed_name():
+    def ai(**kwargs):
+        return {"units": [{"name": "Unit 1: Alpha", "learning_outcomes": [{"code": "LO1", "title": "A", "criteria": [{"code": "1.1", "description": "x"}]}]},
+                          {"name": "Unit 2: Beta", "learning_outcomes": [{"code": "LO1", "title": "B", "criteria": [{"code": "1.1", "description": "y"}]}]}]}
+    original = sp.complete_json
+    sp.complete_json = ai
+    try:
+        result = sp.read_piece("Some unit text here\n" * 20, "")
+    finally:
+        sp.complete_json = original
+    assert [u["name"] for u in result["units"]] == ["Unit 1: Alpha", "Unit 2: Beta"]
 
 
 if __name__ == "__main__":

@@ -551,6 +551,17 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
 
         result = None
         last_error = None
+        context = ""
+        if i > 1:
+            # A chunk can start part-way through a topic (the topic name was at the end of the
+            # previous chunk). Show the AI where the last one stopped so it files these
+            # criteria under the right outcome instead of a nameless "Unknown" one.
+            tail = [l for l in chunks[i - 2].splitlines() if l.strip()][-6:]
+            context = ("For context only - the previous excerpt ended with these lines (already "
+                       "extracted, do NOT extract them again):\n" + "\n".join(tail)[-700:] +
+                       "\n\nIf this excerpt begins part-way through a unit or learning outcome, "
+                       "use that same unit name and learning outcome title for the content that "
+                       "continues it.\n\n")
         for attempt in (1, 2):
             if progress_callback:
                 suffix = " (retry)" if attempt == 2 else ""
@@ -559,7 +570,7 @@ def _ai_parse_text_block(text: str, label: str, progress_callback=None, budget: 
                 if budget:
                     budget.use_one()
                 result = complete_json(
-                    system=SPEC_CHUNK_SYSTEM_PROMPT, prompt=f"This excerpt is from: {label}\n\nExcerpt {i} of {len(chunks)}:\n\n{chunk}",
+                    system=SPEC_CHUNK_SYSTEM_PROMPT, prompt=f"This excerpt is from: {label}\n\n{context}Excerpt {i} of {len(chunks)}:\n\n{chunk}",
                     max_tokens=4000, for_spec_parsing=True,
                 )
                 break
@@ -744,6 +755,51 @@ def dedupe_criteria(units: list[dict]) -> int:
                 kept.append(crit)
             lo["criteria"] = kept
     return dropped
+
+
+def _add_outcomes(target: dict, los: list) -> None:
+    """Adds learning outcomes to a unit. An outcome with the same title as one already there is
+    the SAME outcome continued (it was split between two AI excerpts), so its criteria join that
+    one: exact repeats are dropped, and if two different criteria now share a code, that
+    outcome's criteria are numbered C1, C2, ... so none is lost or blocks saving."""
+    existing = target.setdefault("learning_outcomes", [])
+    for lo in los:
+        title = _norm_title(lo.get("title"))
+        match = next((x for x in existing if title and _norm_title(x.get("title")) == title), None)
+        if match is None:
+            existing.append(lo)
+            continue
+        seen = {_norm_title(c.get("description")) for c in match.get("criteria", [])}
+        for crit in lo.get("criteria", []):
+            if _norm_title(crit.get("description")) not in seen:
+                match.setdefault("criteria", []).append(crit)
+                seen.add(_norm_title(crit.get("description")))
+        codes = [(c.get("code") or "").strip().lower() for c in match.get("criteria", [])]
+        if any(not c for c in codes) or len(set(codes)) != len(codes):
+            for n, crit in enumerate(match["criteria"], start=1):
+                crit["code"] = f"C{n}"
+
+
+def combine_ai_pieces(units: list[dict], one_unit_name: str = "") -> tuple[list[dict], bool]:
+    """AI reads a piece in excerpts, and an excerpt that starts mid-unit comes back as a
+    separate "Unknown unit". For a piece the person named (they told us it is ONE unit), all
+    parts become that one unit. Otherwise an "Unknown unit" part is joined to the unit before
+    it. Returns (units, changed)."""
+    if len(units) < 2:
+        return units, False
+    if one_unit_name:
+        first = {k: v for k, v in units[0].items() if k != "learning_outcomes"}
+        first["learning_outcomes"] = []
+        for unit in units:
+            _add_outcomes(first, unit.get("learning_outcomes", []))
+        return [first], True
+    combined = []
+    for unit in units:
+        if combined and _looks_unknown(unit.get("name")):
+            _add_outcomes(combined[-1], unit.get("learning_outcomes", []))
+        else:
+            combined.append(unit)
+    return combined, len(combined) != len(units)
 
 
 def _looks_unknown(value: str) -> bool:
@@ -1037,6 +1093,10 @@ def read_piece(text: str, unit_name: str = "", max_ai_calls: int = 4, allow_ai: 
         budget = CallBudget(max_ai_calls)
         found, ok = _ai_parse_text_block(normal, name or "pasted section", budget=budget)
         units = [u for u in found if u.get("learning_outcomes")]
+        units, joined = combine_ai_pieces(units, name)
+        if joined:
+            notes.append("The AI read this in parts; the parts were joined back together"
+                         + (f" as one unit, '{name}'." if name else "."))
         method = f"AI ({budget.used} call(s))"
         if not ok:
             notes.append("Part of this text could not be read by AI - check the preview carefully.")
