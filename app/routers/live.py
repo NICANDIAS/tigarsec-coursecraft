@@ -32,7 +32,7 @@ from ..live_activities import (screens_from_deck, screens_from_practice, new_joi
 from ..qr import qr_svg
 from ..quiz import screens_from_quiz, public_screen, points_for, is_open, leaderboard
 from ..system_settings import get_system_settings
-from .presentations import _can_access_deck, deck_layout
+from .presentations import _can_access_deck, deck_layout, session_gaps
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -232,9 +232,11 @@ def live_summary(session_id: int, request: Request, db: Session = Depends(get_db
     not_yet = sorted({r["name"] for i, s, t in per_screen for e in t.values() if e["kind"] == "confidence"
                       for r in e["answers"] if r.get("choice") == 0})
     board = _quiz_board(db, session, final=True) if _is_quiz(screens) else None
+    gaps = session_gaps(db, session) if session.state != "open" else []
     return templates.TemplateResponse("live_summary.html", {
         "request": request, "teacher": teacher, "session": session, "per_screen": per_screen, "people": people,
-        "answered_count": len(answered), "not_yet": not_yet, "response_count": len(responses), "board": board})
+        "answered_count": len(answered), "not_yet": not_yet, "response_count": len(responses), "board": board,
+        "gaps": gaps})
 
 
 @router.get("/live/{session_id}/summary.csv")

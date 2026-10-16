@@ -14,6 +14,17 @@
   <div style="align-self:center;"><a class="btn btn-secondary" href="/live/{{ session.id }}/summary.csv">Download answers (CSV)</a></div>
 </div>
 
+{% if gaps %}
+  <div class="card" style="border-left:4px solid var(--warning);">
+    <h2 style="margin-top:0;">What to revisit next lesson</h2>
+    <ul>{% for g in gaps %}<li>{{ g.line }}</li>{% endfor %}</ul>
+    <a class="btn" href="/courses/{{ session.course_id }}/presentations/new?revisit={{ session.id }}">Make the next lesson's PowerPoint - revisiting these</a>
+    <p class="muted" style="margin-bottom:0;">You choose the new topic as usual; these points go into its starter questions and a short "Revisit" slide.</p>
+  </div>
+{% elif session.state != "open" and response_count %}
+  <div class="card"><p style="margin:0;">Nothing stood out as a gap: no quiz question below 70% right, and no objective where half the class said "Not yet" / "Getting there".</p></div>
+{% endif %}
+
 {% if board %}
   <div class="card">
     <h2 style="margin-top:0;">Quiz leaderboard</h2>

@@ -90,6 +90,13 @@
     {% endif %}
   </div>
 
+  {% if deck.previous_lesson_context and "RESULTS FROM LAST LESSON" in deck.previous_lesson_context %}
+    <div class="card" style="border-left:4px solid var(--warning);">
+      <h2 style="margin-top:0;">Revisits what the class found hard</h2>
+      <ul style="margin-bottom:0;">{% for line in deck.previous_lesson_context.split("RESULTS FROM LAST LESSON")[1].splitlines()[1:] if line.startswith("- ") %}<li>{{ line[2:] }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
   {% if deck.outline_json and can_quiz %}
     <div class="card">
       <h2 style="margin-top:0;">Live quiz</h2>

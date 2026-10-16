@@ -96,6 +96,16 @@ follow-up would need. The lecturer must be told clearly, never left to discover 
 
 If it DOES fit: set "fits_in_requested_time" to true and leave "scope_note" as an empty string.
 
+REVISITING WHAT THE CLASS FOUND HARD - if the previous lesson context contains "RESULTS FROM LAST \
+LESSON'S LIVE CHECKS", those are real, anonymous results from the class's quiz and confidence poll, \
+and the class did NOT secure those points. Then: (a) the retrieval_starter questions must target \
+exactly those points (reworded - not the same question again); (b) straight after the objectives \
+slide, add ONE content slide (two at most, only if the gaps are on unrelated topics) titled \
+"Revisit: <short topic>", whose guiding_question probes the misunderstanding and whose key_points \
+correct it explicitly - including why the most common wrong answer is wrong - with a check_question \
+to confirm it is now secure; (c) then teach this lesson's new content as normal. Keep the revisit \
+to about 10 minutes so the new content still fits the time.
+
 RESOURCES - this tool must be a genuine one-stop shop: if an activity or practical describes
 something the teacher needs to physically hand out or print (a sample data table, a set of cards to
 cut up, a scenario brief, a worksheet, a fictional log file, a set of example emails) to actually RUN

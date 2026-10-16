@@ -16,6 +16,7 @@ from ..resource_export import render_resources_docx, extract_resources
 from ..llm_gateway import get_effective_provider
 from ..spec_context import spec_teaching_context, criterion_extra
 from ..pptx_html import read_slides, picture_bytes
+from ..class_feedback import learning_gaps, describe, with_revisit
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -152,11 +153,47 @@ def new_presentation_page(
                 "previous_context": previous_context,
             }
 
+    # Stage 9: what the class found hard in recent live lessons/quizzes, to revisit in this deck
+    recent = recent_class_gaps(db, course.id, teacher) if course else []
+    revisit_session = request.query_params.get("revisit")
+    if revisit_session and revisit_session.isdigit() and prefill is None:
+        chosen = next((r for r in recent if r["session"].id == int(revisit_session)), None)
+        if chosen:
+            prefill = {"title": "", "unit_index": None, "lo_indices": [], "criteria_selected": {},
+                       "previous_context": f"Previous lesson: {chosen['session'].title.removeprefix('Quiz: ')}.",
+                       "from_results": True}
+    ticked = int(revisit_session) if revisit_session and revisit_session.isdigit() else (recent[0]["session"].id if recent else None)
     return templates.TemplateResponse(
         "presentation_new.html",
         {"request": request, "teacher": teacher, "course": course, "units": units,
-         "sow_weeks": sow_weeks, "prefill": prefill},
+         "sow_weeks": sow_weeks, "prefill": prefill, "recent_gaps": recent, "revisit_ticked": ticked},
     )
+
+
+def session_gaps(db, session):
+    """The learning gaps in one finished live session (see class_feedback.py)."""
+    from ..models import LiveResponse
+    rows = db.query(LiveResponse).filter(LiveResponse.session_id == session.id).all()
+    responses = [{"question_key": r.question_key, "choice": r.answer_choice, "text": r.answer_text,
+                  "screen": r.screen_index, "name": ""} for r in rows]
+    gaps = learning_gaps(session.screens_json or [], responses)
+    for g in gaps:
+        g["line"] = describe(g)
+    return gaps
+
+
+def recent_class_gaps(db, course_id, teacher, limit=5):
+    """This lecturer's last few ENDED live sessions on the course that showed gaps, newest first."""
+    from ..models import LiveSession
+    sessions = (db.query(LiveSession).filter(LiveSession.course_id == course_id, LiveSession.teacher_id == teacher.id,
+                                             LiveSession.state == "ended")
+                .order_by(LiveSession.id.desc()).limit(limit).all())
+    out = []
+    for session in sessions:
+        gaps = session_gaps(db, session)
+        if gaps:
+            out.append({"session": session, "gaps": gaps})
+    return out
 
 
 def _unit_content_text(unit: dict, selected_lo_indices: list[int] | None = None, selected_criteria_by_lo: dict | None = None) -> str:
@@ -242,6 +279,16 @@ async def generate_presentation(
     course = get_course_for_teacher(db, course_id, teacher)
     if not course or not course.spec_version or not course.spec_version.structured_json:
         return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+
+    # Stage 9: the gaps the lecturer ticked ("session_id:question_key") are added to the
+    # previous-lesson context, so the AI revisits them (and a regenerate keeps them).
+    form = await request.form()
+    picked = set(form.getlist("revisit"))
+    if picked:
+        chosen_gaps = []
+        for entry in recent_class_gaps(db, course.id, teacher):
+            chosen_gaps += [g for g in entry["gaps"] if f"{entry['session'].id}:{g['key']}" in picked]
+        previous_lesson_context = with_revisit(previous_lesson_context, chosen_gaps)
 
     units = course.spec_version.structured_json.get("units", [])
     if unit_index < 0 or unit_index >= len(units):
