@@ -1,2 +1,3 @@
 # Test spec PDFs are binary files (stops git treating them as text)
 tools/fixtures/*.pdf binary
+app/static/fonts/*.ttf binary

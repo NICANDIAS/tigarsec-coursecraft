@@ -39,6 +39,11 @@ def screens_from_deck(outline: dict) -> list[dict]:
             screen["title"] = screen["title"] or "Today we will"
             screen["body"] = _list(slide.get("objectives"))
         elif kind == "content":
+            if _clean(slide.get("guiding_question")):
+                # The PowerPoint shows this as TWO slides: the question first (students answer it
+                # on their phones), then the reveal with the key points - live follows the same steps.
+                screens.append({"kind": "content_question", "title": screen["title"], "body": [],
+                                "questions": [{"prompt": _clean(slide["guiding_question"]), "kind": "text"}]})
             screen["body"] = _list(slide.get("key_points"))
             if _clean(slide.get("check_question")):
                 screen["questions"] = [{"prompt": _clean(slide["check_question"]), "kind": "text"}]
@@ -57,6 +62,22 @@ def screens_from_deck(outline: dict) -> list[dict]:
         if screen["title"] or screen["body"] or screen["questions"]:
             screens.append(screen)
     return _number(screens)
+
+
+def attach_pptx_slides(screens: list[dict], outline: dict, pptx_slide_count: int) -> bool:
+    """Gives each screen the number of the PowerPoint slide it shows, so the live lesson can
+    show the real slide. Only when the deck's file has exactly the slides its outline makes
+    (otherwise - e.g. an old or edited file - the live lesson keeps its simple text view)."""
+    from .pptx_html import outline_slide_map
+    mapping = outline_slide_map(outline)
+    if sum(len(m) for m in mapping) != pptx_slide_count:
+        return False
+    flat = [i for m in mapping for i in m]
+    if len(flat) != len(screens):
+        return False
+    for screen, index in zip(screens, flat):
+        screen["slide"] = index
+    return True
 
 
 def screens_from_practice(questions: list[dict]) -> list[dict]:

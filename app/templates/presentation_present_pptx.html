@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ deck.title }} - Present</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon.png">
+<style>
+  @font-face { font-family: "Carlito"; src: local("Carlito"), url("/static/fonts/Carlito-Regular.ttf") format("truetype"); font-weight: 400; }
+  @font-face { font-family: "Carlito"; src: local("Carlito Bold"), url("/static/fonts/Carlito-Bold.ttf") format("truetype"); font-weight: 700; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .viewport { position: absolute; inset: 0 0 52px 0; }
+  .stage { position: absolute; transform-origin: 0 0; overflow: hidden; }
+  .nav { position: fixed; left: 0; right: 0; bottom: 0; height: 52px; display: flex; align-items: center; justify-content: space-between;
+         padding: 0 20px; background: #111; color: #bbb; }
+  .nav button { background: #333; color: #fff; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+  .nav button:disabled { opacity: 0.3; cursor: default; }
+  .nav a { color: #bbb; text-decoration: none; font-size: 0.9rem; }
+  body.fullscreen .viewport { bottom: 0; }
+  body.fullscreen .nav { display: none; }
+</style>
+</head>
+<body>
+<div class="viewport"><div class="stage" id="stage" aria-live="polite"></div></div>
+<div class="nav">
+  <a href="/lesson-decks/{{ deck.id }}">&times; Exit</a>
+  <span>
+    <button type="button" id="prev">&larr; Back</button>
+    <span id="counter" style="margin:0 12px;"></span>
+    <button type="button" id="next">Next &rarr;</button>
+  </span>
+  <button type="button" id="full" title="Full screen (F)">Full screen</button>
+</div>
+<script id="deck-data" type="application/json">{{ layout|tojson }}</script>
+<script src="/static/js/slides.js?v=1"></script>
+<script>
+(function () {
+  var deck = JSON.parse(document.getElementById("deck-data").textContent);
+  var stage = document.getElementById("stage"), current = 0;
+  var media = function (ref) { return "/lesson-decks/{{ deck.id }}/pptx-media/" + ref; };
+  function show(i) {
+    current = Math.max(0, Math.min(deck.slides.length - 1, i));
+    CourseCraftSlides.drawSlide(stage, deck.slides[current], media);
+    CourseCraftSlides.fitStage(stage, deck.width, deck.height);
+    document.getElementById("counter").textContent = (current + 1) + " / " + deck.slides.length;
+    document.getElementById("prev").disabled = current === 0;
+    document.getElementById("next").disabled = current === deck.slides.length - 1;
+  }
+  document.getElementById("prev").onclick = function () { show(current - 1); };
+  document.getElementById("next").onclick = function () { show(current + 1); };
+  document.getElementById("full").onclick = function () {
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+  };
+  document.addEventListener("fullscreenchange", function () {
+    document.body.classList.toggle("fullscreen", !!document.fullscreenElement);
+    setTimeout(function () { CourseCraftSlides.fitStage(stage, deck.width, deck.height); }, 50);
+  });
+  document.addEventListener("keydown", function (e) {
+    if (["ArrowRight", "PageDown", " ", "Enter"].indexOf(e.key) >= 0) { e.preventDefault(); show(current + 1); }
+    if (["ArrowLeft", "PageUp", "Backspace"].indexOf(e.key) >= 0) { e.preventDefault(); show(current - 1); }
+    if (e.key === "Home") show(0);
+    if (e.key === "End") show(deck.slides.length - 1);
+    if (e.key === "f" || e.key === "F") document.getElementById("full").click();
+  });
+  stage.addEventListener("click", function () { show(current + 1); });
+  window.addEventListener("resize", function () { CourseCraftSlides.fitStage(stage, deck.width, deck.height); });
+  if (document.fonts && document.fonts.load) {
+    Promise.all([document.fonts.load("16px Carlito"), document.fonts.load("bold 16px Carlito")]).then(function () { show(current); }, function () { show(current); });
+  }
+  show(0);
+})();
+</script>
+</body>
+</html>

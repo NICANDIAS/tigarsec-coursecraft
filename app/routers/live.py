@@ -28,10 +28,10 @@ from ..course_access import get_course_for_teacher
 import os
 
 from ..live_activities import (screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally,
-                               clean_public_url, join_link, is_local_only)
+                               clean_public_url, join_link, is_local_only, attach_pptx_slides)
 from ..qr import qr_svg
 from ..system_settings import get_system_settings
-from .presentations import _can_access_deck
+from .presentations import _can_access_deck, deck_layout
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -56,6 +56,9 @@ def live_start_from_deck(deck_id: int, db: Session = Depends(get_db), teacher: T
     if not _can_access_deck(deck, teacher, db) or not deck.outline_json:
         return RedirectResponse(url="/", status_code=303)
     screens = screens_from_deck(deck.outline_json)
+    layout = deck_layout(deck)
+    if layout:
+        attach_pptx_slides(screens, deck.outline_json, len(layout["slides"]))  # show the REAL slides on the big screen
     session = _new_session(db, teacher, deck.course_id, deck.title, screens, deck_id=deck.id)
     return RedirectResponse(url=f"/live/{session.id}/teach", status_code=303)
 
@@ -93,10 +96,20 @@ def live_teach(session_id: int, request: Request, db: Session = Depends(get_db),
         return RedirectResponse(url=f"/live/{session.id}/summary", status_code=303)
     base, from_setting = join_base(request, db)
     link = join_link(base, session.join_code)
+    # the deck's real slides, when this session was started from a deck whose file still matches
+    layout = None
+    if session.lesson_deck_id and any("slide" in s for s in (session.screens_json or [])):
+        deck = db.get(LessonDeck, session.lesson_deck_id)
+        if deck and _can_access_deck(deck, teacher, db):
+            layout = deck_layout(deck)
+            wanted = max(s.get("slide", -1) for s in session.screens_json)
+            if layout and wanted >= len(layout["slides"]):
+                layout = None
     return templates.TemplateResponse("live_teach.html", {
         "request": request, "teacher": teacher, "session": session, "screens": session.screens_json or [],
         "join_url": base + "/join", "join_link": link, "qr": qr_svg(link, size_px=320),
-        "local_only": is_local_only(base), "from_setting": from_setting, "is_admin": teacher.role == "admin"})
+        "local_only": is_local_only(base), "from_setting": from_setting, "is_admin": teacher.role == "admin",
+        "layout": layout})
 
 
 def join_base(request, db):
@@ -199,6 +212,8 @@ def live_delete(session_id: int, db: Session = Depends(get_db), teacher: Teacher
     session = _own(db, session_id, teacher)
     if not session:
         return RedirectResponse(url="/", status_code=303)
+    if session.state == "open":  # a class may be answering right now - end it first
+        return RedirectResponse(url=f"/live/{session.id}/summary", status_code=303)
     course_id = session.course_id
     db.query(LiveResponse).filter(LiveResponse.session_id == session.id).delete()
     db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).delete()

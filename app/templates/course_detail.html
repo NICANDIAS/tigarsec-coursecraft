@@ -115,8 +115,14 @@
   {% for s in live_sessions | default([]) %}
     <div class="list-item">
       <a href="/live/{{ s.id }}/{{ 'teach' if s.state == 'open' else 'summary' }}">{{ s.title }}</a>
-      <span class="muted">{{ s.created_at.strftime("%d %b %H:%M") if s.created_at else "" }}
-        {% if s.state == "open" %}<span class="badge badge-needs_review">Live now · {{ s.join_code }}</span>{% else %}· summary{% endif %}</span>
+      <span class="muted" style="display:flex;align-items:center;gap:8px;">{{ s.created_at.strftime("%d %b %H:%M") if s.created_at else "" }}
+        {% if s.state == "open" %}<span class="badge badge-needs_review">Live now · {{ s.join_code }}</span>
+        {% else %}· <a href="/live/{{ s.id }}/summary">summary</a>
+          <form method="post" action="/live/{{ s.id }}/delete" style="margin:0;"
+                onsubmit="return confirm('Delete this live session and all the students\' answers in it? This cannot be undone.');">
+            <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.8rem;color:var(--danger);border-color:var(--danger);">Delete</button>
+          </form>
+        {% endif %}</span>
     </div>
   {% endfor %}
   {% if is_exam_spec | default(false) %}

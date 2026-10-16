@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 from fastapi import APIRouter, Request, Depends, Form, UploadFile, File, BackgroundTasks
-from fastapi.responses import RedirectResponse, HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, FileResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,7 @@ from ..pptx_generator import generate_lesson_outline, render_lesson_pptx, test_u
 from ..resource_export import render_resources_docx, extract_resources
 from ..llm_gateway import get_effective_provider
 from ..spec_context import spec_teaching_context, criterion_extra
+from ..pptx_html import read_slides, picture_bytes
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -566,7 +567,44 @@ def present_deck(
         return RedirectResponse(url="/", status_code=303)
     if not deck.outline_json:
         return RedirectResponse(url=f"/lesson-decks/{deck_id}", status_code=303)
+    # Stage 7: draw the slides from the PowerPoint FILE itself, so presenting in the browser
+    # looks exactly like the download (layout, colours, fonts, images - even which side each
+    # image is on). Only if the file is gone (e.g. removed by the retention policy) does it
+    # fall back to the older outline-based view.
+    layout = deck_layout(deck)
+    if layout:
+        return templates.TemplateResponse("presentation_present_pptx.html", {"request": request, "teacher": teacher, "deck": deck, "layout": layout})
     return templates.TemplateResponse("presentation_present.html", {"request": request, "teacher": teacher, "deck": deck})
+
+
+def deck_layout(deck):
+    """The deck's slides read from its .pptx file, or None if there is no readable file."""
+    if not deck or not deck.pptx_path or not os.path.exists(deck.pptx_path):
+        return None
+    try:
+        layout = read_slides(deck.pptx_path)
+    except Exception:
+        return None
+    return layout if layout["slides"] else None
+
+
+@router.get("/lesson-decks/{deck_id}/pptx-media/{slide_index}/{shape_index}")
+def deck_pptx_media(
+    deck_id: int,
+    slide_index: int,
+    shape_index: int,
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """A picture straight out of the deck's .pptx file (for the browser slide view)."""
+    deck = db.get(LessonDeck, deck_id)
+    if not _can_access_deck(deck, teacher, db) or not deck.pptx_path or not os.path.exists(deck.pptx_path):
+        return Response(status_code=404)
+    found = picture_bytes(deck.pptx_path, slide_index, shape_index)
+    if not found:
+        return Response(status_code=404)
+    blob, content_type = found
+    return Response(blob, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
 # --- Cover/absence resource sharing ---

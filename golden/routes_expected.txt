@@ -31,6 +31,7 @@ GET    /iv/{iv_id}/review  ->  iv.py:iv_review
 GET    /join  ->  live.py:join_page
 GET    /lesson-decks/{deck_id}  ->  presentations.py:view_deck
 GET    /lesson-decks/{deck_id}/download  ->  presentations.py:download_deck
+GET    /lesson-decks/{deck_id}/pptx-media/{slide_index}/{shape_index}  ->  presentations.py:deck_pptx_media
 GET    /lesson-decks/{deck_id}/present  ->  presentations.py:present_deck
 GET    /lesson-decks/{deck_id}/resources  ->  presentations.py:download_deck_resources
 GET    /lesson-decks/{deck_id}/share  ->  presentations.py:share_deck_page

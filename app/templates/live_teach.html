@@ -15,7 +15,12 @@
   header .people { margin-left:auto; font-size:1rem; opacity:0.95; }
   header a, header button { color:#fff; background:transparent; border:1px solid rgba(255,255,255,0.5); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:0.9rem; text-decoration:none; }
   main { flex:1; display:flex; min-height:0; }
-  .stage { flex:1.5; padding:40px 56px; overflow:auto; }
+  .stage { flex:1.5; padding:40px 56px; overflow:auto; position:relative; }
+  .stage.real { padding:16px; background:#1b1d22; overflow:hidden; }
+  .stage.real .slide-viewport { position:absolute; inset:16px; }
+  .stage.real .slide-stage { position:absolute; transform-origin:0 0; overflow:hidden; box-shadow:0 6px 30px rgba(0,0,0,0.45); }
+  @font-face { font-family:"Carlito"; src: local("Carlito"), url("/static/fonts/Carlito-Regular.ttf") format("truetype"); font-weight:400; }
+  @font-face { font-family:"Carlito"; src: local("Carlito Bold"), url("/static/fonts/Carlito-Bold.ttf") format("truetype"); font-weight:700; }
   .stage .label { text-transform:uppercase; letter-spacing:2px; font-size:0.8rem; color:var(--accent); font-weight:700; }
   .stage h1 { font-size:2.3rem; margin:8px 0 18px; }
   .stage li, .stage p { font-size:1.3rem; line-height:1.6; }
@@ -96,6 +101,8 @@
   </form>
 </footer>
 <script id="screens-data" type="application/json">{{ screens|tojson }}</script>
+<script id="layout-data" type="application/json">{{ (layout or None)|tojson }}</script>
+<script src="/static/js/slides.js?v=1"></script>
 <script>
 (function () {
   var screens = JSON.parse(document.getElementById("screens-data").textContent);
@@ -103,12 +110,32 @@
   var revealed = false;
   var LABELS = {retrieval_starter: "Do now", retrieval_plenary: "Plenary", objectives_review: "Confidence check",
                 objectives: "Objectives", real_life_example: "Real-life example", activity: "Activity", practical: "Practical",
-                exam_question: "Exam practice", content: "", title: ""};
+                exam_question: "Exam practice", content: "", content_question: "Think first", title: ""};
   function el(tag, text, cls) { var e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; }
+
+  var LAYOUT = JSON.parse(document.getElementById("layout-data").textContent);
+  var MEDIA = function (ref) { return "/lesson-decks/{{ session.lesson_deck_id or 0 }}/pptx-media/" + ref; };
+  function drawRealSlide(stage, index) {
+    // the deck's REAL PowerPoint slide - exactly what the lecturer downloads
+    stage.className = "stage real"; stage.innerHTML = "";
+    var viewport = el("div", null, "slide-viewport"), canvas = el("div", null, "slide-stage");
+    viewport.appendChild(canvas); stage.appendChild(viewport);
+    CourseCraftSlides.drawSlide(canvas, LAYOUT.slides[index], MEDIA);
+    CourseCraftSlides.fitStage(canvas, LAYOUT.width, LAYOUT.height);
+  }
+  window.addEventListener("resize", function () { if (LAYOUT) drawStage(); });
 
   function drawStage() {
     var s = screens[current] || {title: "", body: [], questions: []};
-    var stage = document.getElementById("stage"); stage.innerHTML = "";
+    var stage = document.getElementById("stage");
+    if (LAYOUT && s.slide != null && LAYOUT.slides[s.slide]) {
+      drawRealSlide(stage, s.slide);
+      document.getElementById("counter").textContent = (current + 1) + " / " + screens.length;
+      document.getElementById("prev").disabled = current === 0;
+      document.getElementById("next").disabled = current >= screens.length - 1;
+      return;
+    }
+    stage.className = "stage"; stage.innerHTML = "";
     if (LABELS[s.kind]) stage.appendChild(el("div", LABELS[s.kind], "label"));
     stage.appendChild(el("h1", s.title || ""));
     if (s.body && s.body.length) { var ul = el("ul"); s.body.forEach(function (b) { ul.appendChild(el("li", b)); }); stage.appendChild(ul); }
