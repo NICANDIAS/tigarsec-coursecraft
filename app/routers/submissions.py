@@ -24,6 +24,8 @@ from ..similarity_check import find_similar_pairs, find_matches_for_one
 from ..section_grading import compute_grading_results
 from ..rubric_fill import fill_original_rubric_docx
 
+from ..marking_insights import next_steps_text  # Stage 10
+
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
@@ -1132,6 +1134,16 @@ def build_feedback_summary(submission, marks) -> str:
     return "\n".join(lines).strip()
 
 
+def submission_next_steps(submission, marks) -> dict:
+    """Stage 10: the criteria this student still needs for the next grade up, in the spec's words."""
+    from ..marking_insights import unit_criteria, next_steps
+    spec = (submission.spec_version.structured_json or {}) if submission and submission.spec_version else {}
+    unit = next((u for u in spec.get("units", []) if u.get("name") == submission.target_unit_name), None)
+    if not unit:
+        return {"target": None, "steps": []}
+    return next_steps([{"criterion_ref": m.criterion_ref, "final_mark": m.final_mark or m.ai_mark} for m in marks], unit_criteria(unit))
+
+
 def compute_criterion_correction_history(db: Session, course_id: int, criterion_refs: list[str]) -> dict:
     """
     Standing fix (correct-then-approve feedback loop): surfaces, per criterion_ref, how often
@@ -1227,7 +1239,11 @@ def review_submission(
                 "is_pdf": f.original_filename.lower().endswith(".pdf"),
             })
 
+    # Stage 10: what this student needs to do next (the criteria still missing for the next grade)
+    plan = submission_next_steps(submission, marks) if marks else {"target": None, "steps": []}
     feedback_summary = build_feedback_summary(submission, marks) if marks else None
+    if feedback_summary and plan["steps"]:
+        feedback_summary = f"{feedback_summary}\n\n{next_steps_text(plan)}"
 
     correction_history = {}
     if submission and marks and submission.status != "released":
@@ -1239,7 +1255,7 @@ def review_submission(
     return templates.TemplateResponse(
         "submission_review.html",
         {"request": request, "teacher": teacher, "submission": submission, "marks": marks,
-         "file_views": file_views, "feedback_summary": feedback_summary,
+         "file_views": file_views, "feedback_summary": feedback_summary, "next_steps": plan,
          "correction_history": correction_history, "reason_codes": CORRECTION_REASON_CODES},
     )
 

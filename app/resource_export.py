@@ -22,11 +22,34 @@ def extract_resources(outline_json: dict) -> list[dict]:
     return resources
 
 
+def differentiated_activities(outline_json: dict) -> list[dict]:
+    """Stage 10: activities that have support/stretch versions, in slide order."""
+    out = []
+    for slide in (outline_json or {}).get("slides", []):
+        versions = slide.get("differentiation")
+        if slide.get("type") in ("activity", "practical") and versions:
+            out.append({"title": slide.get("title", "Activity"), "core": slide.get("instructions"), **versions})
+    return out
+
+
+def worksheet_count(outline_json: dict) -> int:
+    return len(extract_resources(outline_json or {})) + len(differentiated_activities(outline_json))
+
+
+def _steps(doc, steps):
+    if isinstance(steps, str):
+        steps = [steps]
+    for n, step in enumerate(steps or [], start=1):
+        doc.add_paragraph(f"{n}. {step}")
+
+
 def render_resources_docx(outline_json: dict, lesson_title: str, output_path: str) -> int:
     """Returns the number of resources written, so the caller can decide whether there's
-    anything worth offering as a download at all."""
+    anything worth offering as a download at all. Stage 10: also writes each activity's
+    Support / Core / Stretch worksheets, when the deck has them."""
     resources = extract_resources(outline_json)
-    if not resources:
+    differentiated = differentiated_activities(outline_json)
+    if not resources and not differentiated:
         return 0
 
     doc = Document()
@@ -46,5 +69,26 @@ def render_resources_docx(outline_json: dict, lesson_title: str, output_path: st
         for line in res["content"].split("\n"):
             doc.add_paragraph(line)
 
+    for act in differentiated:
+        for label, version in (("Support", act.get("support")), ("Core", {"steps": act.get("core")}), ("Stretch", act.get("stretch"))):
+            if not version or not version.get("steps"):
+                continue
+            if resources or act is not differentiated[0] or label != "Support":
+                doc.add_page_break()
+            doc.add_heading(f"{act['title']} - {label}", level=2)
+            note = doc.add_paragraph()
+            note.add_run({"Support": "Step-by-step version with help to get started.",
+                          "Core": "The task as set on the slide.",
+                          "Stretch": "Extension - for when you have finished, or are aiming higher."}[label]).italic = True
+            doc.add_paragraph("Name: ____________________________")
+            _steps(doc, version.get("steps"))
+            if label == "Support" and version.get("scaffolds"):
+                doc.add_heading("Help", level=3)
+                for s in version["scaffolds"]:
+                    doc.add_paragraph(s, style="List Bullet")
+            if label == "Stretch" and version.get("challenge"):
+                doc.add_heading("Challenge", level=3)
+                doc.add_paragraph(version["challenge"])
+
     doc.save(output_path)
-    return len(resources)
+    return len(resources) + len(differentiated)

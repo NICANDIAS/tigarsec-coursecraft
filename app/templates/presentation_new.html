@@ -89,21 +89,26 @@
     {% if recent_gaps %}
       <fieldset class="card" style="margin:14px 0;border-left:4px solid var(--warning);">
         <legend style="font-weight:700;padding:0 6px;">Revisit what the class found hard</legend>
-        <p class="muted" style="margin-top:0;">From your recent live lessons and quizzes. Ticked points go into this lesson's starter
+        <p class="muted" style="margin-top:0;">From your recent live lessons, quizzes and marked work. Ticked points go into this lesson's starter
         questions and a short "Revisit" slide before the new content. Only the questions and percentages are used - never students' names.</p>
         {% for entry in recent_gaps %}
-          <div style="margin:10px 0 4px;font-weight:600;">{{ entry.session.title }}
-            <span class="muted" style="font-weight:400;">· {{ entry.session.created_at.strftime("%d %b") if entry.session.created_at else "" }}</span></div>
+          <div style="margin:10px 0 4px;font-weight:600;">{{ entry.title }}
+            {% if entry.when %}<span class="muted" style="font-weight:400;">· {{ entry.when.strftime("%d %b") }}</span>{% endif %}</div>
           {% for g in entry.gaps %}
             <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:4px 0;">
-              <input type="checkbox" name="revisit" value="{{ entry.session.id }}:{{ g.key }}" style="width:auto;margin-top:4px;"
-                     {% if entry.session.id == revisit_ticked %}checked{% endif %}>
+              <input type="checkbox" name="revisit" value="{{ entry.id }}:{{ g.key }}" style="width:auto;margin-top:4px;"
+                     {% if entry.id == revisit_ticked %}checked{% endif %}>
               <span>{{ g.line }}</span>
             </label>
           {% endfor %}
         {% endfor %}
       </fieldset>
     {% endif %}
+
+    <label style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" name="differentiate" value="yes" checked style="width:auto;margin:0;">
+      Also make <strong>support</strong> and <strong>stretch</strong> versions of every activity (printable, and on students' phones in live lessons)
+    </label>
 
     <label style="display:flex;align-items:center;gap:8px;">
       <input type="checkbox" name="include_practicals" value="yes" checked style="width:auto;margin:0;">

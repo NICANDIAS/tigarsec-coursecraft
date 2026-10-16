@@ -1071,6 +1071,26 @@ class QuizSet(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class MarkingInsight(Base):
+    """
+    Stage 10: the AI's summary of the COMMON problems behind the criteria a class found hard in
+    one unit's marked work (from the markers' comments, with names removed), plus a re-teaching
+    tip per criterion. The counts themselves are always worked out fresh from the marks - only
+    this summary is stored, so it can be shown without asking the AI again.
+    """
+    __tablename__ = "marking_insights"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    unit_name = Column(String(500), nullable=False)
+    status = Column(String(50), default="generating", nullable=False)  # generating | ready | failed
+    insight_json = Column(JSON, nullable=True)       # {criterion code: {"common_problems": [...], "reteach_tip": str}}
+    based_on_count = Column(Integer, nullable=True)  # how many students' marked work it was based on
+    error_detail = Column(Text, nullable=True)
+    generated_by_provider = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 class LiveSession(Base):
     """
     Stage 6 (B): a live, interactive lesson - the lecturer presents a lesson deck (or a

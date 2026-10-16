@@ -12,11 +12,13 @@ from ..models import Teacher, Course, LessonDeck, LessonImage, SchemeOfWork, Res
 from ..course_access import get_course_for_teacher
 from ..auth import get_current_teacher
 from ..pptx_generator import generate_lesson_outline, render_lesson_pptx, test_unsplash_connection, resolve_slide_image, pick_palette
-from ..resource_export import render_resources_docx, extract_resources
-from ..llm_gateway import get_effective_provider
+from ..resource_export import render_resources_docx, extract_resources, worksheet_count
+from ..llm_gateway import get_effective_provider, complete_json
 from ..spec_context import spec_teaching_context, criterion_extra
 from ..pptx_html import read_slides, picture_bytes
 from ..class_feedback import learning_gaps, describe, with_revisit
+from ..differentiation import DIFF_SYSTEM_PROMPT, build_prompt as diff_prompt, clean_differentiation, apply as apply_differentiation, \
+    activity_slides, has_differentiation
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -154,15 +156,17 @@ def new_presentation_page(
             }
 
     # Stage 9: what the class found hard in recent live lessons/quizzes, to revisit in this deck
-    recent = recent_class_gaps(db, course.id, teacher) if course else []
-    revisit_session = request.query_params.get("revisit")
-    if revisit_session and revisit_session.isdigit() and prefill is None:
-        chosen = next((r for r in recent if r["session"].id == int(revisit_session)), None)
-        if chosen:
-            prefill = {"title": "", "unit_index": None, "lo_indices": [], "criteria_selected": {},
-                       "previous_context": f"Previous lesson: {chosen['session'].title.removeprefix('Quiz: ')}.",
-                       "from_results": True}
-    ticked = int(revisit_session) if revisit_session and revisit_session.isdigit() else (recent[0]["session"].id if recent else None)
+    # (and - Stage 10 - in its marked assignments)
+    recent = revisit_groups(db, course, teacher) if course else []
+    revisit_session = request.query_params.get("revisit") or ""
+    revisit_unit = request.query_params.get("revisit_unit") or ""
+    wanted = revisit_session if revisit_session.isdigit() else f"unit{revisit_unit}" if revisit_unit.isdigit() else None
+    chosen = next((g for g in recent if g["id"] == wanted), None)
+    if chosen and prefill is None and chosen.get("session"):
+        prefill = {"title": "", "unit_index": None, "lo_indices": [], "criteria_selected": {},
+                   "previous_context": f"Previous lesson: {chosen['session'].title.removeprefix('Quiz: ')}.",
+                   "from_results": True}
+    ticked = chosen["id"] if chosen else (recent[0]["id"] if recent else None)
     return templates.TemplateResponse(
         "presentation_new.html",
         {"request": request, "teacher": teacher, "course": course, "units": units,
@@ -180,6 +184,23 @@ def session_gaps(db, session):
     for g in gaps:
         g["line"] = describe(g)
     return gaps
+
+
+def revisit_groups(db, course, teacher):
+    """Everything the class found hard that a new lesson can revisit, as groups of tickable gaps:
+    the lecturer's recent live lessons/quizzes, then each unit's marked work (Stage 10).
+    [{"id", "title", "when", "session" (or None), "gaps": [{... "key", "line"}]}]"""
+    from .marking_report import units_with_marking, unit_gaps
+    groups = [{"id": str(e["session"].id), "title": e["session"].title, "when": e["session"].created_at,
+               "session": e["session"], "gaps": e["gaps"]} for e in recent_class_gaps(db, course.id, teacher)]
+    for index, name, count in units_with_marking(db, course):
+        gaps = unit_gaps(db, course, index)
+        for g in gaps:
+            g["line"] = describe(g)
+        if gaps:
+            groups.append({"id": f"unit{index}", "title": f"Marked work: {name} ({count} students)", "when": None,
+                           "session": None, "gaps": gaps})
+    return groups
 
 
 def recent_class_gaps(db, course_id, teacher, limit=5):
@@ -286,8 +307,8 @@ async def generate_presentation(
     picked = set(form.getlist("revisit"))
     if picked:
         chosen_gaps = []
-        for entry in recent_class_gaps(db, course.id, teacher):
-            chosen_gaps += [g for g in entry["gaps"] if f"{entry['session'].id}:{g['key']}" in picked]
+        for group in revisit_groups(db, course, teacher):
+            chosen_gaps += [g for g in group["gaps"] if f"{group['id']}:{g['key']}" in picked]
         previous_lesson_context = with_revisit(previous_lesson_context, chosen_gaps)
 
     units = course.spec_version.structured_json.get("units", [])
@@ -351,7 +372,8 @@ async def generate_presentation(
     content_text = _deck_content_text(course.spec_version.structured_json if course.spec_version else {}, unit,
                                       selected_lo_indices, selected_criteria_by_lo)
     background_tasks.add_task(
-        _run_generation_job, deck.id, content_text, duration_minutes, previous_lesson_context, bool(include_practicals)
+        _run_generation_job, deck.id, content_text, duration_minutes, previous_lesson_context, bool(include_practicals),
+        bool(form.get("differentiate"))
     )
 
     return RedirectResponse(url=f"/lesson-decks/{deck.id}", status_code=303)
@@ -393,19 +415,22 @@ def regenerate_deck(
     stored_criteria_by_lo = {int(k): v for k, v in (deck.selected_criteria_by_lo or {}).items()}
     content_text = _deck_content_text(course.spec_version.structured_json, unit, deck.selected_lo_indices or [], stored_criteria_by_lo)
 
+    # a deck that had support/stretch versions gets them again
+    had_versions = has_differentiation(deck.outline_json or {}) or bool((deck.outline_json or {}).get("differentiation_status"))
     deck.status = "generating"
     deck.error_detail = None
     db.commit()
 
     background_tasks.add_task(
         _run_generation_job, deck.id, content_text, deck.duration_minutes,
-        deck.previous_lesson_context or "", bool(deck.include_practicals),
+        deck.previous_lesson_context or "", bool(deck.include_practicals), had_versions,
     )
 
     return RedirectResponse(url=f"/lesson-decks/{deck_id}", status_code=303)
 
 
-def _run_generation_job(deck_id: int, content_text: str, duration_minutes: int, previous_lesson_context: str, include_practicals: bool):
+def _run_generation_job(deck_id: int, content_text: str, duration_minutes: int, previous_lesson_context: str, include_practicals: bool,
+                        differentiate: bool = False):
     db = SessionLocal()
     try:
         deck = db.get(LessonDeck, deck_id)
@@ -413,6 +438,8 @@ def _run_generation_job(deck_id: int, content_text: str, duration_minutes: int, 
             return
         try:
             outline = generate_lesson_outline(content_text, duration_minutes, previous_lesson_context, include_practicals)
+            if differentiate and activity_slides(outline):
+                outline["differentiation_status"] = "working"  # Stage 10: written straight after, below
             deck.generated_by_provider = get_effective_provider(for_draft_generation=True)
 
             # Resolve images and the colour palette ONCE, here, and store both in
@@ -447,8 +474,52 @@ def _run_generation_job(deck_id: int, content_text: str, duration_minutes: int, 
             deck.status = "failed"
             deck.error_detail = str(e)
         db.commit()
+        if deck.status == "ready" and (deck.outline_json or {}).get("differentiation_status") == "working":
+            _differentiate(db, deck)  # the deck is already usable; support/stretch arrive a minute later
     finally:
         db.close()
+
+
+def _differentiate(db, deck):
+    """Stage 10: writes support and stretch versions of every activity/practical. Never breaks the
+    deck - if the AI fails, the deck stays as it was and the page offers to try again."""
+    outline = deck.outline_json or {}
+    try:
+        result = complete_json(system=DIFF_SYSTEM_PROMPT, prompt=diff_prompt(outline), max_tokens=3500, for_draft_generation=True)
+        versions = clean_differentiation(result, outline)
+        if not versions:
+            raise RuntimeError("The AI did not return usable support/stretch versions.")
+        updated = apply_differentiation(outline, versions)
+        updated["differentiation_status"] = "ready"
+        updated.pop("differentiation_error", None)
+    except Exception as e:
+        updated = {**outline, "differentiation_status": "failed", "differentiation_error": str(e)[:500]}
+    deck.outline_json = updated
+    db.commit()
+
+
+def _run_differentiation_job(deck_id: int):
+    db = SessionLocal()
+    try:
+        deck = db.get(LessonDeck, deck_id)
+        if deck and deck.outline_json:
+            _differentiate(db, deck)
+    finally:
+        db.close()
+
+
+@router.post("/lesson-decks/{deck_id}/differentiate")
+def differentiate_deck(deck_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+                       teacher: Teacher = Depends(get_current_teacher)):
+    """Make (or remake) the support and stretch versions of this lesson's activities."""
+    deck = db.get(LessonDeck, deck_id)
+    if not deck or not deck.outline_json or not get_course_for_teacher(db, deck.course_id, teacher):
+        return RedirectResponse(url="/", status_code=303)
+    if activity_slides(deck.outline_json) and deck.outline_json.get("differentiation_status") != "working":
+        deck.outline_json = {**deck.outline_json, "differentiation_status": "working"}
+        db.commit()
+        background_tasks.add_task(_run_differentiation_job, deck.id)
+    return RedirectResponse(url=f"/lesson-decks/{deck.id}", status_code=303)
 
 
 def _can_access_deck(deck: LessonDeck, teacher: Teacher, db: Session) -> bool:
@@ -505,7 +576,7 @@ def view_deck(
     deck = db.get(LessonDeck, deck_id)
     if not _can_access_deck(deck, teacher, db):
         return RedirectResponse(url="/", status_code=303)
-    resource_count = len(extract_resources(deck.outline_json)) if deck and deck.outline_json else 0
+    resource_count = worksheet_count(deck.outline_json) if deck and deck.outline_json else 0  # Stage 10: + support/stretch sheets
     shares = db.query(ResourceShare).filter(ResourceShare.lesson_deck_id == deck_id).all() if deck.teacher_id == teacher.id else []
     is_owner = deck.teacher_id == teacher.id
     # Stage 8: quizzes made from this lesson (only for lecturers on the course - not a cover share)

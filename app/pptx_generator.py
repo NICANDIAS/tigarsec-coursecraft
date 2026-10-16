@@ -96,9 +96,11 @@ follow-up would need. The lecturer must be told clearly, never left to discover 
 
 If it DOES fit: set "fits_in_requested_time" to true and leave "scope_note" as an empty string.
 
-REVISITING WHAT THE CLASS FOUND HARD - if the previous lesson context contains "RESULTS FROM LAST \
-LESSON'S LIVE CHECKS", those are real, anonymous results from the class's quiz and confidence poll, \
-and the class did NOT secure those points. Then: (a) the retrieval_starter questions must target \
+REVISITING WHAT THE CLASS FOUND HARD - if the previous lesson context contains "RESULTS FROM THE \
+CLASS'S RECENT CHECKS AND MARKED WORK" (or "RESULTS FROM LAST LESSON'S LIVE CHECKS"), those are real, \
+anonymous results from the class's quizzes, confidence polls and marked assignments, and the class \
+did NOT secure those points. For an assignment criterion, revisit the underlying knowledge or skill \
+and the common problems listed - never write the assignment answer for them. Then: (a) the retrieval_starter questions must target \
 exactly those points (reworded - not the same question again); (b) straight after the objectives \
 slide, add ONE content slide (two at most, only if the gaps are on unrelated topics) titled \
 "Revisit: <short topic>", whose guiding_question probes the misunderstanding and whose key_points \

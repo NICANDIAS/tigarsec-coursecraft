@@ -146,8 +146,9 @@ def _delete_live_and_practice(db, course_id: int):
         db.query(LiveParticipant).filter(LiveParticipant.session_id.in_(session_ids)).delete(synchronize_session=False)
         db.query(LiveSession).filter(LiveSession.id.in_(session_ids)).delete(synchronize_session=False)
     db.query(PracticeSet).filter(PracticeSet.course_id == course_id).delete(synchronize_session=False)
-    from ..models import QuizSet  # Stage 8
+    from ..models import QuizSet, MarkingInsight  # Stage 8, Stage 10
     db.query(QuizSet).filter(QuizSet.course_id == course_id).delete(synchronize_session=False)
+    db.query(MarkingInsight).filter(MarkingInsight.course_id == course_id).delete(synchronize_session=False)
 
 
 @router.post("/courses/{course_id}/delete")

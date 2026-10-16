@@ -56,6 +56,12 @@ def learning_gaps(screens: list, responses: list) -> list:
 
 def describe(gap: dict) -> str:
     """One plain-English line (shown to the lecturer, and given to the AI)."""
+    if gap["kind"] == "marking":  # Stage 10: from marked assignments (see marking_insights.py)
+        line = (f'Assignment criterion "{gap["text"]}" ({gap.get("unit", "")}) - only {gap["met"]} of {gap["answered"]} '
+                f'students fully met it in their marked work.')
+        if gap.get("problems"):
+            line += " Common problems: " + "; ".join(gap["problems"]) + "."
+        return line
     if gap["kind"] == "quiz":
         line = (f'Quiz question "{gap["text"]}" - only {gap["percent"]}% answered correctly ({gap["answered"]} answers). '
                 f'Right answer: "{gap["right"]}".')
@@ -66,7 +72,9 @@ def describe(gap: dict) -> str:
             f'({gap["answered"]} answers).')
 
 
-HEADER = "RESULTS FROM LAST LESSON'S LIVE CHECKS (anonymous class results - the class found these hard, revisit them):"
+HEADER = ("RESULTS FROM THE CLASS'S RECENT CHECKS AND MARKED WORK (anonymous class results - the class found these hard, "
+          "revisit them):")
+OLD_HEADERS = ("RESULTS FROM LAST LESSON'S LIVE CHECKS",)  # decks made before Stage 10 carry this one
 
 
 def prompt_block(gaps: list) -> str:
@@ -77,6 +85,9 @@ def prompt_block(gaps: list) -> str:
 
 def with_revisit(previous_context: str, gaps: list) -> str:
     """The lecturer's own "last lesson" text plus the results block (any older block is replaced)."""
-    text = (previous_context or "").split(HEADER)[0].rstrip()
+    text = previous_context or ""
+    for header in (HEADER,) + OLD_HEADERS:
+        text = text.split(header)[0]
+    text = text.rstrip()
     block = prompt_block(gaps)
     return f"{text}\n\n{block}".strip() if block else text

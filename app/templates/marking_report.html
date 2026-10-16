@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Class marking report - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+{% if insight and insight.status == "generating" %}<meta http-equiv="refresh" content="5">{% endif %}
+<style>
+  .mr-bar { display:flex; height:22px; border-radius:6px; overflow:hidden; background:var(--border); min-width:160px; }
+  .mr-bar span { display:block; height:100%; }
+  .mr-met { background:var(--success); } .mr-partly { background:var(--warning); } .mr-not { background:var(--danger); }
+  .mr-row { display:grid; grid-template-columns: minmax(220px,2fr) minmax(170px,1fr) 70px; gap:14px; align-items:center;
+            padding:10px 0; border-bottom:1px solid var(--border); }
+  .mr-row.gap { background:color-mix(in srgb, var(--danger) 6%, transparent); border-radius:6px; padding:10px 8px; }
+  .mr-code { font-weight:700; }
+  .mr-key { display:flex; gap:14px; font-size:0.85rem; color:var(--text-muted); margin-bottom:6px; flex-wrap:wrap; }
+  .mr-key i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
+  .mr-problem { margin:6px 0 0 0; }
+  .mr-names { font-size:0.85rem; color:var(--text-muted); }
+  .mr-plan td { vertical-align:top; padding:8px 6px; border-bottom:1px solid var(--border); }
+  @media (max-width: 720px) { .mr-row { grid-template-columns: 1fr; } }
+</style>
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>Class marking report</h1>
+<p class="muted">What the class's marked work says they have secured - and what to re-teach. Counts come straight from the
+marks (approved and still-to-review); nothing is sent anywhere unless you ask for the AI summary below.</p>
+{% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
+
+{% if not available %}
+  <div class="card"><p style="margin:0;">No marked work on this course yet. Once submissions are marked, this report shows
+  which criteria the class found hard and every student's next steps.</p></div>
+{% else %}
+  {% if available|length > 1 %}
+    <form method="get" class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <label for="unit" style="margin:0;">Unit</label>
+      <select id="unit" name="unit" style="width:auto;" onchange="this.form.submit()">
+        {% for i, name, n in available %}<option value="{{ i }}" {% if i == unit_index %}selected{% endif %}>{{ name }} ({{ n }} marked)</option>{% endfor %}
+      </select>
+      <noscript><button class="btn btn-secondary" type="submit">Show</button></noscript>
+    </form>
+  {% endif %}
+
+  {% if unit %}
+    <h2 style="margin-bottom:4px;">{{ unit.name }}</h2>
+    <p class="muted" style="margin-top:0;">{{ students|length }} student{{ "s" if students|length != 1 }} with marked work
+      {% if unmatched %} · {{ unmatched }} mark(s) couldn't be matched to this unit's criteria and are not counted{% endif %}</p>
+
+    {% if gaps %}
+      <div class="card" style="border-left:4px solid var(--warning);">
+        <h2 style="margin-top:0;">The class found {{ gaps|length }} criteri{{ "a" if gaps|length != 1 else "on" }} hard</h2>
+        <p class="muted" style="margin-top:0;">Fewer than 60% of the class fully met {{ "these" if gaps|length != 1 else "this" }}.</p>
+        {% set summary = insight.insight_json if insight and insight.status == "ready" else {} %}
+        {% for r in gaps %}
+          <div style="margin:12px 0;">
+            <strong>{{ r.code }}</strong> {{ r.description }}
+            <div class="mr-names">Still to secure: {{ r.not_yet|join(", ") }}</div>
+            {% if summary.get(r.code) %}
+              <ul class="mr-problem">{% for p in summary[r.code].common_problems %}<li>{{ p }}</li>{% endfor %}</ul>
+              {% if summary[r.code].reteach_tip %}<p style="margin:6px 0 0;"><em>Re-teach idea:</em> {{ summary[r.code].reteach_tip }}</p>{% endif %}
+            {% endif %}
+          </div>
+        {% endfor %}
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+          <a class="btn" href="/courses/{{ course.id }}/presentations/new?revisit_unit={{ unit_index }}">Make the next lesson's PowerPoint - re-teaching these</a>
+          {% if insight and insight.status == "generating" %}
+            <span class="muted" role="status">Summarising the common problems from the markers' comments… (this page refreshes)</span>
+          {% else %}
+            <form method="post" action="/courses/{{ course.id }}/marking-report/insight" style="margin:0;">
+              <input type="hidden" name="unit" value="{{ unit_index }}">
+              <button class="btn btn-secondary" type="submit">{{ "Summarise the common problems again" if insight and insight.status == "ready" else "Summarise the common problems (AI)" }}</button>
+            </form>
+          {% endif %}
+        </div>
+        {% if insight and insight.status == "failed" %}<p class="error-box" style="margin-top:10px;">{{ insight.error_detail }}</p>{% endif %}
+        {% if insight and insight.status == "ready" %}
+          <p class="muted" style="margin-bottom:0;">Summary from {{ insight.based_on_count }} students' marked work, {{ insight.created_at.strftime("%d %b %H:%M") }}
+          ({{ insight.generated_by_provider or "AI" }}). Only the markers' comments are used, with every student's name removed first.</p>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="card"><p style="margin:0;">No criterion stands out as a class-wide gap (every criterion marked for 3 or more
+      students was fully met by at least 60%).</p></div>
+    {% endif %}
+
+    <div class="card">
+      <h2 style="margin-top:0;">Every criterion</h2>
+      <div class="mr-key"><span><i class="mr-met"></i>Met</span><span><i class="mr-partly"></i>Partly met</span><span><i class="mr-not"></i>Not met</span></div>
+      {% for r in rows %}
+        {% set judged = r.met + r.partly + r.not_met %}
+        <div class="mr-row {% if r.gap %}gap{% endif %}">
+          <div><span class="mr-code">{{ r.code }}</span> {{ r.description }}</div>
+          <div class="mr-bar" role="img" aria-label="{{ r.met }} met, {{ r.partly }} partly met, {{ r.not_met }} not met">
+            {% if judged %}
+              <span class="mr-met" style="width:{{ 100 * r.met / judged }}%"></span>
+              <span class="mr-partly" style="width:{{ 100 * r.partly / judged }}%"></span>
+              <span class="mr-not" style="width:{{ 100 * r.not_met / judged }}%"></span>
+            {% endif %}
+          </div>
+          <div><strong>{{ r.met_pct if r.met_pct is not none else "–" }}{% if r.met_pct is not none %}%{% endif %}</strong>
+            <span class="muted" style="font-size:0.8rem;display:block;">{{ r.met }}/{{ judged }} met{% if r.unclear %} · {{ r.unclear }} other{% endif %}</span></div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;">Next steps for each student</h2>
+      <p class="muted" style="margin-top:0;">For Pass/Merit/Distinction specs: the criteria still missing for the next grade up. These are
+      also added to each student's "Copy for Teams" feedback.</p>
+      <table class="mr-plan" style="width:100%;border-collapse:collapse;">
+        <tr><th style="text-align:left;width:200px;">Student</th><th style="text-align:left;width:120px;">Grade now</th><th style="text-align:left;">Next steps</th></tr>
+        {% for p in plans %}
+          <tr>
+            <td><a href="/submissions/{{ p.student.submission_id }}/review">{{ p.student.name }}</a></td>
+            <td>{{ p.student.grade or "–" }}</td>
+            <td>{% if p.plan.steps %}{% if p.plan.target %}<strong>To reach {{ p.plan.target }}:</strong>{% endif %}
+                  <ul style="margin:4px 0 0;">{% for s in p.plan.steps %}<li><strong>{{ s.code }}</strong> {{ s.description }} <span class="muted">({{ s.status }})</span></li>{% endfor %}</ul>
+                {% else %}<span class="muted">Every marked criterion met.</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

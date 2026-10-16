@@ -28,6 +28,10 @@
   .shared { margin-top:10px; padding-top:10px; border-top:1px dashed #d5d9e2; }
   .shared .a { background:#f3f5f9; border-radius:8px; padding:6px 10px; margin:4px 0; font-size:0.92rem; }
   .wait { text-align:center; color:#5b5b63; padding:30px 10px; }
+  details.version summary { font-weight:700; cursor:pointer; padding:4px 0; }
+  details.version.support { border-left:4px solid #1b8a4b; }
+  details.version.stretch { border-left:4px solid #2f6fed; }
+  details.version .vlabel { font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; color:#5b5b63; margin-top:8px; }
   /* Stage 8: live quiz */
   .qz-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; color:#5b5b63; font-weight:600; }
   .qz-clock { background:#0f2744; color:#fff; border-radius:20px; padding:4px 12px; font-weight:800; min-width:48px; text-align:center; }
@@ -161,6 +165,20 @@
     card.appendChild(el("h1", s.title || "Look at the front"));
     if (s.body && s.body.length) { var ul = el("ul"); s.body.forEach(function (b) { ul.appendChild(el("li", b)); }); card.appendChild(ul); }
     main.appendChild(card);
+    // Stage 10: support / stretch versions of an activity - each student opens them privately
+    [["support", "Need help getting started?", "Support version"], ["stretch", "Finished? Try the challenge", "Stretch version"]].forEach(function (v) {
+      var version = s[v[0]];
+      if (!version) return;
+      var box = el("details", null, "card version " + v[0]), sum = el("summary", v[1]);
+      box.appendChild(sum); box.appendChild(el("div", v[2], "vlabel"));
+      var ol = el("ol"); version.steps.forEach(function (st) { ol.appendChild(el("li", st)); }); box.appendChild(ol);
+      if (version.help && version.help.length) {
+        box.appendChild(el("div", "Help:", "vlabel"));
+        var hl = el("ul"); version.help.forEach(function (h) { hl.appendChild(el("li", h)); }); box.appendChild(hl);
+      }
+      if (version.challenge) box.appendChild(el("p", "Challenge: " + version.challenge));
+      main.appendChild(box);
+    });
     (s.questions || []).forEach(function (q) {
       var box = el("div", null, "card"), status = el("div", "", "status"), mine = d.mine[q.key] || {};
       box.appendChild(el("div", q.prompt, "prompt"));
@@ -191,7 +209,7 @@
       }
       main.appendChild(box);
     });
-    if (!(s.questions || []).length) main.appendChild(el("div", "No question on this slide - listen and watch the front.", "wait"));
+    if (!(s.questions || []).length && !s.support && !s.stretch) main.appendChild(el("div", "No question on this slide - listen and watch the front.", "wait"));
   }
   function poll() {
     fetch("/live/s/" + code + "/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {

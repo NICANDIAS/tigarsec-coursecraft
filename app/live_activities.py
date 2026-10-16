@@ -57,6 +57,12 @@ def screens_from_deck(outline: dict) -> list[dict]:
                 screen["questions"] = [{"prompt": _clean(slide["discussion_question"]), "kind": "text"}]
         elif kind in ("activity", "practical"):
             screen["body"] = _list(slide.get("instructions"))
+            versions = slide.get("differentiation") or {}  # Stage 10: support / stretch, opened privately on a phone
+            if (versions.get("support") or {}).get("steps"):
+                screen["support"] = {"steps": _list(versions["support"]["steps"]), "help": _list(versions["support"].get("scaffolds"))}
+            if (versions.get("stretch") or {}).get("steps"):
+                screen["stretch"] = {"steps": _list(versions["stretch"]["steps"]),
+                                     "challenge": _clean(versions["stretch"].get("challenge"), 300)}
         elif kind == "objectives_review":
             screen["title"] = screen["title"] or "How confident are you?"
             screen["questions"] = [{"prompt": _clean(o.get("objective") or o.get("self_assess_prompt")), "kind": "confidence",

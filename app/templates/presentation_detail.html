@@ -90,10 +90,49 @@
     {% endif %}
   </div>
 
-  {% if deck.previous_lesson_context and "RESULTS FROM LAST LESSON" in deck.previous_lesson_context %}
+  {% set acts = (deck.outline_json.slides if deck.outline_json else [])|selectattr("type", "in", ["activity", "practical"])|list %}
+  {% if acts and can_quiz %}
+    {% set dstatus = deck.outline_json.get("differentiation_status") %}
+    {% if dstatus == "working" %}<meta http-equiv="refresh" content="6">{% endif %}
+    <div class="card" id="differentiation">
+      <h2 style="margin-top:0;">Support and stretch</h2>
+      {% if dstatus == "working" %}
+        <p role="status" style="margin:0;">Writing support and stretch versions of {{ acts|length }} activit{{ "ies" if acts|length != 1 else "y" }}… the lesson is ready to use meanwhile (this page refreshes).</p>
+      {% elif acts|selectattr("differentiation")|list %}
+        <p class="muted" style="margin-top:0;">Every activity comes in three versions: <strong>Support</strong> (smaller steps, sentence starters, key words),
+        <strong>Core</strong> (as on the slide) and <strong>Stretch</strong> (towards the higher grade). They are on the printable worksheets, and in a
+        live lesson each student can open them privately on their phone.</p>
+        {% for a in acts if a.differentiation %}
+          <details style="margin:8px 0;">
+            <summary><strong>{{ a.title }}</strong></summary>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:8px;">
+              {% if a.differentiation.support %}<div><p style="margin:0 0 4px;font-weight:700;color:var(--success);">Support</p>
+                <ol style="margin:0;">{% for st in a.differentiation.support.steps %}<li>{{ st }}</li>{% endfor %}</ol>
+                {% if a.differentiation.support.scaffolds %}<p class="muted" style="margin:6px 0 2px;">Help:</p><ul style="margin:0;">{% for h in a.differentiation.support.scaffolds %}<li>{{ h }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}
+              {% if a.differentiation.stretch %}<div><p style="margin:0 0 4px;font-weight:700;color:var(--accent);">Stretch</p>
+                <ol style="margin:0;">{% for st in a.differentiation.stretch.steps %}<li>{{ st }}</li>{% endfor %}</ol>
+                {% if a.differentiation.stretch.challenge %}<p style="margin:6px 0 0;"><em>Challenge:</em> {{ a.differentiation.stretch.challenge }}</p>{% endif %}</div>{% endif %}
+            </div>
+          </details>
+        {% endfor %}
+        <form method="post" action="/lesson-decks/{{ deck.id }}/differentiate" style="margin-top:10px;">
+          <button class="btn btn-secondary" type="submit">Write them again</button></form>
+      {% else %}
+        {% if dstatus == "failed" %}<p class="error-box">{{ deck.outline_json.get("differentiation_error") }}</p>{% endif %}
+        <p class="muted" style="margin-top:0;">Make a <strong>support</strong> version (smaller steps, sentence starters) and a <strong>stretch</strong>
+        version (towards the higher grade) of each of this lesson's {{ acts|length }} activit{{ "ies" if acts|length != 1 else "y" }}.</p>
+        <form method="post" action="/lesson-decks/{{ deck.id }}/differentiate" style="margin:0;">
+          <button class="btn" type="submit">Make support and stretch versions</button></form>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% set ctx = deck.previous_lesson_context or "" %}
+  {% set marker = "RESULTS FROM THE CLASS" if "RESULTS FROM THE CLASS" in ctx else "RESULTS FROM LAST LESSON" %}
+  {% if marker in ctx %}
     <div class="card" style="border-left:4px solid var(--warning);">
       <h2 style="margin-top:0;">Revisits what the class found hard</h2>
-      <ul style="margin-bottom:0;">{% for line in deck.previous_lesson_context.split("RESULTS FROM LAST LESSON")[1].splitlines()[1:] if line.startswith("- ") %}<li>{{ line[2:] }}</li>{% endfor %}</ul>
+      <ul style="margin-bottom:0;">{% for line in ctx.split(marker)[1].splitlines()[1:] if line.startswith("- ") %}<li>{{ line[2:] }}</li>{% endfor %}</ul>
     </div>
   {% endif %}
 

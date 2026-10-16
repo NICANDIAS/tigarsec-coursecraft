@@ -131,6 +131,17 @@
   </div>
 {% endif %}
 
+{% if next_steps and next_steps.steps %}
+  <div class="section-card" style="border-left:4px solid var(--accent);">
+    <div class="section-header">
+      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+      <h2>Next steps{% if next_steps.target %} to reach {{ next_steps.target }}{% endif %}</h2>
+    </div>
+    <ul style="margin:0;">{% for s in next_steps.steps %}<li><strong>{{ s.code }}</strong> {{ s.description }} <span class="muted">({{ s.status }})</span></li>{% endfor %}</ul>
+    <p class="muted" style="margin-bottom:0;">From the spec's own wording - also added to "Copy for Teams" below.</p>
+  </div>
+{% endif %}
+
 {% if submission.rubric_file_path and submission.status not in ("generating", "marking") %}
   <div class="section-card">
     <div class="section-header">

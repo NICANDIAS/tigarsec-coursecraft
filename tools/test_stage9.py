@@ -90,7 +90,8 @@ def the_results_are_added_to_the_lecturers_own_text_and_replaced_not_stacked():
 def the_lesson_writer_is_told_how_to_revisit():
     from app.pptx_generator import LESSON_OUTLINE_SYSTEM_PROMPT as prompt
     assert "RESULTS FROM LAST LESSON'S LIVE CHECKS" in prompt and '"Revisit: <short topic>"' in prompt
-    assert "why the most common wrong answer is wrong" in prompt and cf.HEADER.startswith("RESULTS FROM LAST LESSON'S LIVE CHECKS")
+    assert "why the most common wrong answer is wrong" in prompt and cf.HEADER.startswith("RESULTS FROM THE CLASS'S RECENT CHECKS")
+    assert " ".join(prompt.split()).count("RESULTS FROM THE CLASS'S RECENT CHECKS AND MARKED WORK") == 1
 
 
 if __name__ == "__main__":
