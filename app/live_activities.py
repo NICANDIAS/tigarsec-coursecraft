@@ -22,6 +22,10 @@ def _clean(value, limit=600):
 
 
 def _list(values, limit=12):
+    # A single piece of text (e.g. an activity's instructions written as one paragraph, as
+    # older decks store them) is ONE item - never split into its letters.
+    if isinstance(values, str):
+        values = [values]
     return [_clean(v) for v in (values or []) if _clean(v)][:limit]
 
 

@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 import uuid
 from fastapi import APIRouter, Request, Depends, Form, UploadFile, File, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse, FileResponse, JSONResponse, Response
@@ -571,21 +572,33 @@ def present_deck(
     # looks exactly like the download (layout, colours, fonts, images - even which side each
     # image is on). Only if the file is gone (e.g. removed by the retention policy) does it
     # fall back to the older outline-based view.
-    layout = deck_layout(deck)
+    layout, problem = read_deck_layout(deck)
     if layout:
         return templates.TemplateResponse("presentation_present_pptx.html", {"request": request, "teacher": teacher, "deck": deck, "layout": layout})
-    return templates.TemplateResponse("presentation_present.html", {"request": request, "teacher": teacher, "deck": deck})
+    return templates.TemplateResponse("presentation_present.html", {"request": request, "teacher": teacher, "deck": deck,
+                                                                    "layout_problem": problem})
+
+
+def read_deck_layout(deck):
+    """(the deck's slides read from its .pptx file, None) - or (None, a plain reason why not),
+    so the simpler view can say WHY it is being shown instead of failing silently."""
+    if not deck or not deck.pptx_path:
+        return None, "this deck has no PowerPoint file yet"
+    if not os.path.exists(deck.pptx_path):
+        return None, "the PowerPoint file is no longer on the server"
+    try:
+        layout = read_slides(deck.pptx_path)
+    except Exception as e:  # noqa: BLE001 - any unreadable file falls back, but is reported
+        logging.getLogger("coursecraft.present").exception("Could not read %s", deck.pptx_path)
+        return None, f"the PowerPoint file could not be read ({type(e).__name__}: {str(e)[:150]})"
+    if not layout["slides"]:
+        return None, "the PowerPoint file has no slides"
+    return layout, None
 
 
 def deck_layout(deck):
     """The deck's slides read from its .pptx file, or None if there is no readable file."""
-    if not deck or not deck.pptx_path or not os.path.exists(deck.pptx_path):
-        return None
-    try:
-        layout = read_slides(deck.pptx_path)
-    except Exception:
-        return None
-    return layout if layout["slides"] else None
+    return read_deck_layout(deck)[0]
 
 
 @router.get("/lesson-decks/{deck_id}/pptx-media/{slide_index}/{shape_index}")

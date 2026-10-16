@@ -6,7 +6,7 @@ lessons line up with its slides.
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_stage7.py
-Expected last line: "ALL 8 TESTS PASSED"
+Expected last line: "ALL 9 TESTS PASSED"
 """
 import os
 import random
@@ -169,6 +169,20 @@ def a_shape_added_by_hand_in_powerpoint_is_still_drawn():
     prs.save(edited)
     added = ph.read_slides(edited)["slides"][1]["elements"][-1]
     assert added["kind"] == "shape" and added["geometry"] == "rect" and added["text"]["paragraphs"][0]["runs"][0]["text"] == "Well done"
+
+
+@test
+def instructions_written_as_one_paragraph_stay_one_paragraph_live():
+    # Older decks store an activity's instructions as ONE piece of text, not a list. The live
+    # screen showed it one LETTER per bullet ("I", "n", " p"...) - it must be one item.
+    para = "In pairs, review the sample log extract (handout). Identify which entries look anomalous."
+    outline = {"lesson_title": "Logs", "slides": [
+        {"type": "activity", "title": "Spot the Anomaly", "instructions": para, "grouping": "pairs", "time_minutes": 20,
+         "resource": {"title": "Log extract", "content": "..."}}]}
+    screens = la.screens_from_deck(outline)
+    assert screens[0]["body"] == [para]
+    outline, path = build(outline, seed=7)
+    assert la.attach_pptx_slides(screens, outline, len(ph.read_slides(path)["slides"])) is True
 
 
 if __name__ == "__main__":

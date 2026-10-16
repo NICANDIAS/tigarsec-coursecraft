@@ -64,6 +64,7 @@
 <body>
 
 <a href="/lesson-decks/{{ deck.id }}" class="exit-link">&times; Exit present mode</a>
+{% if layout_problem %}<div style="position:fixed;top:16px;left:20px;right:200px;color:#8a6d00;font-size:0.8rem;z-index:10;">Simple view - {{ layout_problem }}. Download the PowerPoint or regenerate the deck to present the full design.</div>{% endif %}
 
 <div id="slides">
   {% for slide in deck.outline_json.slides %}

@@ -5,7 +5,7 @@ THROWAWAY database in /tmp. Your real database is not opened. No AI. No PDFs nee
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/selftest_stage7_db.py
-Expected last line: "ALL STAGE 7 CHECKS PASSED (13)"
+Expected last line: "ALL STAGE 7 CHECKS PASSED (14)"
 """
 import json
 import os
@@ -130,6 +130,7 @@ os.rename(pptx_path, pptx_path + ".gone")
 html = pres.present_deck(deck.id, request("/p"), db, lecturer).body.decode()
 check("if the PowerPoint file has been removed, present mode still works (older view)",
       deck_data(html, "deck-data") is None and "Exit present mode" in html)
+check("...and it says why it is showing the simple view", "no longer on the server" in html)
 lv.live_start_from_deck(deck.id, db, lecturer)
 db.expire_all()
 later = db.query(LiveSession).order_by(LiveSession.id.desc()).first()
