@@ -1024,3 +1024,72 @@ class DiscoveredSpecFormat(Base):
     layout_json = Column(Text, nullable=True)
     times_used = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class PracticeSet(Base):
+    """
+    Stage 6 (A): a set of exam-style practice questions for an exam-assessed course (A level,
+    GCSE), written by AI from the spec's own statements and assessment objectives. Each
+    question carries its marks, the objective(s) it tests (AO1-AO4) and a mark scheme. A
+    lecturer reviews them before use - they are drafts, like lesson decks.
+    """
+    __tablename__ = "practice_sets"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    unit_name = Column(String(500), nullable=False)
+    topic_titles = Column(JSON, nullable=True)          # the outcomes (topics) the questions are about
+    question_count = Column(Integer, default=6, nullable=False)
+    questions_json = Column(JSON, nullable=True)        # [{"question", "context", "marks", "ao": [...], "mark_scheme": [...], "levels": [...]}]
+    status = Column(String(50), default="generating", nullable=False)  # generating | ready | failed
+    error_detail = Column(Text, nullable=True)
+    generated_by_provider = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class LiveSession(Base):
+    """
+    Stage 6 (B): a live, interactive lesson - the lecturer presents a lesson deck (or a
+    practice question set) and students join on their own phone or laptop with a short code,
+    no account needed. They answer the deck's own questions (starter, check, plenary) and a
+    confidence poll; the lecturer sees the answers arrive live and keeps a summary.
+    """
+    __tablename__ = "live_sessions"
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    lesson_deck_id = Column(Integer, ForeignKey("lesson_decks.id"), nullable=True)
+    practice_set_id = Column(Integer, ForeignKey("practice_sets.id"), nullable=True)
+    title = Column(String(255), nullable=False)
+    join_code = Column(String(12), nullable=False, index=True)
+    screens_json = Column(JSON, nullable=True)           # a snapshot of what was shown, taken at the start - the summary stays right even if the deck is later regenerated or deleted
+    current_screen = Column(Integer, default=0, nullable=False)
+    revealed_screens = Column(JSON, nullable=True)       # screens whose answers the lecturer has shown to the class
+    state = Column(String(20), default="open", nullable=False)  # open | ended
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+
+
+class LiveParticipant(Base):
+    """A student in a live session: only the first name / nickname they type, and a random
+    token kept in their browser so their answers stay theirs. No account, no other data."""
+    __tablename__ = "live_participants"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("live_sessions.id"), nullable=False, index=True)
+    display_name = Column(String(40), nullable=False)
+    token = Column(String(64), nullable=False, index=True)
+    joined_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class LiveResponse(Base):
+    """One answer to one question in a live session (a student can change it while the
+    question is open - the latest answer is kept)."""
+    __tablename__ = "live_responses"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("live_sessions.id"), nullable=False, index=True)
+    participant_id = Column(Integer, ForeignKey("live_participants.id"), nullable=False)
+    screen_index = Column(Integer, nullable=False)
+    question_key = Column(String(20), nullable=False)
+    answer_text = Column(Text, nullable=True)
+    answer_choice = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

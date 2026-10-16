@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Practice questions - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+{% if practice.status == "generating" %}<meta http-equiv="refresh" content="4">{% endif %}
+<style>
+  .q-card { border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px; background:var(--bg-elevated); }
+  .q-head { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .ao { display:inline-block; padding:1px 8px; border-radius:10px; font-size:0.78rem; font-weight:700; margin-left:4px;
+        background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  .q-context { background: color-mix(in srgb, var(--accent) 6%, transparent); border-left:3px solid var(--accent);
+               padding:8px 12px; border-radius:4px; margin:8px 0; }
+  @media print {
+    .sidebar, .no-print, .topbar { display:none !important; }
+    .q-card { break-inside: avoid; }
+    details { display:block; } details > summary { display:none; }
+    .print-hide-schemes details { display:none; }
+  }
+</style>
+<p class="no-print"><a href="/courses/{{ practice.course_id }}/practice-questions">&larr; Exam practice</a></p>
+<h1>{{ practice.unit_name }}</h1>
+<p class="muted">{{ (practice.topic_titles or [])|join(" · ") }}</p>
+
+{% if practice.status == "generating" %}
+  <div class="card" role="status">Writing the questions from the spec… this page refreshes by itself (usually under a minute).</div>
+{% elif practice.status == "failed" %}
+  <div class="error-box" role="alert">{{ practice.error_detail }}</div>
+{% else %}
+  {% if practice.error_detail %}<p class="muted">{{ practice.error_detail }}</p>{% endif %}
+  <div class="card no-print" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <strong>{{ questions|length }} questions · {{ total_marks }} marks</strong>
+    <span class="muted">Marks per objective:
+      {% for ao, marks in ao_totals.items() %}<span class="ao">{{ ao }} {{ marks }}</span>{% endfor %}</span>
+    <span style="flex:1;"></span>
+    <form method="post" action="/practice-questions/{{ practice.id }}/live/start" style="margin:0;">
+      <button class="btn" type="submit">Run live in class</button></form>
+    <button class="btn btn-secondary" type="button" onclick="document.body.classList.add('print-hide-schemes');window.print();document.body.classList.remove('print-hide-schemes');">Print for students</button>
+    <button class="btn btn-secondary" type="button" onclick="window.print()">Print with mark schemes</button>
+  </div>
+
+  {% for q in questions %}
+    <div class="q-card">
+      <div class="q-head">
+        <strong>Question {{ loop.index }}</strong>
+        <span>{{ q.marks }} mark{{ "s" if q.marks != 1 else "" }}{% for a in q.ao %}<span class="ao">{{ a }}</span>{% endfor %}</span>
+      </div>
+      {% if q.context %}<div class="q-context">{{ q.context }}</div>{% endif %}
+      <p style="margin:8px 0;">{{ q.question }}</p>
+      {% if q.mark_scheme or q.levels %}
+        <details>
+          <summary>Mark scheme</summary>
+          {% if q.mark_scheme %}<ul>{% for p in q.mark_scheme %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}
+          {% if q.levels %}
+            <table><tr><th style="width:170px;">Level</th><th>Descriptor</th></tr>
+              {% for l in q.levels %}<tr><td>{{ l.level }}</td><td>{{ l.descriptor }}</td></tr>{% endfor %}</table>
+          {% endif %}
+        </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+  <p class="muted no-print">Written by AI from the spec ({{ practice.generated_by_provider or "AI" }}) - check every question and mark scheme before use.</p>
+{% endif %}
+
+<form method="post" action="/practice-questions/{{ practice.id }}/delete" class="no-print" style="margin-top:16px;"
+      onsubmit="return confirm('Delete this question set?');">
+  <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete this set</button>
+</form>
+{% endblock %}

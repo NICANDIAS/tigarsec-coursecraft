@@ -9,8 +9,10 @@ from ..database import get_db
 from ..models import (
     Teacher, Course, CourseTeacher, SpecVersion, FeedbackStyleTemplate, LessonDeck, Student, Submission,
     CriterionMark, MarkingRun, SubmissionFile, TeacherOverride, IVRequest, IVCriterionCheck,
-    AuditLogEntry, SchemeOfWork, CourseUnitRequirement, TimetableSession, ResourceShare,
+    AuditLogEntry, SchemeOfWork, CourseUnitRequirement, TimetableSession, ResourceShare, LiveSession,
+    LiveParticipant, LiveResponse, PracticeSet,
 )
+from ..spec_context import has_exam_objectives
 from ..course_access import get_course_for_teacher, get_courses_for_teacher
 from ..coverage import compute_coverage, summarize_coverage
 from ..auth import get_current_teacher, verify_password, hash_password, require_admin
@@ -99,6 +101,15 @@ def course_detail(
             .limit(20)
             .all()
         )
+        # Stage 6: live lessons this lecturer ran on this course, and whether the spec is exam-assessed
+        live_sessions = (
+            db.query(LiveSession)
+            .filter(LiveSession.course_id == course_id, LiveSession.teacher_id == teacher.id)
+            .order_by(LiveSession.id.desc())
+            .limit(5)
+            .all()
+        )
+        spec_json = course.spec_version.structured_json if course.spec_version and course.spec_version.structured_json else {}
         return templates.TemplateResponse(
             "course_detail.html",
             {
@@ -108,6 +119,8 @@ def course_detail(
                 "all_specs": all_specs,
                 "recent_decks": recent_decks,
                 "delete_error": delete_error or None,
+                "live_sessions": live_sessions,
+                "is_exam_spec": has_exam_objectives(spec_json),
             },
         )
     except Exception:
@@ -119,6 +132,17 @@ def course_detail(
             {"request": request, "teacher": teacher, "course": course, "error_detail": traceback.format_exc()},
             status_code=500,
         )
+
+
+def _delete_live_and_practice(db, course_id: int):
+    """Stage 6: a course's live lesson sessions (with the students' nicknames and answers)
+    and its practice question sets go with the course - nothing about students is left behind."""
+    session_ids = [s.id for s in db.query(LiveSession).filter(LiveSession.course_id == course_id).all()]
+    if session_ids:
+        db.query(LiveResponse).filter(LiveResponse.session_id.in_(session_ids)).delete(synchronize_session=False)
+        db.query(LiveParticipant).filter(LiveParticipant.session_id.in_(session_ids)).delete(synchronize_session=False)
+        db.query(LiveSession).filter(LiveSession.id.in_(session_ids)).delete(synchronize_session=False)
+    db.query(PracticeSet).filter(PracticeSet.course_id == course_id).delete(synchronize_session=False)
 
 
 @router.post("/courses/{course_id}/delete")
@@ -162,6 +186,7 @@ def delete_course(
         message = f"Can't delete - this course has {', '.join(blockers)} attached. Remove those first if you really want to delete it."
         return RedirectResponse(url=f"/courses/{course_id}?delete_error={quote(message)}", status_code=303)
 
+    _delete_live_and_practice(db, course_id)
     db.query(CourseTeacher).filter(CourseTeacher.course_id == course_id).delete(synchronize_session=False)
 
     db.delete(course)
@@ -238,6 +263,7 @@ def force_delete_course(
     db.query(Student).filter(Student.course_id == course_id).delete(synchronize_session=False)
     db.query(SchemeOfWork).filter(SchemeOfWork.course_id == course_id).delete(synchronize_session=False)
     db.query(LessonDeck).filter(LessonDeck.course_id == course_id).delete(synchronize_session=False)
+    _delete_live_and_practice(db, course_id)
     db.query(CourseTeacher).filter(CourseTeacher.course_id == course_id).delete(synchronize_session=False)
     db.query(CourseUnitRequirement).filter(CourseUnitRequirement.course_id == course_id).delete(synchronize_session=False)
     db.query(TimetableSession).filter(TimetableSession.course_id == course_id).delete(synchronize_session=False)

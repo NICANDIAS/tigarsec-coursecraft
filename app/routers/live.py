@@ -1,0 +1,290 @@
+"""
+Stage 6 (B): live interactive lessons (the Nearpod-style part of CourseCraft).
+
+Lecturer side (logged in, only the lecturer who started the session):
+  start from a lesson deck or a practice question set -> a join code -> present screen by
+  screen, answers arrive live, optionally share the class's answers, end -> summary (+ CSV).
+Student side (NO account): go to /join, type the code and a first name or nickname, answer the
+questions on the current screen from a phone or laptop. A random token in a cookie keeps a
+student's answers theirs; nothing else about them is stored.
+
+Updates use simple polling (every 2 seconds) rather than websockets - it works through any
+college proxy and needs nothing extra installed.
+"""
+import csv
+import datetime
+import io
+import secrets
+
+from fastapi import APIRouter, Request, Depends, Form
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, Response
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..models import Teacher, LessonDeck, PracticeSet, LiveSession, LiveParticipant, LiveResponse
+from ..auth import get_current_teacher
+from ..course_access import get_course_for_teacher
+from ..live_activities import screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally
+from .presentations import _can_access_deck
+
+router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
+COOKIE_HOURS = 6
+
+
+# ------------------------------------------------------------------------------- lecturer
+
+def _new_session(db, teacher, course_id, title, screens, deck_id=None, practice_id=None):
+    taken = {c for (c,) in db.query(LiveSession.join_code).filter(LiveSession.state == "open").all()}
+    session = LiveSession(teacher_id=teacher.id, course_id=course_id, lesson_deck_id=deck_id, practice_set_id=practice_id,
+                          title=title[:255], join_code=new_join_code(taken), screens_json=screens, current_screen=0,
+                          revealed_screens=[], state="open")
+    db.add(session)
+    db.commit()
+    return session
+
+
+@router.post("/lesson-decks/{deck_id}/live/start")
+def live_start_from_deck(deck_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    deck = db.get(LessonDeck, deck_id)
+    if not _can_access_deck(deck, teacher, db) or not deck.outline_json:
+        return RedirectResponse(url="/", status_code=303)
+    screens = screens_from_deck(deck.outline_json)
+    session = _new_session(db, teacher, deck.course_id, deck.title, screens, deck_id=deck.id)
+    return RedirectResponse(url=f"/live/{session.id}/teach", status_code=303)
+
+
+@router.post("/practice-questions/{set_id}/live/start")
+def live_start_from_practice(set_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    practice = db.get(PracticeSet, set_id)
+    if not practice or not get_course_for_teacher(db, practice.course_id, teacher) or not practice.questions_json:
+        return RedirectResponse(url="/", status_code=303)
+    screens = screens_from_practice(practice.questions_json)
+    session = _new_session(db, teacher, practice.course_id, f"Practice: {practice.unit_name}", screens, practice_id=practice.id)
+    return RedirectResponse(url=f"/live/{session.id}/teach", status_code=303)
+
+
+def _own(db, session_id, teacher):
+    session = db.get(LiveSession, session_id)
+    return session if session and session.teacher_id == teacher.id else None
+
+
+def _responses(db, session, screen_index=None):
+    q = db.query(LiveResponse, LiveParticipant).join(LiveParticipant, LiveResponse.participant_id == LiveParticipant.id) \
+        .filter(LiveResponse.session_id == session.id)
+    if screen_index is not None:
+        q = q.filter(LiveResponse.screen_index == screen_index)
+    return [{"question_key": r.question_key, "name": p.display_name, "participant": p.id, "text": r.answer_text,
+             "choice": r.answer_choice, "screen": r.screen_index} for r, p in q.order_by(LiveResponse.id).all()]
+
+
+@router.get("/live/{session_id}/teach", response_class=HTMLResponse)
+def live_teach(session_id: int, request: Request, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    session = _own(db, session_id, teacher)
+    if not session:
+        return RedirectResponse(url="/", status_code=303)
+    if session.state != "open":
+        return RedirectResponse(url=f"/live/{session.id}/summary", status_code=303)
+    join_url = str(request.base_url).rstrip("/") + "/join"
+    return templates.TemplateResponse("live_teach.html", {"request": request, "teacher": teacher, "session": session,
+                                                          "screens": session.screens_json or [], "join_url": join_url})
+
+
+@router.get("/live/{session_id}/data")
+def live_teacher_data(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    session = _own(db, session_id, teacher)
+    if not session:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    screens = session.screens_json or []
+    index = session.current_screen
+    people = db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).order_by(LiveParticipant.id).all()
+    screen = screens[index] if 0 <= index < len(screens) else {"questions": []}
+    return {"state": session.state, "current": index, "joined": [p.display_name for p in people],
+            "revealed": index in (session.revealed_screens or []), "tally": tally(screen, _responses(db, session, index))}
+
+
+@router.post("/live/{session_id}/screen")
+def live_set_screen(session_id: int, screen: int = Form(...), db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    session = _own(db, session_id, teacher)
+    if not session or session.state != "open":
+        return JSONResponse({"ok": False}, status_code=404)
+    session.current_screen = max(0, min(screen, len(session.screens_json or []) - 1))
+    db.commit()
+    return {"ok": True, "current": session.current_screen}
+
+
+@router.post("/live/{session_id}/reveal")
+def live_reveal(session_id: int, screen: int = Form(...), show: int = Form(1), db: Session = Depends(get_db),
+                teacher: Teacher = Depends(get_current_teacher)):
+    """Shares (or hides again) the class's answers for one screen on the students' devices - names are never shown to them."""
+    session = _own(db, session_id, teacher)
+    if not session:
+        return JSONResponse({"ok": False}, status_code=404)
+    revealed = set(session.revealed_screens or [])
+    (revealed.add if show else revealed.discard)(screen)
+    session.revealed_screens = sorted(revealed)  # a new list, so the JSON column is saved
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/live/{session_id}/end")
+def live_end(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    session = _own(db, session_id, teacher)
+    if session and session.state == "open":
+        session.state = "ended"
+        session.ended_at = datetime.datetime.utcnow()
+        db.commit()
+    return RedirectResponse(url=f"/live/{session_id}/summary" if session else "/", status_code=303)
+
+
+@router.get("/live/{session_id}/summary", response_class=HTMLResponse)
+def live_summary(session_id: int, request: Request, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    session = _own(db, session_id, teacher)
+    if not session:
+        return RedirectResponse(url="/", status_code=303)
+    screens = session.screens_json or []
+    responses = _responses(db, session)
+    people = db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).order_by(LiveParticipant.id).all()
+    per_screen = [(i, s, tally(s, [r for r in responses if r["screen"] == i])) for i, s in enumerate(screens) if s.get("questions")]
+    answered = {r["participant"] for r in responses}
+    # students who said "Not yet" to any objective - the ones to check on next lesson
+    not_yet = sorted({r["name"] for i, s, t in per_screen for e in t.values() if e["kind"] == "confidence"
+                      for r in e["answers"] if r.get("choice") == 0})
+    return templates.TemplateResponse("live_summary.html", {
+        "request": request, "teacher": teacher, "session": session, "per_screen": per_screen, "people": people,
+        "answered_count": len(answered), "not_yet": not_yet, "response_count": len(responses)})
+
+
+@router.get("/live/{session_id}/summary.csv")
+def live_summary_csv(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    session = _own(db, session_id, teacher)
+    if not session:
+        return RedirectResponse(url="/", status_code=303)
+    screens = session.screens_json or []
+    prompts = {q["key"]: (s.get("title", ""), q["prompt"], q.get("choices")) for s in screens for q in s.get("questions", [])}
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["Student", "Screen", "Question", "Answer"])
+    for r in _responses(db, session):
+        title, prompt, choices = prompts.get(r["question_key"], ("", r["question_key"], None))
+        answer = choices[r["choice"]] if choices and r["choice"] is not None and 0 <= r["choice"] < len(choices) else (r["text"] or "")
+        # a leading = + - @ would make a spreadsheet run it as a formula - prefix it so it stays text
+        cells = [r["name"], title, prompt, answer]
+        writer.writerow(["'" + c if c[:1] in ("=", "+", "-", "@") else c for c in (str(x) for x in cells)])
+    return Response(out.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="live-session-{session.id}.csv"'})
+
+
+@router.post("/live/{session_id}/delete")
+def live_delete(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    session = _own(db, session_id, teacher)
+    if not session:
+        return RedirectResponse(url="/", status_code=303)
+    course_id = session.course_id
+    db.query(LiveResponse).filter(LiveResponse.session_id == session.id).delete()
+    db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).delete()
+    db.delete(session)
+    db.commit()
+    return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+
+
+# ------------------------------------------------------------------------------- students (no account)
+
+def _open_session(db, code):
+    code = "".join(ch for ch in (code or "").upper() if ch.isalnum())[:12]
+    if not code:
+        return None
+    return db.query(LiveSession).filter(LiveSession.join_code == code, LiveSession.state == "open").first()
+
+
+def _participant(db, request, session):
+    token = request.cookies.get(f"live_{session.id}")
+    if not token:
+        return None
+    return db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id, LiveParticipant.token == token).first()
+
+
+@router.get("/join", response_class=HTMLResponse)
+def join_page(request: Request, code: str = ""):
+    return templates.TemplateResponse("live_join.html", {"request": request, "code": code[:12], "error": None})
+
+
+@router.post("/join", response_class=HTMLResponse)
+def join_submit(request: Request, code: str = Form(""), name: str = Form(""), db: Session = Depends(get_db)):
+    session = _open_session(db, code)
+    display = clean_name(name)
+    if not session or not display:
+        error = "That code is not open right now - check it with your lecturer." if not session else "Please type your first name or a nickname."
+        return templates.TemplateResponse("live_join.html", {"request": request, "code": code[:12], "error": error}, status_code=400)
+    participant = _participant(db, request, session)
+    if participant:
+        participant.display_name = display
+    else:
+        participant = LiveParticipant(session_id=session.id, display_name=display, token=secrets.token_urlsafe(24))
+        db.add(participant)
+    db.commit()
+    response = RedirectResponse(url=f"/live/s/{session.join_code}", status_code=303)
+    response.set_cookie(f"live_{session.id}", participant.token, max_age=COOKIE_HOURS * 3600, httponly=True, samesite="lax")
+    return response
+
+
+@router.get("/live/s/{code}", response_class=HTMLResponse)
+def student_page(code: str, request: Request, db: Session = Depends(get_db)):
+    session = _open_session(db, code)
+    if not session or not _participant(db, request, session):
+        return RedirectResponse(url=f"/join?code={code[:12]}", status_code=303)
+    return templates.TemplateResponse("live_student.html", {"request": request, "session": session,
+                                                            "name": _participant(db, request, session).display_name})
+
+
+@router.get("/live/s/{code}/data")
+def student_data(code: str, request: Request, db: Session = Depends(get_db)):
+    session = _open_session(db, code)
+    participant = _participant(db, request, session) if session else None
+    if not session or not participant:
+        return {"state": "ended"}
+    screens = session.screens_json or []
+    index = session.current_screen
+    screen = screens[index] if 0 <= index < len(screens) else {"title": "", "body": [], "questions": []}
+    mine = {r.question_key: {"text": r.answer_text, "choice": r.answer_choice}
+            for r in db.query(LiveResponse).filter(LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id,
+                                                   LiveResponse.screen_index == index).all()}
+    shared = None
+    if index in (session.revealed_screens or []):
+        # the class's answers WITHOUT names
+        shared = {k: {"answers": [a["text"] for a in v["answers"] if a.get("text")], "counts": v.get("counts"), "choices": v.get("choices")}
+                  for k, v in tally(screen, _responses(db, session, index)).items()}
+    return {"state": session.state, "current": index, "total": len(screens), "screen": screen, "mine": mine, "shared": shared}
+
+
+@router.post("/live/s/{code}/answer")
+def student_answer(code: str, request: Request, screen: int = Form(...), question_key: str = Form(...),
+                   text: str = Form(""), choice: int = Form(-1), db: Session = Depends(get_db)):
+    session = _open_session(db, code)
+    participant = _participant(db, request, session) if session else None
+    if not session or not participant:
+        return JSONResponse({"ok": False, "message": "This session has ended."}, status_code=403)
+    screens = session.screens_json or []
+    if screen != session.current_screen or not 0 <= screen < len(screens):
+        return JSONResponse({"ok": False, "message": "Your lecturer has moved on - this question is closed."}, status_code=409)
+    question = next((q for q in screens[screen].get("questions", []) if q["key"] == question_key), None)
+    if not question:
+        return JSONResponse({"ok": False, "message": "Unknown question."}, status_code=400)
+    if question["kind"] == "confidence":
+        if not 0 <= choice < len(question.get("choices", [])):
+            return JSONResponse({"ok": False, "message": "Pick one option."}, status_code=400)
+        value_text, value_choice = None, choice
+    else:
+        value_text, value_choice = clean_answer(text), None
+        if not value_text:
+            return JSONResponse({"ok": False, "message": "Type an answer first."}, status_code=400)
+    existing = db.query(LiveResponse).filter(LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id,
+                                             LiveResponse.question_key == question_key).first()
+    if existing:
+        existing.answer_text, existing.answer_choice, existing.screen_index = value_text, value_choice, screen
+    else:
+        db.add(LiveResponse(session_id=session.id, participant_id=participant.id, screen_index=screen,
+                            question_key=question_key, answer_text=value_text, answer_choice=value_choice))
+    db.commit()
+    return {"ok": True}

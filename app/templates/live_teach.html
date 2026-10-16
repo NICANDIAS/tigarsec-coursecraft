@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live: {{ session.title }} - CourseCraft</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon.png">
+<style>
+  :root { --navy:#0f2744; --navy2:#1e3a5f; --accent:#2f6fed; --tint:#eef3fd; --ink:#1a1a1e; --muted:#5b5b63; --ok:#1b8a4b; --mid:#c98a00; --low:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:#fff; height:100vh; display:flex; flex-direction:column; }
+  header { background:linear-gradient(90deg,var(--navy),var(--navy2)); color:#fff; display:flex; align-items:center; gap:18px; padding:10px 22px; }
+  header .join { font-size:1.05rem; }
+  header .code { font-size:2rem; font-weight:800; letter-spacing:6px; background:#fff; color:var(--navy); padding:2px 14px; border-radius:8px; }
+  header .people { margin-left:auto; font-size:1rem; opacity:0.95; }
+  header a, header button { color:#fff; background:transparent; border:1px solid rgba(255,255,255,0.5); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:0.9rem; text-decoration:none; }
+  main { flex:1; display:flex; min-height:0; }
+  .stage { flex:1.5; padding:40px 56px; overflow:auto; }
+  .stage .label { text-transform:uppercase; letter-spacing:2px; font-size:0.8rem; color:var(--accent); font-weight:700; }
+  .stage h1 { font-size:2.3rem; margin:8px 0 18px; }
+  .stage li, .stage p { font-size:1.3rem; line-height:1.6; }
+  .stage .q { margin-top:18px; padding:14px 18px; background:var(--tint); border-left:4px solid var(--accent); border-radius:6px; font-size:1.25rem; }
+  .panel { flex:1; border-left:1px solid #e1e1e6; display:flex; flex-direction:column; min-width:320px; max-width:520px; background:#fafbfd; }
+  .panel h2 { font-size:1rem; margin:0; padding:14px 18px; border-bottom:1px solid #e1e1e6; display:flex; justify-content:space-between; align-items:center; }
+  .answers { flex:1; overflow:auto; padding:12px 18px; }
+  .qblock { margin-bottom:18px; }
+  .qblock .prompt { font-weight:600; margin-bottom:6px; }
+  .ans { background:#fff; border:1px solid #e1e1e6; border-radius:8px; padding:8px 10px; margin:6px 0; font-size:0.95rem; }
+  .ans .who { font-size:0.78rem; color:var(--muted); }
+  .bars .row { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:0.9rem; }
+  .bars .bar { height:18px; border-radius:4px; min-width:2px; }
+  .muted { color:var(--muted); }
+  footer { display:flex; align-items:center; gap:12px; padding:10px 22px; border-top:1px solid #e1e1e6; }
+  footer button { background:var(--accent); color:#fff; border:none; padding:10px 20px; border-radius:6px; font-size:1rem; cursor:pointer; }
+  footer button.secondary { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  footer button:disabled { opacity:0.35; cursor:default; }
+  footer .counter { color:var(--muted); }
+  footer .end { margin-left:auto; background:#fff; color:var(--low); border:1px solid var(--low); }
+  @media (max-width: 900px) { main { flex-direction:column; } .panel { max-width:none; border-left:none; border-top:1px solid #e1e1e6; } .stage { padding:24px; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="join">Join at <strong>{{ join_url }}</strong> with code</span>
+  <span class="code" id="code">{{ session.join_code }}</span>
+  <span class="people" id="people">0 joined</span>
+  <a href="/" title="Leave this page - the session stays open">Leave</a>
+</header>
+<main>
+  <section class="stage" id="stage" aria-live="polite"></section>
+  <aside class="panel">
+    <h2><span>Answers <span class="muted" id="answer-count"></span></span>
+      <button type="button" id="reveal" style="font-size:0.85rem;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;">Share with class</button></h2>
+    <div class="answers" id="answers"><p class="muted">Answers to this screen's questions appear here as students send them.</p></div>
+  </aside>
+</main>
+<footer>
+  <button type="button" id="prev">&larr; Back</button>
+  <button type="button" id="next">Next &rarr;</button>
+  <span class="counter" id="counter"></span>
+  <form method="post" action="/live/{{ session.id }}/end" style="margin-left:auto;" onsubmit="return confirm('End the live session? Students will be told it has finished.');">
+    <button class="end" type="submit">End session</button>
+  </form>
+</footer>
+<script id="screens-data" type="application/json">{{ screens|tojson }}</script>
+<script>
+(function () {
+  var screens = JSON.parse(document.getElementById("screens-data").textContent);
+  var current = {{ session.current_screen }};
+  var revealed = false;
+  var LABELS = {retrieval_starter: "Do now", retrieval_plenary: "Plenary", objectives_review: "Confidence check",
+                objectives: "Objectives", real_life_example: "Real-life example", activity: "Activity", practical: "Practical",
+                exam_question: "Exam practice", content: "", title: ""};
+  function el(tag, text, cls) { var e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; }
+
+  function drawStage() {
+    var s = screens[current] || {title: "", body: [], questions: []};
+    var stage = document.getElementById("stage"); stage.innerHTML = "";
+    if (LABELS[s.kind]) stage.appendChild(el("div", LABELS[s.kind], "label"));
+    stage.appendChild(el("h1", s.title || ""));
+    if (s.body && s.body.length) { var ul = el("ul"); s.body.forEach(function (b) { ul.appendChild(el("li", b)); }); stage.appendChild(ul); }
+    (s.questions || []).forEach(function (q) { stage.appendChild(el("div", q.prompt, "q")); });
+    document.getElementById("counter").textContent = (current + 1) + " / " + screens.length;
+    document.getElementById("prev").disabled = current === 0;
+    document.getElementById("next").disabled = current >= screens.length - 1;
+  }
+
+  function drawAnswers(data) {
+    document.getElementById("people").textContent = data.joined.length + " joined";
+    document.getElementById("people").title = data.joined.join(", ");
+    revealed = data.revealed;
+    document.getElementById("reveal").textContent = revealed ? "Hide from class" : "Share with class";
+    var box = document.getElementById("answers"); box.innerHTML = "";
+    var keys = Object.keys(data.tally), total = 0;
+    if (!keys.length) { box.appendChild(el("p", "No questions on this screen - students see the slide on their device.", "muted")); }
+    keys.forEach(function (k) {
+      var t = data.tally[k], block = el("div", null, "qblock");
+      total += t.count;
+      block.appendChild(el("div", t.prompt + "  (" + t.count + ")", "prompt"));
+      if (t.kind === "confidence") {
+        var bars = el("div", null, "bars"), max = Math.max.apply(null, t.counts.concat([1])), colours = ["var(--low)", "var(--mid)", "var(--ok)"];
+        t.choices.forEach(function (c, i) {
+          var row = el("div", null, "row"), bar = el("span", null, "bar");
+          bar.style.width = (t.counts[i] / max * 180) + "px"; bar.style.background = colours[i] || "var(--accent)";
+          row.appendChild(el("span", c, "")); row.lastChild.style.width = "110px"; row.appendChild(bar); row.appendChild(el("strong", String(t.counts[i])));
+          bars.appendChild(row);
+        });
+        block.appendChild(bars);
+      } else {
+        t.answers.slice().reverse().forEach(function (a) {
+          var card = el("div", null, "ans"); card.appendChild(el("div", a.name, "who")); card.appendChild(el("div", a.text)); block.appendChild(card);
+        });
+      }
+      box.appendChild(block);
+    });
+    document.getElementById("answer-count").textContent = total ? "(" + total + ")" : "";
+  }
+
+  function post(url, body) {
+    return fetch(url, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams(body), credentials: "same-origin"});
+  }
+  function go(i) { current = Math.max(0, Math.min(screens.length - 1, i)); drawStage(); post("/live/{{ session.id }}/screen", {screen: current}).then(poll); }
+  function poll() {
+    fetch("/live/{{ session.id }}/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.state !== "open") { window.location = "/live/{{ session.id }}/summary"; return; }
+      if (d.current === current) drawAnswers(d);
+    }).catch(function () {});
+  }
+  document.getElementById("prev").onclick = function () { go(current - 1); };
+  document.getElementById("next").onclick = function () { go(current + 1); };
+  document.getElementById("reveal").onclick = function () { post("/live/{{ session.id }}/reveal", {screen: current, show: revealed ? 0 : 1}).then(poll); };
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); go(current + 1); }
+    if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(current - 1); }
+  });
+  drawStage(); poll(); setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>

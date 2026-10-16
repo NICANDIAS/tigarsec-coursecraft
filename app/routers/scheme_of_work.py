@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, File
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from ..spec_context import spec_teaching_context
 from ..database import get_db, SessionLocal
 from ..models import Teacher, Course, CourseTeacher, SchemeOfWork, LessonDeck, SOWTemplate, ExamExemplar, SpecVersion
 from ..course_access import get_course_for_teacher
@@ -893,6 +894,18 @@ def _run_sow_generation(sow_id: int):
                 else:
                     prompt_parts.append(f"College scheme-of-work FORMAT SAMPLE to match the style of:\n{sow.format_sample[:4000]}")
             prompt_parts.append(f"Selected units/LOs/criteria to build the scheme from:\n{json.dumps({'units': units_to_use}, indent=2)}")
+            # Stage 6: what the spec says about how these units are taught and assessed (exam
+            # objectives, quantitative skills, teaching content, unit aims). "" for specs that
+            # hold none of this, so their prompt is exactly as before.
+            spec_json = course.spec_version.structured_json if course.spec_version else {}
+            contexts = []
+            for unit in units_to_use:
+                context = spec_teaching_context(spec_json, unit)
+                if context and context not in contexts:
+                    contexts.append(f"For {unit.get('name')}:\n{context}")
+            if contexts:
+                prompt_parts.append("WHAT THE SPEC SAYS ABOUT TEACHING AND ASSESSING THIS CONTENT (use it to shape weeks, "
+                                    "activities and assessment checkpoints):\n" + "\n\n".join(contexts))
 
             # Exam exemplar matching - closes a real, confirmed gap: the spec covers
             # underpinning content, but a real exam/Occupational Specialism task can

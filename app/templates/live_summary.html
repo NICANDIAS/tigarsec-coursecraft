@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Live lesson summary - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ session.course_id }}">&larr; Back to the course</a></p>
+<h1>{{ session.title }}</h1>
+<p class="muted">Live lesson · {{ session.created_at.strftime("%d %b %Y %H:%M") if session.created_at else "" }}
+  {% if session.state == "open" %}· <strong>still open</strong> (code {{ session.join_code }}) · <a href="/live/{{ session.id }}/teach">back to presenting</a>{% endif %}</p>
+
+<div class="card" style="display:flex;gap:28px;flex-wrap:wrap;">
+  <div><div style="font-size:2rem;font-weight:800;">{{ people|length }}</div><div class="muted">joined</div></div>
+  <div><div style="font-size:2rem;font-weight:800;">{{ answered_count }}</div><div class="muted">answered at least once</div></div>
+  <div><div style="font-size:2rem;font-weight:800;">{{ response_count }}</div><div class="muted">answers in total</div></div>
+  <span style="flex:1;"></span>
+  <div style="align-self:center;"><a class="btn btn-secondary" href="/live/{{ session.id }}/summary.csv">Download answers (CSV)</a></div>
+</div>
+
+{% if not_yet %}
+  <div class="card" style="border-left:4px solid var(--danger);">
+    <h2 style="margin-top:0;">Check in with these students next lesson</h2>
+    <p>They said <strong>"Not yet"</strong> to at least one objective: {{ not_yet|join(", ") }}</p>
+  </div>
+{% endif %}
+
+{% for index, screen, results in per_screen %}
+  <div class="card">
+    <h2 style="margin-top:0;">{{ screen.title }}</h2>
+    {% for key, r in results.items() %}
+      <p style="margin-bottom:4px;"><strong>{{ r.prompt }}</strong> <span class="muted">({{ r.count }} answer{{ "s" if r.count != 1 else "" }})</span></p>
+      {% if r.kind == "confidence" %}
+        <table style="max-width:420px;">
+          {% for c in r.choices %}<tr><td>{{ c }}</td><td><strong>{{ r.counts[loop.index0] }}</strong></td></tr>{% endfor %}
+        </table>
+      {% elif r.answers %}
+        <details><summary>Show answers</summary>
+          <table>{% for a in r.answers %}<tr><td style="width:150px;">{{ a.name }}</td><td>{{ a.text }}</td></tr>{% endfor %}</table>
+        </details>
+      {% else %}
+        <p class="muted">No answers.</p>
+      {% endif %}
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card"><p class="muted">No questions were answered in this session.</p></div>
+{% endfor %}
+
+<form method="post" action="/live/{{ session.id }}/delete" style="margin-top:16px;" onsubmit="return confirm('Delete this session and all its answers?');">
+  <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete this session and its answers</button>
+</form>
+{% endblock %}

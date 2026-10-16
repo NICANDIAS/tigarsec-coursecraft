@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ session.title }} - live</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon.png">
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,sans-serif; background:#f3f5f9; color:#1a1a1e; }
+  header { background:linear-gradient(90deg,#0f2744,#1e3a5f); color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  header .t { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  header .me { font-size:0.85rem; opacity:0.9; white-space:nowrap; }
+  main { padding:16px; max-width:640px; margin:0 auto; }
+  .card { background:#fff; border-radius:12px; padding:16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.06); }
+  h1 { font-size:1.3rem; margin:0 0 10px; color:#0f2744; }
+  li { margin:6px 0; line-height:1.45; }
+  .prompt { font-weight:600; margin-bottom:8px; line-height:1.4; }
+  textarea { width:100%; min-height:90px; font-size:1.05rem; padding:10px; border:2px solid #d5d9e2; border-radius:10px; font-family:inherit; }
+  textarea.long { min-height:200px; }
+  textarea:focus { outline:none; border-color:#2f6fed; }
+  button.send { margin-top:10px; width:100%; padding:12px; font-size:1.05rem; border:none; border-radius:10px; background:#2f6fed; color:#fff; font-weight:700; }
+  .choices { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .choices button { padding:14px 6px; border-radius:10px; border:2px solid #d5d9e2; background:#fff; font-size:0.95rem; font-weight:600; }
+  .choices button.on { border-color:#2f6fed; background:#eef3fd; }
+  .status { font-size:0.85rem; color:#1b8a4b; margin-top:6px; min-height:1em; }
+  .status.bad { color:#a3261b; }
+  .shared { margin-top:10px; padding-top:10px; border-top:1px dashed #d5d9e2; }
+  .shared .a { background:#f3f5f9; border-radius:8px; padding:6px 10px; margin:4px 0; font-size:0.92rem; }
+  .wait { text-align:center; color:#5b5b63; padding:30px 10px; }
+</style>
+</head>
+<body>
+<header><span class="t">{{ session.title }}</span><span class="me">{{ name }}</span></header>
+<main id="main"><div class="wait">Connecting…</div></main>
+<script>
+(function () {
+  var code = {{ session.join_code|tojson }}, shownKey = null, drafts = {};
+  var main = document.getElementById("main");
+  function el(tag, text, cls) { var e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; }
+  function send(screen, key, body, status) {
+    var data = new URLSearchParams(Object.assign({screen: screen, question_key: key}, body));
+    status.textContent = "Sending…"; status.className = "status";
+    fetch("/live/s/" + code + "/answer", {method: "POST", body: data, credentials: "same-origin"})
+      .then(function (r) { return r.json(); })
+      .then(function (d) { status.textContent = d.ok ? "Sent ✓ (you can change it)" : d.message; status.className = d.ok ? "status" : "status bad"; })
+      .catch(function () { status.textContent = "Not sent - check your connection and try again."; status.className = "status bad"; });
+  }
+  function draw(d) {
+    var s = d.screen, key = d.current + ":" + JSON.stringify(d.shared);
+    if (key === shownKey) return;  // nothing changed - don't wipe what the student is typing
+    document.querySelectorAll("textarea").forEach(function (t) { drafts[t.dataset.key] = t.value; });
+    shownKey = key; main.innerHTML = "";
+    var card = el("div", null, "card");
+    card.appendChild(el("h1", s.title || "Look at the front"));
+    if (s.body && s.body.length) { var ul = el("ul"); s.body.forEach(function (b) { ul.appendChild(el("li", b)); }); card.appendChild(ul); }
+    main.appendChild(card);
+    (s.questions || []).forEach(function (q) {
+      var box = el("div", null, "card"), status = el("div", "", "status"), mine = d.mine[q.key] || {};
+      box.appendChild(el("div", q.prompt, "prompt"));
+      if (q.kind === "confidence") {
+        var row = el("div", null, "choices");
+        q.choices.forEach(function (c, i) {
+          var b = el("button", c); b.type = "button"; if (mine.choice === i) b.className = "on";
+          b.onclick = function () { row.querySelectorAll("button").forEach(function (x) { x.className = ""; }); b.className = "on"; send(d.current, q.key, {choice: i}, status); };
+          row.appendChild(b);
+        });
+        box.appendChild(row);
+      } else {
+        var t = el("textarea"); t.dataset.key = q.key; t.maxLength = 1000; if (q.long) t.className = "long";
+        t.value = drafts[q.key] != null ? drafts[q.key] : (mine.text || ""); t.setAttribute("aria-label", q.prompt);
+        var b = el("button", "Send", "send"); b.type = "button";
+        b.onclick = function () { send(d.current, q.key, {text: t.value}, status); };
+        box.appendChild(t); box.appendChild(b);
+      }
+      if (mine.text || mine.choice != null) { status.textContent = "Sent ✓ (you can change it)"; }
+      box.appendChild(status);
+      var shared = d.shared && d.shared[q.key];
+      var anything = shared && (shared.counts ? shared.counts.some(function (n) { return n > 0; }) : shared.answers.length > 0);
+      if (anything) {
+        var sh = el("div", null, "shared"); sh.appendChild(el("strong", "The class said:"));
+        if (shared.counts) shared.choices.forEach(function (c, i) { sh.appendChild(el("div", c + ": " + shared.counts[i], "a")); });
+        else shared.answers.forEach(function (a) { sh.appendChild(el("div", a, "a")); });
+        box.appendChild(sh);
+      }
+      main.appendChild(box);
+    });
+    if (!(s.questions || []).length) main.appendChild(el("div", "No question on this slide - listen and watch the front.", "wait"));
+  }
+  function poll() {
+    fetch("/live/s/" + code + "/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.state !== "open") { main.innerHTML = ""; main.appendChild(el("div", "This lesson has finished. Thank you!", "wait")); clearInterval(timer); return; }
+      draw(d);
+    }).catch(function () {});
+  }
+  var timer = setInterval(poll, 2000); poll();
+})();
+</script>
+</body>
+</html>

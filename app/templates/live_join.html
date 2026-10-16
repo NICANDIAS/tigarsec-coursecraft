@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join a live lesson - CourseCraft</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon.png">
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px;
+         font-family:-apple-system,"Segoe UI",Roboto,sans-serif; background:linear-gradient(160deg,#0f2744,#1e3a5f); color:#1a1a1e; }
+  .box { background:#fff; border-radius:14px; padding:28px 24px; width:100%; max-width:380px; box-shadow:0 10px 40px rgba(0,0,0,0.3); }
+  h1 { margin:0 0 6px; font-size:1.5rem; color:#0f2744; }
+  p { color:#5b5b63; margin:0 0 18px; }
+  label { display:block; font-weight:600; margin:12px 0 6px; }
+  input { width:100%; font-size:1.3rem; padding:12px; border:2px solid #d5d9e2; border-radius:10px; }
+  input#code { text-transform:uppercase; letter-spacing:6px; text-align:center; font-weight:800; }
+  input:focus { outline:none; border-color:#2f6fed; }
+  button { width:100%; margin-top:20px; font-size:1.15rem; padding:14px; border:none; border-radius:10px; background:#2f6fed; color:#fff; font-weight:700; cursor:pointer; }
+  .error { background:#fdecea; color:#a3261b; border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+  .small { font-size:0.8rem; margin:14px 0 0; }
+</style>
+</head>
+<body>
+<form class="box" method="post" action="/join">
+  <h1>Join the lesson</h1>
+  <p>Type the code on the screen at the front.</p>
+  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+  <label for="code">Code</label>
+  <input id="code" name="code" value="{{ code }}" maxlength="12" autocomplete="off" autocapitalize="characters" required>
+  <label for="name">Your first name or a nickname</label>
+  <input id="name" name="name" maxlength="30" autocomplete="given-name" required>
+  <button type="submit">Join</button>
+  <p class="small">Only the name you type is shown to your lecturer. No account or email is needed.</p>
+</form>
+</body>
+</html>

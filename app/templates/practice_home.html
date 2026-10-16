@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Exam practice - {{ course.name }} - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>Exam practice questions</h1>
+{% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
+
+{% if not is_exam_spec %}
+  <div class="card">
+    <p>This course's spec is not assessed by exam objectives (AO1, AO2 ...), so there is nothing to write exam-style questions against.</p>
+    <p class="muted">Exam practice works for specs that list assessment objectives, such as A levels and GCSEs - their spec page shows
+    a "How it is assessed" section.</p>
+  </div>
+{% else %}
+  <div class="card">
+    <p>Choose a unit and the topics to test. CourseCraft writes exam-style questions <strong>from the spec's own statements</strong>,
+    labels each one with the objective it tests (AO1-AO4, in line with the spec's weighting) and adds a mark scheme.
+    They are drafts: read them before use.</p>
+    <form method="get" action="/courses/{{ course.id }}/practice-questions" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+      <div style="flex:1;min-width:240px;">
+        <label for="unit">Unit</label>
+        <select id="unit" name="unit" onchange="this.form.submit()" style="margin:0;">
+          <option value="-1">Choose a unit...</option>
+          {% for i, u in units %}<option value="{{ i }}" {% if i == unit_index %}selected{% endif %}>{{ u.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <noscript><button class="btn btn-secondary" type="submit">Show topics</button></noscript>
+    </form>
+
+    {% if chosen %}
+      <form method="post" action="/courses/{{ course.id }}/practice-questions/generate" style="margin-top:14px;">
+        <input type="hidden" name="unit_index" value="{{ unit_index }}">
+        <fieldset style="border:1px solid var(--border);border-radius:8px;padding:10px 14px;max-height:360px;overflow:auto;">
+          <legend>Topics to test</legend>
+          {% for lo in chosen.learning_outcomes %}
+            <label style="font-weight:normal;display:flex;gap:8px;align-items:center;margin:4px 0;">
+              <input type="checkbox" name="lo-{{ loop.index0 }}" style="width:auto;margin:0;">
+              {{ lo.code }} {{ lo.title }} <span class="muted">({{ lo.criteria|length }})</span>
+            </label>
+          {% endfor %}
+        </fieldset>
+        <div style="display:flex;gap:10px;align-items:end;margin-top:10px;flex-wrap:wrap;">
+          <div><label for="count">Number of questions</label>
+            <select id="count" name="count" style="margin:0;">{% for n in [4, 6, 8, 10] %}<option {% if n == 6 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></div>
+          <button class="btn" type="submit">Write questions</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>Question sets</h2>
+  {% for s in sets %}
+    <div class="list-item">
+      <span><a href="/practice-questions/{{ s.id }}">{{ s.unit_name }}</a>
+        <span class="muted"> — {{ (s.topic_titles or [])|join(", ")|truncate(90) }}</span></span>
+      {% if s.status == "ready" %}<span class="badge badge-released">{{ (s.questions_json or [])|length }} questions</span>
+      {% elif s.status == "generating" %}<span class="badge badge-needs_review">Writing…</span>
+      {% else %}<span class="badge badge-failed">Failed</span>{% endif %}
+    </div>
+  {% else %}
+    <p class="muted">None yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

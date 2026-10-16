@@ -13,6 +13,7 @@ from ..auth import get_current_teacher
 from ..pptx_generator import generate_lesson_outline, render_lesson_pptx, test_unsplash_connection, resolve_slide_image, pick_palette
 from ..resource_export import render_resources_docx, extract_resources
 from ..llm_gateway import get_effective_provider
+from ..spec_context import spec_teaching_context, criterion_extra
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -194,7 +195,25 @@ def _unit_content_text(unit: dict, selected_lo_indices: list[int] | None = None,
         lines.append(f"\n{lo.get('code')} - {lo.get('title')}")
         for c in criteria_to_use:
             lines.append(f"  {c.get('code')}: {c.get('description')}")
+            extra = criterion_extra(c)  # Stage 6: a guidance column, when the spec has one ("" otherwise)
+            if extra:
+                lines.append(extra)
     return "\n".join(lines)
+
+
+def _selected_los(unit: dict, selected_lo_indices, selected_criteria_by_lo) -> list:
+    """The outcomes a deck is built from (all of them when nothing was picked)."""
+    all_los = unit.get("learning_outcomes", [])
+    picked = set(selected_lo_indices or []) | set((selected_criteria_by_lo or {}).keys())
+    return [lo for i, lo in enumerate(all_los) if i in picked] if picked else all_los
+
+
+def _deck_content_text(spec_json: dict, unit: dict, selected_lo_indices, selected_criteria_by_lo) -> str:
+    """The unit's criteria (as before) plus - Stage 6 - what the spec says about how it is taught
+    and assessed (exam objectives, teaching content...). For specs without that, unchanged."""
+    text = _unit_content_text(unit, selected_lo_indices, selected_criteria_by_lo)
+    context = spec_teaching_context(spec_json, unit, _selected_los(unit, selected_lo_indices, selected_criteria_by_lo))
+    return f"{text}\n\n{context}" if context else text
 
 
 @router.post("/courses/{course_id}/presentations/generate")
@@ -280,7 +299,8 @@ async def generate_presentation(
     db.commit()
     db.refresh(deck)
 
-    content_text = _unit_content_text(unit, selected_lo_indices, selected_criteria_by_lo)
+    content_text = _deck_content_text(course.spec_version.structured_json if course.spec_version else {}, unit,
+                                      selected_lo_indices, selected_criteria_by_lo)
     background_tasks.add_task(
         _run_generation_job, deck.id, content_text, duration_minutes, previous_lesson_context, bool(include_practicals)
     )
@@ -322,7 +342,7 @@ def regenerate_deck(
     # JSON round-tripping always turns dict keys into strings - convert back to int here
     # so this matches what _unit_content_text expects (the same keys enumerate() produces).
     stored_criteria_by_lo = {int(k): v for k, v in (deck.selected_criteria_by_lo or {}).items()}
-    content_text = _unit_content_text(unit, deck.selected_lo_indices or [], stored_criteria_by_lo)
+    content_text = _deck_content_text(course.spec_version.structured_json, unit, deck.selected_lo_indices or [], stored_criteria_by_lo)
 
     deck.status = "generating"
     deck.error_detail = None
