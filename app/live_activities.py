@@ -102,3 +102,31 @@ def tally(screen: dict, responses: list) -> dict:
             entry["choices"] = q.get("choices", [])
         out[q["key"]] = entry
     return out
+
+
+LOCAL_HOSTS = ("localhost", "127.", "0.0.0.0", "[::1]", "::1")
+
+
+def clean_public_url(value) -> str | None:
+    """An admin-typed address like '192.168.1.20:8000' or 'https://coursecraft.college.ac.uk/'
+    -> 'http://192.168.1.20:8000' / 'https://coursecraft.college.ac.uk'. None if it is not a
+    usable web address (spaces, other characters) - nothing odd can end up in a QR code."""
+    import re
+    text = str(value or "").strip().rstrip("/")
+    if not text:
+        return None
+    if not re.match(r"^https?://", text, re.IGNORECASE):
+        text = "http://" + text
+    if len(text) > 200 or not re.match(r"^https?://[A-Za-z0-9.\-]+(:\d{1,5})?(/[A-Za-z0-9._~\-/]*)?$", text):
+        return None
+    return text
+
+
+def join_link(base_url: str, code: str) -> str:
+    return f"{base_url.rstrip('/')}/join?code={code}"
+
+
+def is_local_only(base_url: str) -> bool:
+    """True for an address a student's phone can never open (this computer's own name)."""
+    host = base_url.split("://", 1)[-1].split("/", 1)[0].lower()
+    return any(host.startswith(h) for h in LOCAL_HOSTS)

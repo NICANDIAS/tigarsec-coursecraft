@@ -89,4 +89,25 @@
     <button class="btn" type="submit" style="margin-top:10px;">Save SMTP settings</button>
   </form>
 </div>
+
+<div class="card">
+  <h2>Address students use to join live lessons</h2>
+  <p class="muted">This is the address put inside the QR code that students scan to join a live lesson. It must be one
+  their phones can open - this computer's network address (e.g. <code>192.168.1.20:8000</code>) or, once CourseCraft is on a
+  college server, its proper name (e.g. <code>https://coursecraft.yourcollege.ac.uk</code>). Leave it empty to use the address
+  the lecturer's browser used.</p>
+  {% if request.query_params.get("error") == "bad_public_url" %}
+    <div class="error-box">That is not a web address CourseCraft can use - type it like 192.168.1.20:8000 or https://coursecraft.college.ac.uk</div>
+  {% endif %}
+  <form method="post" action="/admin/system-settings/public-url" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+    <div style="flex:1;min-width:260px;">
+      <label for="public_base_url">Address</label>
+      <input type="text" id="public_base_url" name="public_base_url" value="{{ settings.public_base_url or '' }}"
+             placeholder="e.g. 192.168.1.20:8000" style="margin:0;">
+    </div>
+    <button class="btn" type="submit">Save address</button>
+  </form>
+  <p class="muted" style="margin-top:8px;">On a Mac, this computer's network address is shown by the command
+  <code>ipconfig getifaddr en0</code> (add <code>:8000</code>). Phones must be on the same Wi-Fi.</p>
+</div>
 {% endblock %}

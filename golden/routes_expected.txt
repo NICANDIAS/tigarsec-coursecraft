@@ -89,6 +89,7 @@ POST   /admin/schema-check/fix  ->  admin.py:schema_check_fix
 POST   /admin/sow-templates/upload  ->  sow_templates.py:upload_sow_template
 POST   /admin/sow-templates/{template_id}/delete  ->  sow_templates.py:delete_sow_template
 POST   /admin/system-settings  ->  admin.py:update_system_settings
+POST   /admin/system-settings/public-url  ->  admin.py:update_public_url
 POST   /admin/system-settings/smtp  ->  admin.py:update_smtp_settings
 POST   /admin/users/create  ->  admin.py:create_user
 POST   /admin/users/{user_id}/disable-two-factor  ->  admin.py:admin_disable_two_factor

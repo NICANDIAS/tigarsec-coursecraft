@@ -5,7 +5,9 @@ fake that returns fixed answers, so nothing is sent anywhere. No PDFs needed.
 
   practice: page offered only for exam specs, questions written + checked, cut-off answer
             retried with fewer questions, set shown / deleted, other lecturers kept out
-  live:     start from a deck, two students join with the code (no account), answer a
+  live:     start from a deck, the join screen has a QR code AND the address + code to type
+            (and warns if phones could not open the address; the admin's address setting is used),
+            two students join with the code (no account), answer a
             question and a confidence poll, can't answer a closed question, lecturer sees
             names + counts, "share with class" shows answers WITHOUT names, end -> students
             told, summary + CSV (spreadsheet-formula safe), other lecturers kept out, delete
@@ -14,7 +16,7 @@ fake that returns fixed answers, so nothing is sent anywhere. No PDFs needed.
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/selftest_stage6_db.py
-Expected last line: "ALL STAGE 6 CHECKS PASSED (27)"
+Expected last line: "ALL STAGE 6 CHECKS PASSED (31)"
 """
 import asyncio
 import json
@@ -61,7 +63,7 @@ assert str(database.engine.url).endswith("coursecraft_stage6_selftest.db"), "SAF
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.models import Teacher, Course, CourseTeacher, SpecVersion, LessonDeck, PracticeSet, LiveSession, LiveResponse  # noqa: E402
-from app.routers import practice as pr, live as lv, presentations as pres  # noqa: E402
+from app.routers import practice as pr, live as lv, presentations as pres, admin as adm  # noqa: E402
 
 RESULTS = []
 
@@ -168,7 +170,17 @@ check("go live: session with a 6-character code and the deck's screens", session
 check("another lecturer cannot start a live session from this deck",
       lv.live_start_from_deck(deck.id, db, other).headers["location"] == "/" and db.query(LiveSession).count() == 1)
 html = lv.live_teach(session.id, request("/t"), db, lecturer).body.decode()
-check("presenting screen shows the join code", session.join_code in html and "/join" in html)
+check("join screen: QR code to scan AND the address + code to type", "<svg" in html and 'aria-label="QR code to join"' in html
+      and "http://test/join" in html and session.join_code in html and "Scan to join" in html)
+check("no 'phones can't open this' warning for a real network address", "Phones can't open this address" not in html)
+local_html = lv.live_teach(session.id, Request({"type": "http", "method": "GET", "path": "/t", "query_string": b"", "headers": [],
+                                                 "server": ("localhost", 8000), "scheme": "http", "root_path": ""}), db, lecturer).body.decode()
+check("opened as localhost: the lecturer is warned before students try", "Phones can't open this address" in local_html)
+adm.update_public_url("192.168.1.20:8000", db, lecturer)
+set_html = lv.live_teach(session.id, request("/t"), db, lecturer).body.decode()
+check("the admin's address setting is used for the QR code and the typed address",
+      "http://192.168.1.20:8000/join" in set_html and "Phones can't open this address" not in set_html)
+check("a bad address is refused", "error=bad_public_url" in adm.update_public_url("javascript:alert(1)", db, lecturer).headers["location"])
 
 
 def join(name, code=None):

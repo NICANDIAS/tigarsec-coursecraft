@@ -24,12 +24,12 @@
 <body>
 <form class="box" method="post" action="/join">
   <h1>Join the lesson</h1>
-  <p>Type the code on the screen at the front.</p>
+  <p>{% if code %}Nearly there - just type your name.{% else %}Type the code on the screen at the front.{% endif %}</p>
   {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
   <label for="code">Code</label>
   <input id="code" name="code" value="{{ code }}" maxlength="12" autocomplete="off" autocapitalize="characters" required>
   <label for="name">Your first name or a nickname</label>
-  <input id="name" name="name" maxlength="30" autocomplete="given-name" required>
+  <input id="name" name="name" maxlength="30" autocomplete="given-name" required {% if code %}autofocus{% endif %}>
   <button type="submit">Join</button>
   <p class="small">Only the name you type is shown to your lecturer. No account or email is needed.</p>
 </form>

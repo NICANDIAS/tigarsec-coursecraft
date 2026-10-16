@@ -4,7 +4,7 @@ database, no PDFs needed (the real-PDF checks SKIP if the PDFs are missing).
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_stage6.py
-Expected last line: "ALL 11 TESTS PASSED"
+Expected last line: "ALL 14 TESTS PASSED"
 """
 import sys
 import types
@@ -172,6 +172,62 @@ def real_specs_digital_unchanged_alevel_gets_objectives():
         context = sc.spec_teaching_context(spec, r["units"][0])
         assert (context == "") == expect_empty, (name, context[:80])
     assert "AO1" in context and "2 hours 15 minutes" in context
+
+
+
+# ---------------------------------------------------------------- QR code join
+from app import qr  # noqa: E402
+
+# Fingerprints of the QR codes made by the original JavaScript library (Kazuhiko Arase's
+# QRCode for JavaScript) for these texts: CourseCraft's Python port must give the same squares.
+REFERENCE = {
+    ("http://192.168.1.20:8000/join?code=K7QX2M", "M"): (29, "d8e9e395983b411c"),
+    ("https://coursecraft.dudleycol.ac.uk/join?code=ABC234", "M"): (33, "f8e82e069ee5be62"),
+    ("x", "M"): (21, "d17fbaa4c91d6671"),
+    ("HELLO WORLD", "H"): (25, "74f89cbf523712ec"),
+    ("https://coursecraft.college.example.ac.uk/live/join?code=K7QX2M&from=teams-meeting-chat-link", "M"): (41, "9ed67f55b3abe20e"),
+    ("h" * 150, "M"): (49, "441f4261c033627d"),
+}
+
+
+@test
+def qr_codes_match_the_original_library_square_for_square():
+    import hashlib
+    for (text, level), (size, digest) in REFERENCE.items():
+        m = qr.qr_matrix(text, level)
+        flat = "/".join("".join("1" if x else "0" for x in row) for row in m)
+        assert (len(m), hashlib.sha256(flat.encode()).hexdigest()[:16]) == (size, digest), text[:40]
+
+
+@test
+def a_qr_code_scans_back_to_the_join_link():
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        raise Skip("OpenCV not installed (the square-for-square check above still ran)")
+    link = "http://192.168.1.20:8000/join?code=K7QX2M"
+    m = qr.qr_matrix(link)
+    n, scale, border = len(m), 8, 4
+    img = np.full(((n + 2 * border) * scale,) * 2, 255, np.uint8)
+    for r, row in enumerate(m):
+        for c, dark in enumerate(row):
+            if dark:
+                img[(r + border) * scale:(r + border + 1) * scale, (c + border) * scale:(c + border + 1) * scale] = 0
+    assert cv2.QRCodeDetector().detectAndDecode(img)[0] == link
+
+
+@test
+def the_join_address_is_checked_before_it_goes_in_a_qr_code():
+    assert la.clean_public_url("192.168.1.20:8000") == "http://192.168.1.20:8000"
+    assert la.clean_public_url("https://coursecraft.college.ac.uk/") == "https://coursecraft.college.ac.uk"
+    for bad in ("", "http://bad url", "javascript:alert(1)", 'http://x.com/"><script>', "ftp://x.com"):
+        assert la.clean_public_url(bad) is None, bad
+    assert la.join_link("http://192.168.1.20:8000/", "K7QX2M") == "http://192.168.1.20:8000/join?code=K7QX2M"
+    assert la.is_local_only("http://localhost:8000") and la.is_local_only("http://127.0.0.1:8000")
+    assert not la.is_local_only("http://192.168.1.20:8000") and not la.is_local_only("https://coursecraft.college.ac.uk")
+    svg = qr.qr_svg("http://192.168.1.20:8000/join?code=K7QX2M")
+    assert svg.startswith("<svg") and "<script" not in svg and "join?code" not in svg  # the link is only in the squares
 
 
 if __name__ == "__main__":

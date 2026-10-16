@@ -36,14 +36,47 @@
   footer button:disabled { opacity:0.35; cursor:default; }
   footer .counter { color:var(--muted); }
   footer .end { margin-left:auto; background:#fff; color:var(--low); border:1px solid var(--low); }
+  .overlay { position:fixed; inset:0; background:linear-gradient(160deg,var(--navy),var(--navy2)); color:#fff; z-index:20;
+             display:flex; align-items:center; justify-content:center; gap:56px; padding:30px; flex-wrap:wrap; }
+  .overlay[hidden] { display:none; }
+  .overlay .qrbox { background:#fff; padding:14px; border-radius:16px; line-height:0; }
+  .overlay .qrbox svg { width:min(42vh, 380px); height:auto; }
+  .overlay h1 { font-size:2.2rem; margin:0 0 10px; }
+  .overlay .bigcode { font-size:3.6rem; font-weight:800; letter-spacing:10px; background:#fff; color:var(--navy); border-radius:12px;
+                      padding:4px 20px; display:inline-block; margin:6px 0 14px; }
+  .overlay .names { display:flex; flex-wrap:wrap; gap:8px; max-width:520px; margin:14px 0 20px; min-height:40px; }
+  .overlay .names span { background:rgba(255,255,255,0.16); padding:6px 12px; border-radius:20px; font-size:1.05rem; }
+  .overlay .start { background:#fff; color:var(--navy); border:none; font-size:1.2rem; font-weight:800; padding:14px 28px; border-radius:10px; cursor:pointer; }
+  .overlay .copy { background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.6); padding:10px 16px; border-radius:8px; cursor:pointer; margin-left:10px; }
+  .warn { background:#fff4d6; color:#5c4300; border-radius:10px; padding:12px 14px; max-width:520px; font-size:0.98rem; line-height:1.45; }
+  .warn a { color:#5c4300; font-weight:700; }
   @media (max-width: 900px) { main { flex-direction:column; } .panel { max-width:none; border-left:none; border-top:1px solid #e1e1e6; } .stage { padding:24px; } }
 </style>
 </head>
 <body>
+<div class="overlay" id="join-overlay" {% if session.current_screen > 0 %}hidden{% endif %} role="dialog" aria-label="Join this lesson">
+  <div class="qrbox">{{ qr|safe }}</div>
+  <div>
+    <h1>Scan to join</h1>
+    <div>or go to <strong>{{ join_url }}</strong> and type</div>
+    <div class="bigcode">{{ session.join_code }}</div>
+    {% if local_only %}
+      <div class="warn" role="alert"><strong>Phones can't open this address</strong> ({{ join_url }}) - it only works on this computer.
+        {% if is_admin %}Set the address students should use in <a href="/admin/system-settings">Admin → System settings</a>
+        (e.g. this computer's network address, like 192.168.1.20:8000), then reopen this page.
+        {% else %}Ask an admin to set the address students should use (Admin → System settings).{% endif %}</div>
+    {% endif %}
+    <div class="names" id="joined-names" aria-live="polite"></div>
+    <button type="button" class="start" id="start">Start the lesson &rarr;</button>
+    <button type="button" class="copy copy-link">Copy join link</button>
+  </div>
+</div>
 <header>
   <span class="join">Join at <strong>{{ join_url }}</strong> with code</span>
   <span class="code" id="code">{{ session.join_code }}</span>
   <span class="people" id="people">0 joined</span>
+  <button type="button" id="show-join" title="Show the QR code again (for latecomers)">QR code</button>
+  <button type="button" class="copy-link" title="Copy the join link, e.g. to paste into a Teams meeting chat">Copy join link</button>
   <a href="/" title="Leave this page - the session stays open">Leave</a>
 </header>
 <main>
@@ -85,7 +118,30 @@
     document.getElementById("next").disabled = current >= screens.length - 1;
   }
 
+  var JOIN_LINK = {{ join_link|tojson }};
+  function drawJoined(names) {
+    var box = document.getElementById("joined-names"); box.innerHTML = "";
+    if (!names.length) { box.appendChild(el("span", "Waiting for students to join…")); return; }
+    names.forEach(function (n) { box.appendChild(el("span", n)); });
+  }
+  document.getElementById("start").onclick = function () { document.getElementById("join-overlay").hidden = true; };
+  document.getElementById("show-join").onclick = function () { document.getElementById("join-overlay").hidden = false; };
+  document.querySelectorAll(".copy-link").forEach(function (b) {
+    b.onclick = function () {
+      var done = function () { var t = b.textContent; b.textContent = "Copied ✓"; setTimeout(function () { b.textContent = t; }, 1500); };
+      if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(JOIN_LINK).then(done); }
+      else { window.prompt("Copy this join link:", JOIN_LINK); }
+    };
+  });
+  document.addEventListener("keydown", function (e) {
+    var overlay = document.getElementById("join-overlay");
+    if (overlay.hidden) return;
+    if (e.key === "Enter" || e.key === "Escape") overlay.hidden = true;
+    e.stopImmediatePropagation();  // while the join screen is up, arrow keys don't move the slides
+  }, true);
+
   function drawAnswers(data) {
+    drawJoined(data.joined);
     document.getElementById("people").textContent = data.joined.length + " joined";
     document.getElementById("people").title = data.joined.join(", ");
     revealed = data.revealed;
@@ -123,7 +179,7 @@
   function poll() {
     fetch("/live/{{ session.id }}/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
       if (d.state !== "open") { window.location = "/live/{{ session.id }}/summary"; return; }
-      if (d.current === current) drawAnswers(d);
+      if (d.current === current) drawAnswers(d); else drawJoined(d.joined);
     }).catch(function () {});
   }
   document.getElementById("prev").onclick = function () { go(current - 1); };

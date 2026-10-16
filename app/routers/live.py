@@ -25,7 +25,12 @@ from ..database import get_db
 from ..models import Teacher, LessonDeck, PracticeSet, LiveSession, LiveParticipant, LiveResponse
 from ..auth import get_current_teacher
 from ..course_access import get_course_for_teacher
-from ..live_activities import screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally
+import os
+
+from ..live_activities import (screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally,
+                               clean_public_url, join_link, is_local_only)
+from ..qr import qr_svg
+from ..system_settings import get_system_settings
 from .presentations import _can_access_deck
 
 router = APIRouter()
@@ -86,9 +91,22 @@ def live_teach(session_id: int, request: Request, db: Session = Depends(get_db),
         return RedirectResponse(url="/", status_code=303)
     if session.state != "open":
         return RedirectResponse(url=f"/live/{session.id}/summary", status_code=303)
-    join_url = str(request.base_url).rstrip("/") + "/join"
-    return templates.TemplateResponse("live_teach.html", {"request": request, "teacher": teacher, "session": session,
-                                                          "screens": session.screens_json or [], "join_url": join_url})
+    base, from_setting = join_base(request, db)
+    link = join_link(base, session.join_code)
+    return templates.TemplateResponse("live_teach.html", {
+        "request": request, "teacher": teacher, "session": session, "screens": session.screens_json or [],
+        "join_url": base + "/join", "join_link": link, "qr": qr_svg(link, size_px=320),
+        "local_only": is_local_only(base), "from_setting": from_setting, "is_admin": teacher.role == "admin"})
+
+
+def join_base(request, db):
+    """The address students' phones use: the admin's setting, else the COURSECRAFT_PUBLIC_URL
+    server setting, else the address this browser used. Returns (address, came_from_a_setting)."""
+    for value in (getattr(get_system_settings(db), "public_base_url", None), os.getenv("COURSECRAFT_PUBLIC_URL")):
+        cleaned = clean_public_url(value)
+        if cleaned:
+            return cleaned, True
+    return str(request.base_url).rstrip("/"), False
 
 
 @router.get("/live/{session_id}/data")

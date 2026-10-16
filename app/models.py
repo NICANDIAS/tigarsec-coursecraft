@@ -854,6 +854,10 @@ class SystemSettings(Base):
     smtp_password = Column(Text, nullable=True)
     smtp_from = Column(String(255), nullable=True)
     smtp_use_tls = Column(Boolean, nullable=True)
+    # Stage 6: the address students' phones use to reach CourseCraft (e.g. http://192.168.1.20:8000
+    # or https://coursecraft.college.ac.uk) - put inside the live lesson QR code. Empty = the
+    # address the lecturer's browser used (fine once CourseCraft has a proper network name).
+    public_base_url = Column(String(255), nullable=True)
     updated_at = Column(DateTime, nullable=True)
     updated_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
 
