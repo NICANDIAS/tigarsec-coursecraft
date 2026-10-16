@@ -109,6 +109,8 @@ def course_detail(
             .limit(5)
             .all()
         )
+        from ..models import QuizSet
+        quizzes = db.query(QuizSet).filter(QuizSet.course_id == course_id).order_by(QuizSet.id.desc()).limit(10).all()
         spec_json = course.spec_version.structured_json if course.spec_version and course.spec_version.structured_json else {}
         return templates.TemplateResponse(
             "course_detail.html",
@@ -120,6 +122,7 @@ def course_detail(
                 "recent_decks": recent_decks,
                 "delete_error": delete_error or None,
                 "live_sessions": live_sessions,
+                "quizzes": quizzes,
                 "is_exam_spec": has_exam_objectives(spec_json),
             },
         )
@@ -143,6 +146,8 @@ def _delete_live_and_practice(db, course_id: int):
         db.query(LiveParticipant).filter(LiveParticipant.session_id.in_(session_ids)).delete(synchronize_session=False)
         db.query(LiveSession).filter(LiveSession.id.in_(session_ids)).delete(synchronize_session=False)
     db.query(PracticeSet).filter(PracticeSet.course_id == course_id).delete(synchronize_session=False)
+    from ..models import QuizSet  # Stage 8
+    db.query(QuizSet).filter(QuizSet.course_id == course_id).delete(synchronize_session=False)
 
 
 @router.post("/courses/{course_id}/delete")

@@ -11,8 +11,11 @@ This tool reads every file in app/routers/ (it does NOT run the app) and lists e
   python tools/check_routes.py check      # compare with the saved list
 
 "check" reports routes that DISAPPEARED or MOVED to a different function (always a problem),
-routes that are NEW (fine if you meant to add them - then run "snapshot" again), and
-functions that look like page handlers but have NO route decorator (usually a severed one).
+routes that are NEW (fine if you meant to add them - then run "snapshot" again),
+functions that look like page handlers but have NO route decorator (usually a severed one), and
+routes HIDDEN by an earlier one: e.g. "/courses/{id}/students/import" added after
+"/courses/{id}/students/{student_id}" - the earlier route catches the address first, so the
+new page never opens (the app answers "student_id must be a number" instead).
 """
 import ast
 import sys
@@ -58,6 +61,38 @@ def scan():
     return sorted(routes), orphans
 
 
+def _registration_order():
+    """Router files in the order main.py includes them (that is the order addresses are matched)."""
+    main_py = (ROOT / "app" / "main.py").read_text()
+    import re
+    return re.findall(r"include_router\((\w+)\.router", main_py)
+
+
+def hidden_routes():
+    """Routes that can never be reached because an EARLIER route with a {placeholder} in the
+    same place matches the same address first."""
+    order = {name: i for i, name in enumerate(_registration_order())}
+    ordered = []
+    for path in ROUTERS.glob("*.py"):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for method, url in (r for r in (_route_of(d) for d in node.decorator_list) if r):
+                    ordered.append(((order.get(path.stem, 999), node.lineno), method, url, f"{path.name}:{node.name}"))
+    ordered.sort()
+    found = []
+    for i, (_, method, url, where) in enumerate(ordered):
+        parts = url.strip("/").split("/")
+        for _, m2, url2, where2 in ordered[:i]:
+            p2 = url2.strip("/").split("/")
+            if m2 != method or len(p2) != len(parts) or url2 == url:
+                continue
+            if all(a == b or (b.startswith("{") and b.endswith("}")) for a, b in zip(parts, p2)):
+                found.append(f"{method} {url} ({where}) is hidden by {url2} ({where2})")
+                break
+    return found
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
     routes, orphans = scan()
@@ -85,6 +120,9 @@ def main():
     for o in orphans:
         problems += 1
         print(f"NO ROUTE {o}  <- has Depends(...) but no @router decorator: check it")
+    for h in hidden_routes():
+        problems += 1
+        print(f"HIDDEN   {h}")
     print(f"\n{len(routes)} routes found, {problems} problem(s).")
     return 1 if problems else 0
 

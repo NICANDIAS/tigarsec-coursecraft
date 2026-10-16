@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Quiz - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+{% if quiz.status == "generating" %}<meta http-equiv="refresh" content="4">{% endif %}
+<style>
+  .qz-card { border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px; background:var(--bg-elevated); }
+  .qz-choices { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .qz-choice { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; border:2px solid var(--border); }
+  .qz-choice.right { border-color:var(--success); background:color-mix(in srgb, var(--success) 10%, transparent); font-weight:600; }
+  .qz-shape { width:26px; height:26px; border-radius:6px; color:#fff; display:inline-flex; align-items:center; justify-content:center;
+              font-size:0.8rem; flex:none; }
+  .qz-s0 { background:#e21b3c; } .qz-s1 { background:#1368ce; } .qz-s2 { background:#c98a00; } .qz-s3 { background:#26890c; }
+  .qz-edit input[type=text] { width:100%; }
+  .qz-edit .qz-choice input[type=text] { flex:1; }
+  .qz-why { color:var(--text-muted); font-size:0.9rem; margin-top:8px; }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  @media (max-width: 640px) { .qz-choices { grid-template-columns:1fr; } }
+</style>
+<p><a href="/courses/{{ quiz.course_id }}#live">&larr; Back to the course</a>
+  {% if quiz.lesson_deck_id %} · <a href="/lesson-decks/{{ quiz.lesson_deck_id }}">the lesson</a>{% endif %}</p>
+<h1>Quiz: {{ quiz.title }}</h1>
+
+{% if quiz.status == "generating" %}
+  <div class="card" role="status">Writing the quiz from the lesson… this page refreshes by itself (usually under a minute).</div>
+{% elif quiz.status == "failed" %}
+  <div class="error-box" role="alert">{{ quiz.error_detail }}</div>
+  <p><a class="btn btn-secondary" href="/quizzes/{{ quiz.id }}?edit=1">Type the questions in myself</a></p>
+{% elif not editing %}
+  {% if saved %}<div class="card" role="status" style="border-left:4px solid var(--success);">Saved.</div>{% endif %}
+  {% if quiz.error_detail %}<p class="muted">{{ quiz.error_detail }}</p>{% endif %}
+  <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <strong>{{ questions|length }} question{{ "s" if questions|length != 1 }} · {{ quiz.seconds_per_question }} seconds each</strong>
+    <span class="muted">Right answers score 500 points, plus up to 500 more for answering quickly.</span>
+    <span style="flex:1;"></span>
+    {% if questions %}
+      <form method="post" action="/quizzes/{{ quiz.id }}/live/start" style="margin:0;">
+        <button class="btn" type="submit">Run this quiz live</button></form>
+    {% endif %}
+    <a class="btn btn-secondary" href="/quizzes/{{ quiz.id }}?edit=1">Edit questions</a>
+  </div>
+  {% for q in questions %}
+    <div class="qz-card">
+      <strong>{{ loop.index }}. {{ q.question }}</strong>
+      <div class="qz-choices">
+        {% for c in q.choices %}
+          <div class="qz-choice {% if loop.index0 == q.answer %}right{% endif %}">
+            <span class="qz-shape qz-s{{ loop.index0 }}" aria-hidden="true">{{ ["▲","◆","●","■"][loop.index0] }}</span>
+            <span>{{ c }}{% if loop.index0 == q.answer %} <span class="sr-only">(right answer)</span> ✓{% endif %}</span>
+          </div>
+        {% endfor %}
+      </div>
+      {% if q.explanation %}<div class="qz-why">Why: {{ q.explanation }}</div>{% endif %}
+    </div>
+  {% endfor %}
+  {% if quiz.generated_by_provider %}<p class="muted">Written by AI from the lesson ({{ quiz.generated_by_provider }}) - check each question and its right answer before you run it.</p>{% endif %}
+  <form method="post" action="/quizzes/{{ quiz.id }}/delete" style="margin-top:20px;" onsubmit="return confirm('Delete this quiz? Results of quizzes you already ran are kept.');">
+    <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete this quiz</button>
+  </form>
+{% else %}
+  {% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
+  {% set rows = questions|list %}
+  {% set blank = {"question": "", "choices": ["", "", "", ""], "answer": -1, "explanation": ""} %}
+  <form method="post" action="/quizzes/{{ quiz.id }}/save" class="qz-edit">
+    <div class="card">
+      <label for="title">Quiz title</label>
+      <input type="text" id="title" name="title" value="{{ quiz.title }}" maxlength="255" required>
+      <label for="seconds" style="margin-top:10px;">Time for each question</label>
+      <select id="seconds" name="seconds">
+        {% for s in seconds_choices %}<option value="{{ s }}" {% if s == quiz.seconds_per_question %}selected{% endif %}>{{ s }} seconds</option>{% endfor %}
+      </select>
+    </div>
+    {% set all_rows = rows + ([blank] if rows|length < max_questions else []) %}
+    <input type="hidden" name="n" value="{{ all_rows|length }}">
+    {% for q in all_rows %}
+      {% set i = loop.index0 %}
+      <div class="qz-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <strong>{% if loop.last and q is sameas blank %}Add a question{% else %}Question {{ loop.index }}{% endif %}</strong>
+          {% if not (loop.last and q is sameas blank) %}
+            <label style="font-weight:400;font-size:0.9rem;margin:0;"><input type="checkbox" name="q{{ i }}_delete" value="1"> Remove</label>
+          {% endif %}
+        </div>
+        <input type="text" name="q{{ i }}_question" value="{{ q.question }}" maxlength="300" placeholder="The question" aria-label="Question {{ loop.index }}">
+        <div class="qz-choices">
+          {% for j in range(4) %}
+            <label class="qz-choice" style="margin:0;font-weight:400;">
+              <input type="radio" name="q{{ i }}_answer" value="{{ j }}" {% if q.answer == j %}checked{% endif %} aria-label="Answer {{ j + 1 }} is the right one">
+              <span class="qz-shape qz-s{{ j }}" aria-hidden="true">{{ ["▲","◆","●","■"][j] }}</span>
+              <input type="text" name="q{{ i }}_c{{ j }}" value="{{ q.choices[j] if q.choices|length > j else '' }}" maxlength="150"
+                     placeholder="{{ 'Answer ' ~ (j + 1) ~ (' (optional)' if j > 1 else '') }}" aria-label="Answer {{ j + 1 }}">
+            </label>
+          {% endfor %}
+        </div>
+        <input type="text" name="q{{ i }}_explanation" value="{{ q.explanation }}" maxlength="400" placeholder="Why it's right (shown after the reveal - optional)"
+               style="margin-top:8px;" aria-label="Explanation">
+      </div>
+    {% endfor %}
+    <p class="muted">Tick the circle next to the right answer. Two to four answers per question.</p>
+    <button class="btn" type="submit">Save</button>
+    {% if all_rows|length <= max_questions %}<button class="btn btn-secondary" type="submit" name="add_more" value="1">Save and add another</button>{% endif %}
+    {% if questions %}<a class="btn btn-secondary" href="/quizzes/{{ quiz.id }}">Cancel</a>{% endif %}
+  </form>
+{% endif %}
+{% endblock %}

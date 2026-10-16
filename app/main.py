@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from .database import engine, Base, SessionLocal
 from .models import Course, CourseTeacher
 from .auth import NotAuthenticated, NotAuthorized, get_current_teacher
-from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks, feedback, ai_providers, data_retention, sow_templates, exam_exemplars, timetabling, practice, live
+from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks, feedback, ai_providers, data_retention, sow_templates, exam_exemplars, timetabling, practice, live, quizzes
 from .schema_check import diff_schema, apply_schema_fix
 from . import retention
 
@@ -181,3 +181,4 @@ app.include_router(exam_exemplars.router)
 app.include_router(timetabling.router)
 app.include_router(practice.router)
 app.include_router(live.router)
+app.include_router(quizzes.router)

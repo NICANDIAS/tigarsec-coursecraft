@@ -10,6 +10,7 @@ GET    /admin/system-settings  ->  admin.py:system_settings_page
 GET    /admin/users  ->  admin.py:list_users
 GET    /analytics  ->  analytics.py:analytics_dashboard
 GET    /courses/{course_id}  ->  courses.py:course_detail
+GET    /courses/{course_id}/class-list/import  ->  students.py:import_students_page
 GET    /courses/{course_id}/coverage  ->  courses.py:coverage_dashboard
 GET    /courses/{course_id}/marking-templates  ->  submissions.py:marking_templates_page
 GET    /courses/{course_id}/practice-questions  ->  practice.py:practice_home
@@ -48,6 +49,7 @@ GET    /login/verify-2fa  ->  auth_router.py:verify_2fa_page
 GET    /logout  ->  auth_router.py:logout
 GET    /media-library  ->  presentations.py:media_library
 GET    /practice-questions/{set_id}  ->  practice.py:practice_detail
+GET    /quizzes/{quiz_id}  ->  quizzes.py:quiz_detail
 GET    /register  ->  auth_router.py:register_page
 GET    /settings  ->  courses.py:settings_page
 GET    /shared-with-me  ->  presentations.py:shared_with_me
@@ -100,6 +102,8 @@ POST   /admin/users/{user_id}/role  ->  admin.py:change_role
 POST   /admin/users/{user_id}/toggle-active  ->  admin.py:toggle_active
 POST   /courses/join  ->  courses.py:join_course
 POST   /courses/{course_id}/attach-spec  ->  specs.py:attach_spec
+POST   /courses/{course_id}/class-list/import  ->  students.py:import_students_upload
+POST   /courses/{course_id}/class-list/import/confirm  ->  students.py:import_students_confirm
 POST   /courses/{course_id}/delete  ->  courses.py:delete_course
 POST   /courses/{course_id}/detach-spec  ->  specs.py:detach_spec
 POST   /courses/{course_id}/force-delete  ->  courses.py:force_delete_course
@@ -107,6 +111,7 @@ POST   /courses/{course_id}/leave  ->  courses.py:leave_course
 POST   /courses/{course_id}/marking-templates/create  ->  submissions.py:create_marking_template
 POST   /courses/{course_id}/practice-questions/generate  ->  practice.py:practice_generate
 POST   /courses/{course_id}/presentations/generate  ->  presentations.py:generate_presentation
+POST   /courses/{course_id}/quizzes/new  ->  quizzes.py:quiz_new
 POST   /courses/{course_id}/scheme-of-work/generate  ->  scheme_of_work.py:generate_sow
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/delete  ->  scheme_of_work.py:delete_sow
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/edit  ->  scheme_of_work.py:update_sow
@@ -128,6 +133,7 @@ POST   /iv/{iv_id}/submit  ->  iv.py:submit_iv_review
 POST   /join  ->  live.py:join_submit
 POST   /lesson-decks/{deck_id}/delete  ->  presentations.py:delete_deck
 POST   /lesson-decks/{deck_id}/live/start  ->  live.py:live_start_from_deck
+POST   /lesson-decks/{deck_id}/quiz/generate  ->  quizzes.py:quiz_from_deck
 POST   /lesson-decks/{deck_id}/regenerate  ->  presentations.py:regenerate_deck
 POST   /lesson-decks/{deck_id}/share  ->  presentations.py:share_deck
 POST   /lesson-decks/{deck_id}/share/{share_id}/revoke  ->  presentations.py:revoke_deck_share
@@ -143,6 +149,9 @@ POST   /media-library/test-unsplash  ->  presentations.py:test_unsplash
 POST   /media-library/upload  ->  presentations.py:upload_image
 POST   /practice-questions/{set_id}/delete  ->  practice.py:practice_delete
 POST   /practice-questions/{set_id}/live/start  ->  live.py:live_start_from_practice
+POST   /quizzes/{quiz_id}/delete  ->  quizzes.py:quiz_delete
+POST   /quizzes/{quiz_id}/live/start  ->  live.py:live_start_from_quiz
+POST   /quizzes/{quiz_id}/save  ->  quizzes.py:quiz_save
 POST   /register  ->  auth_router.py:register_submit
 POST   /settings/change-password  ->  courses.py:change_password
 POST   /settings/feedback-styles/create  ->  courses.py:create_feedback_style

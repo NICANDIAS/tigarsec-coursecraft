@@ -52,6 +52,24 @@ def data_retention_page(
     )
 
 
+# Must come BEFORE "/admin/data-retention/{category}" - otherwise that route catches
+# "run-now" as a category name and the button silently does nothing (found by check_routes).
+@router.post("/admin/data-retention/run-now")
+def run_retention_check_now(
+    db: Session = Depends(get_db),
+    admin: Teacher = Depends(require_admin),
+):
+    """Manual trigger, mainly for testing a newly-configured policy without waiting for the
+    daily cycle - runs the exact same function the background loop calls."""
+    summary = retention.run_retention_check(db)
+    db.add(AuditLogEntry(
+        actor=admin.email, action="retention_check_run_manually",
+        detail=f"Marked {summary['marked']}, purged {summary['purged']}, {summary['upcoming']} upcoming.",
+    ))
+    db.commit()
+    return RedirectResponse(url="/admin/data-retention", status_code=303)
+
+
 @router.post("/admin/data-retention/{category}")
 def update_retention_policy(
     category: str,
@@ -127,20 +145,4 @@ def un_exempt_from_retention(
                    f"eligible to be marked for deletion again on the next daily check.",
         ))
         db.commit()
-    return RedirectResponse(url="/admin/data-retention", status_code=303)
-
-
-@router.post("/admin/data-retention/run-now")
-def run_retention_check_now(
-    db: Session = Depends(get_db),
-    admin: Teacher = Depends(require_admin),
-):
-    """Manual trigger, mainly for testing a newly-configured policy without waiting for the
-    daily cycle - runs the exact same function the background loop calls."""
-    summary = retention.run_retention_check(db)
-    db.add(AuditLogEntry(
-        actor=admin.email, action="retention_check_run_manually",
-        detail=f"Marked {summary['marked']}, purged {summary['purged']}, {summary['upcoming']} upcoming.",
-    ))
-    db.commit()
     return RedirectResponse(url="/admin/data-retention", status_code=303)

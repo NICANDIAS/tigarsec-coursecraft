@@ -1164,7 +1164,8 @@ def parse_spec_hybrid(
                 newly_discovered_pattern = {**layout_used, "label": f"Table: {layout_used.get('label', 'table')}"[:255]}
                 newly_discovered_pattern.pop("format_id", None)
                 reader_problems.append("New layout: CourseCraft worked out how this spec's tables are laid out and read every line itself. "
-                                       "As it is the first spec in this layout, check one or two units against the PDF and tick them.")
+                                       "As it is the first spec in this layout, compare one or two units with the PDF. If they are right, "
+                                       "tick \"I have checked this unit\" on every unit - the spec shows \"Looks good\" once all are ticked.")
 
     if not rule_units and not budget.cancelled():
         discovered = discover_pattern_via_ai(raw_text, progress_callback=progress_callback, budget=budget)

@@ -122,9 +122,15 @@ def tally(screen: dict, responses: list) -> dict:
     for q in screen.get("questions", []):
         answers = [r for r in responses if r["question_key"] == q["key"]]
         entry = {"prompt": q["prompt"], "kind": q["kind"], "answers": answers, "count": len(answers)}
-        if q["kind"] == "confidence":
+        if q["kind"] in ("confidence", "mcq"):
             entry["counts"] = [sum(1 for r in answers if r.get("choice") == i) for i in range(len(q.get("choices", [])))]
             entry["choices"] = q.get("choices", [])
+        if q["kind"] == "mcq":  # Stage 8 quiz question
+            entry["answer"] = q.get("answer")
+            entry["explanation"] = q.get("explanation", "")
+            entry["correct_count"] = sum(1 for r in answers if r.get("choice") == q.get("answer"))
+            for r in answers:
+                r["correct"] = r.get("choice") == q.get("answer")
         out[q["key"]] = entry
     return out
 

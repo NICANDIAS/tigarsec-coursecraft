@@ -28,6 +28,26 @@
   .shared { margin-top:10px; padding-top:10px; border-top:1px dashed #d5d9e2; }
   .shared .a { background:#f3f5f9; border-radius:8px; padding:6px 10px; margin:4px 0; font-size:0.92rem; }
   .wait { text-align:center; color:#5b5b63; padding:30px 10px; }
+  /* Stage 8: live quiz */
+  .qz-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; color:#5b5b63; font-weight:600; }
+  .qz-clock { background:#0f2744; color:#fff; border-radius:20px; padding:4px 12px; font-weight:800; min-width:48px; text-align:center; }
+  .qz-clock.low { background:#c0392b; }
+  .qz-q { font-size:1.2rem; font-weight:700; line-height:1.35; margin:6px 0 14px; color:#0f2744; }
+  .qz-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .qz-grid button { min-height:96px; border:none; border-radius:12px; color:#fff; font-size:1rem; font-weight:700; padding:10px;
+                    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; box-shadow:0 3px 0 rgba(0,0,0,0.2); }
+  .qz-grid button .shape { font-size:1.6rem; }
+  .qz-grid button:disabled { opacity:0.35; }
+  .qz-grid button.picked { opacity:1; outline:4px solid #0f2744; outline-offset:2px; }
+  .qz-c0 { background:#e21b3c; } .qz-c1 { background:#1368ce; } .qz-c2 { background:#c98a00; } .qz-c3 { background:#26890c; }
+  .qz-result { text-align:center; padding:22px 12px; border-radius:12px; color:#fff; margin-bottom:12px; }
+  .qz-result.ok { background:#1b8a4b; } .qz-result.no { background:#a3261b; } .qz-result.none { background:#5b5b63; }
+  .qz-result .big { font-size:1.6rem; font-weight:800; }
+  .qz-result .pts { font-size:1.15rem; margin-top:4px; }
+  .qz-rank { text-align:center; font-size:1.05rem; margin-top:6px; }
+  .qz-board { list-style:none; padding:0; margin:0; }
+  .qz-board li { display:flex; justify-content:space-between; padding:8px 10px; border-bottom:1px solid #eef0f4; }
+  .qz-board li.me { background:#eef3fd; font-weight:700; border-radius:6px; }
 </style>
 </head>
 <body>
@@ -46,8 +66,94 @@
       .then(function (d) { status.textContent = d.ok ? "Sent ✓ (you can change it)" : d.message; status.className = d.ok ? "status" : "status bad"; })
       .catch(function () { status.textContent = "Not sent - check your connection and try again."; status.className = "status bad"; });
   }
+  // ---------------------------------------------------------------- Stage 8: live quiz
+  var SHAPES = ["▲", "◆", "●", "■"], deadline = null, clockFor = null;
+  function ordinal(n) { var s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
+  function tick() {
+    var c = document.getElementById("qz-clock");
+    if (!c || deadline == null) return;
+    var left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    c.textContent = left; c.className = "qz-clock" + (left <= 5 ? " low" : "");
+    if (left === 0) document.querySelectorAll(".qz-grid button").forEach(function (b) { b.disabled = true; });
+  }
+  setInterval(tick, 250);
+  function rankLine(me) {
+    if (!me) return null;
+    return el("div", "You're " + ordinal(me.rank) + " of " + me.players + " with " + me.points.toLocaleString() + " points", "qz-rank");
+  }
+  function drawQuiz(d) {
+    var s = d.screen; main.innerHTML = "";
+    var card = el("div", null, "card");
+    if (s.kind === "quiz_intro") {
+      card.appendChild(el("h1", s.title)); (s.body || []).forEach(function (b) { card.appendChild(el("p", b)); });
+      card.appendChild(el("div", "Get ready - the first question is coming…", "wait"));
+      main.appendChild(card); return;
+    }
+    if (s.kind === "leaderboard") {
+      card.appendChild(el("h1", "Final leaderboard"));
+      var ol = el("ol", null, "qz-board");
+      (d.top || []).forEach(function (t) {
+        var li = el("li", null, d.me && d.me.rank === t.rank && d.me.points === t.points ? "me" : "");
+        li.appendChild(el("span", t.rank + ". " + t.name)); li.appendChild(el("strong", t.points.toLocaleString())); ol.appendChild(li);
+      });
+      card.appendChild(ol);
+      var r = rankLine(d.me); if (r) card.appendChild(r);
+      main.appendChild(card); return;
+    }
+    var q = s.questions[0], mine = d.mine[q.key] || {}, answered = mine.choice != null;
+    var head = el("div", null, "qz-head"); head.appendChild(el("span", s.title));
+    var clock = el("span", String(q.seconds), "qz-clock"); clock.id = "qz-clock";
+    if (!d.revealed) head.appendChild(clock);
+    card.appendChild(head);
+    if (d.revealed) {
+      var right = q.answer, box;
+      if (!answered) { box = el("div", null, "qz-result none"); box.appendChild(el("div", "No answer this time", "big")); }
+      else if (mine.choice === right) { box = el("div", null, "qz-result ok"); box.appendChild(el("div", "Correct!", "big")); box.appendChild(el("div", "+" + (mine.points || 0) + " points", "pts")); }
+      else { box = el("div", null, "qz-result no"); box.appendChild(el("div", "Not this time", "big")); }
+      card.appendChild(box);
+      card.appendChild(el("div", "The answer: " + SHAPES[right] + " " + q.choices[right], "prompt"));
+      if (q.explanation) card.appendChild(el("p", q.explanation));
+      var rl = rankLine(d.me); if (rl) card.appendChild(rl);
+      main.appendChild(card); deadline = null; return;
+    }
+    card.appendChild(el("div", q.prompt, "qz-q"));
+    var grid = el("div", null, "qz-grid"), status = el("div", "", "status");
+    var timeUp = d.elapsed != null && d.elapsed >= q.seconds;
+    q.choices.forEach(function (c, i) {
+      var b = el("button", null, "qz-c" + i + (mine.choice === i ? " picked" : "")); b.type = "button";
+      b.appendChild(el("span", SHAPES[i], "shape")); b.appendChild(el("span", c));
+      b.disabled = answered || timeUp;
+      b.onclick = function () {
+        grid.querySelectorAll("button").forEach(function (x) { x.disabled = true; }); b.className += " picked";
+        status.textContent = "Sending…"; status.className = "status";
+        var data = new URLSearchParams({screen: d.current, question_key: q.key, choice: i});
+        fetch("/live/s/" + code + "/answer", {method: "POST", body: data, credentials: "same-origin"})
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            status.textContent = res.ok ? "Locked in ✓ - watch the front for the answer" : res.message;
+            status.className = res.ok ? "status" : "status bad";
+          })
+          .catch(function () { status.textContent = "Not sent - check your connection."; status.className = "status bad";
+                               grid.querySelectorAll("button").forEach(function (x) { x.disabled = false; }); });
+      };
+      grid.appendChild(b);
+    });
+    card.appendChild(grid);
+    if (answered) status.textContent = "Locked in ✓ - watch the front for the answer";
+    else if (timeUp) { status.textContent = "Time's up for this question"; status.className = "status bad"; }
+    card.appendChild(status);
+    main.appendChild(card);
+    if (d.elapsed != null) { deadline = Date.now() + (q.seconds - d.elapsed) * 1000; tick(); }
+  }
+
   function draw(d) {
-    var s = d.screen, key = d.current + ":" + JSON.stringify(d.shared);
+    var s = d.screen;
+    if (s.kind === "quiz_question" || s.kind === "quiz_intro" || s.kind === "leaderboard") {
+      var qkey = "quiz:" + d.current + ":" + d.revealed + ":" + JSON.stringify(d.mine) + ":" + JSON.stringify(d.top || null);
+      if (qkey === shownKey) return;
+      shownKey = qkey; drawQuiz(d); return;
+    }
+    var key = d.current + ":" + JSON.stringify(d.shared);
     if (key === shownKey) return;  // nothing changed - don't wipe what the student is typing
     document.querySelectorAll("textarea").forEach(function (t) { drafts[t.dataset.key] = t.value; });
     shownKey = key; main.innerHTML = "";

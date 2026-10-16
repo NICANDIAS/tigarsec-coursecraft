@@ -441,6 +441,8 @@ def delete_deck(
     if deck.pptx_path and os.path.exists(deck.pptx_path):
         os.remove(deck.pptx_path)
     db.query(ResourceShare).filter(ResourceShare.lesson_deck_id == deck_id).delete()
+    from ..models import QuizSet  # a quiz made from this lesson stays - it has its own copy of the questions
+    db.query(QuizSet).filter(QuizSet.lesson_deck_id == deck_id).update({"lesson_deck_id": None}, synchronize_session=False)
     db.delete(deck)
     db.commit()
     return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
@@ -459,10 +461,14 @@ def view_deck(
     resource_count = len(extract_resources(deck.outline_json)) if deck and deck.outline_json else 0
     shares = db.query(ResourceShare).filter(ResourceShare.lesson_deck_id == deck_id).all() if deck.teacher_id == teacher.id else []
     is_owner = deck.teacher_id == teacher.id
+    # Stage 8: quizzes made from this lesson (only for lecturers on the course - not a cover share)
+    from ..models import QuizSet
+    can_quiz = bool(get_course_for_teacher(db, deck.course_id, teacher))
+    quizzes = db.query(QuizSet).filter(QuizSet.lesson_deck_id == deck.id).order_by(QuizSet.id.desc()).all() if can_quiz else []
     return templates.TemplateResponse(
         "presentation_detail.html",
         {"request": request, "teacher": teacher, "deck": deck, "resource_count": resource_count,
-         "shares": shares, "is_owner": is_owner},
+         "shares": shares, "is_owner": is_owner, "can_quiz": can_quiz, "quizzes": quizzes},
     )
 
 

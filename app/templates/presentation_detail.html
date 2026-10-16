@@ -90,6 +90,25 @@
     {% endif %}
   </div>
 
+  {% if deck.outline_json and can_quiz %}
+    <div class="card">
+      <h2 style="margin-top:0;">Live quiz</h2>
+      <p class="muted">A quick multiple-choice quiz on this lesson - students answer on their phones against the clock,
+      score points for right and fast answers, and see a leaderboard. Great as a plenary or next lesson's starter.</p>
+      {% for qz in quizzes %}
+        <div class="list-item">
+          <a href="/quizzes/{{ qz.id }}">{{ qz.title }}</a>
+          <span class="muted">{% if qz.status == "generating" %}Writing…{% elif qz.status == "failed" %}Failed{% else %}{{ (qz.questions_json or [])|length }} questions{% endif %}</span>
+        </div>
+      {% endfor %}
+      <form method="post" action="/lesson-decks/{{ deck.id }}/quiz/generate" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label for="quiz-count" style="margin:0;">Questions</label>
+        <select id="quiz-count" name="count" style="width:auto;">{% for n in [5, 8, 10, 12, 15] %}<option value="{{ n }}" {% if n == 8 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+        <button class="btn" type="submit">{{ "Make another quiz" if quizzes else "Make a quiz from this lesson" }}</button>
+      </form>
+    </div>
+  {% endif %}
+
   {% if deck.outline_json %}
     <div class="card">
       <h2>Lesson outline</h2>

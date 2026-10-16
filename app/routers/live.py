@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Teacher, LessonDeck, PracticeSet, LiveSession, LiveParticipant, LiveResponse
+from ..models import Teacher, LessonDeck, PracticeSet, QuizSet, LiveSession, LiveParticipant, LiveResponse
 from ..auth import get_current_teacher
 from ..course_access import get_course_for_teacher
 import os
@@ -30,6 +30,7 @@ import os
 from ..live_activities import (screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally,
                                clean_public_url, join_link, is_local_only, attach_pptx_slides)
 from ..qr import qr_svg
+from ..quiz import screens_from_quiz, public_screen, points_for, is_open, leaderboard
 from ..system_settings import get_system_settings
 from .presentations import _can_access_deck, deck_layout
 
@@ -40,11 +41,11 @@ COOKIE_HOURS = 6
 
 # ------------------------------------------------------------------------------- lecturer
 
-def _new_session(db, teacher, course_id, title, screens, deck_id=None, practice_id=None):
+def _new_session(db, teacher, course_id, title, screens, deck_id=None, practice_id=None, quiz_id=None):
     taken = {c for (c,) in db.query(LiveSession.join_code).filter(LiveSession.state == "open").all()}
     session = LiveSession(teacher_id=teacher.id, course_id=course_id, lesson_deck_id=deck_id, practice_set_id=practice_id,
-                          title=title[:255], join_code=new_join_code(taken), screens_json=screens, current_screen=0,
-                          revealed_screens=[], state="open")
+                          quiz_set_id=quiz_id, title=title[:255], join_code=new_join_code(taken), screens_json=screens,
+                          current_screen=0, screen_started_at=datetime.datetime.utcnow(), revealed_screens=[], state="open")
     db.add(session)
     db.commit()
     return session
@@ -73,6 +74,46 @@ def live_start_from_practice(set_id: int, db: Session = Depends(get_db), teacher
     return RedirectResponse(url=f"/live/{session.id}/teach", status_code=303)
 
 
+@router.post("/quizzes/{quiz_id}/live/start")
+def live_start_from_quiz(quiz_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    quiz = db.get(QuizSet, quiz_id)
+    if not quiz or not get_course_for_teacher(db, quiz.course_id, teacher):
+        return RedirectResponse(url="/", status_code=303)
+    if not quiz.questions_json:
+        return RedirectResponse(url=f"/quizzes/{quiz.id}", status_code=303)
+    from ..live_activities import _number
+    screens = _number(screens_from_quiz(quiz.questions_json, quiz.seconds_per_question or 20, quiz.title))
+    session = _new_session(db, teacher, quiz.course_id, f"Quiz: {quiz.title}", screens, quiz_id=quiz.id)
+    return RedirectResponse(url=f"/live/{session.id}/teach", status_code=303)
+
+
+def _elapsed(session):
+    """Seconds since the current screen was shown (None for sessions from before Stage 8)."""
+    if not session.screen_started_at:
+        return None
+    return max(0.0, (datetime.datetime.utcnow() - session.screen_started_at).total_seconds())
+
+
+def _is_quiz(screens):
+    return any(q.get("kind") == "mcq" for s in screens for q in s.get("questions", []))
+
+
+def _quiz_board(db, session, final=False):
+    """The leaderboard so far: each student's points from the questions whose answer has been
+    REVEALED (so the scores on the projector never give away the right answer early). The final
+    leaderboard (and the summary) counts every question."""
+    screens = session.screens_json or []
+    answers = {q["key"]: q.get("answer") for s in screens for q in s.get("questions", []) if q.get("kind") == "mcq"}
+    rows = db.query(LiveResponse).filter(LiveResponse.session_id == session.id).all()
+    if not final:
+        shown = set(session.revealed_screens or [])
+        rows = [r for r in rows if r.screen_index in shown]
+    names = {p.id: p.display_name for p in db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).all()}
+    scored = [{"participant": r.participant_id, "points": r.points or 0,
+               "correct": r.question_key in answers and r.answer_choice == answers[r.question_key]} for r in rows]
+    return leaderboard(scored, names)
+
+
 def _own(db, session_id, teacher):
     session = db.get(LiveSession, session_id)
     return session if session and session.teacher_id == teacher.id else None
@@ -84,7 +125,7 @@ def _responses(db, session, screen_index=None):
     if screen_index is not None:
         q = q.filter(LiveResponse.screen_index == screen_index)
     return [{"question_key": r.question_key, "name": p.display_name, "participant": p.id, "text": r.answer_text,
-             "choice": r.answer_choice, "screen": r.screen_index} for r, p in q.order_by(LiveResponse.id).all()]
+             "choice": r.answer_choice, "screen": r.screen_index, "points": r.points} for r, p in q.order_by(LiveResponse.id).all()]
 
 
 @router.get("/live/{session_id}/teach", response_class=HTMLResponse)
@@ -131,8 +172,13 @@ def live_teacher_data(session_id: int, db: Session = Depends(get_db), teacher: T
     index = session.current_screen
     people = db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).order_by(LiveParticipant.id).all()
     screen = screens[index] if 0 <= index < len(screens) else {"questions": []}
-    return {"state": session.state, "current": index, "joined": [p.display_name for p in people],
+    data = {"state": session.state, "current": index, "joined": [p.display_name for p in people],
             "revealed": index in (session.revealed_screens or []), "tally": tally(screen, _responses(db, session, index))}
+    if _is_quiz(screens):
+        data["elapsed"] = _elapsed(session)
+        final = screen.get("kind") == "leaderboard"
+        data["leaderboard"] = [{k: t[k] for k in ("rank", "name", "points", "correct")} for t in _quiz_board(db, session, final)[:10]]
+    return data
 
 
 @router.post("/live/{session_id}/screen")
@@ -140,7 +186,10 @@ def live_set_screen(session_id: int, screen: int = Form(...), db: Session = Depe
     session = _own(db, session_id, teacher)
     if not session or session.state != "open":
         return JSONResponse({"ok": False}, status_code=404)
-    session.current_screen = max(0, min(screen, len(session.screens_json or []) - 1))
+    new_index = max(0, min(screen, len(session.screens_json or []) - 1))
+    if new_index != session.current_screen or session.screen_started_at is None:
+        session.screen_started_at = datetime.datetime.utcnow()  # the quiz countdown starts now
+    session.current_screen = new_index
     db.commit()
     return {"ok": True, "current": session.current_screen}
 
@@ -182,9 +231,10 @@ def live_summary(session_id: int, request: Request, db: Session = Depends(get_db
     # students who said "Not yet" to any objective - the ones to check on next lesson
     not_yet = sorted({r["name"] for i, s, t in per_screen for e in t.values() if e["kind"] == "confidence"
                       for r in e["answers"] if r.get("choice") == 0})
+    board = _quiz_board(db, session, final=True) if _is_quiz(screens) else None
     return templates.TemplateResponse("live_summary.html", {
         "request": request, "teacher": teacher, "session": session, "per_screen": per_screen, "people": people,
-        "answered_count": len(answered), "not_yet": not_yet, "response_count": len(responses)})
+        "answered_count": len(answered), "not_yet": not_yet, "response_count": len(responses), "board": board})
 
 
 @router.get("/live/{session_id}/summary.csv")
@@ -196,12 +246,15 @@ def live_summary_csv(session_id: int, db: Session = Depends(get_db), teacher: Te
     prompts = {q["key"]: (s.get("title", ""), q["prompt"], q.get("choices")) for s in screens for q in s.get("questions", [])}
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["Student", "Screen", "Question", "Answer"])
+    answers = {q["key"]: q.get("answer") for s in screens for q in s.get("questions", []) if q.get("kind") == "mcq"}
+    writer.writerow(["Student", "Screen", "Question", "Answer", "Correct", "Points"])
     for r in _responses(db, session):
         title, prompt, choices = prompts.get(r["question_key"], ("", r["question_key"], None))
         answer = choices[r["choice"]] if choices and r["choice"] is not None and 0 <= r["choice"] < len(choices) else (r["text"] or "")
+        is_quiz = r["question_key"] in answers
         # a leading = + - @ would make a spreadsheet run it as a formula - prefix it so it stays text
-        cells = [r["name"], title, prompt, answer]
+        cells = [r["name"], title, prompt, answer, ("yes" if r["choice"] == answers[r["question_key"]] else "no") if is_quiz else "",
+                 r["points"] if r["points"] is not None else ""]
         writer.writerow(["'" + c if c[:1] in ("=", "+", "-", "@") else c for c in (str(x) for x in cells)])
     return Response(out.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="live-session-{session.id}.csv"'})
@@ -283,12 +336,27 @@ def student_data(code: str, request: Request, db: Session = Depends(get_db)):
     mine = {r.question_key: {"text": r.answer_text, "choice": r.answer_choice}
             for r in db.query(LiveResponse).filter(LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id,
                                                    LiveResponse.screen_index == index).all()}
+    revealed = index in (session.revealed_screens or [])
     shared = None
-    if index in (session.revealed_screens or []):
+    if revealed:
         # the class's answers WITHOUT names
         shared = {k: {"answers": [a["text"] for a in v["answers"] if a.get("text")], "counts": v.get("counts"), "choices": v.get("choices")}
                   for k, v in tally(screen, _responses(db, session, index)).items()}
-    return {"state": session.state, "current": index, "total": len(screens), "screen": screen, "mine": mine, "shared": shared}
+    data = {"state": session.state, "current": index, "total": len(screens), "screen": public_screen(screen, revealed),
+            "mine": mine, "shared": shared, "revealed": revealed}
+    if _is_quiz(screens):
+        mine_points = {r.question_key: r.points for r in db.query(LiveResponse).filter(
+            LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id).all()}
+        for key, entry in mine.items():
+            entry["points"] = mine_points.get(key) if revealed else None  # how they did is shown with the answer
+        data["elapsed"] = _elapsed(session)
+        if revealed or screen.get("kind") == "leaderboard":
+            board = _quiz_board(db, session, final=screen.get("kind") == "leaderboard")
+            me = next((t for t in board if t["participant"] == participant.id), None)
+            data["me"] = {"rank": me["rank"], "points": me["points"], "players": len(board)} if me else None
+            if screen.get("kind") == "leaderboard":
+                data["top"] = [{k: t[k] for k in ("rank", "name", "points")} for t in board[:5]]
+    return data
 
 
 @router.post("/live/s/{code}/answer")
@@ -304,6 +372,22 @@ def student_answer(code: str, request: Request, screen: int = Form(...), questio
     question = next((q for q in screens[screen].get("questions", []) if q["key"] == question_key), None)
     if not question:
         return JSONResponse({"ok": False, "message": "Unknown question."}, status_code=400)
+    existing = db.query(LiveResponse).filter(LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id,
+                                             LiveResponse.question_key == question_key).first()
+    if question["kind"] == "mcq":
+        # quiz: ONE answer per question (it is a race), only while the clock is running
+        if existing:
+            return JSONResponse({"ok": False, "message": "You've already answered this one."}, status_code=409)
+        elapsed = _elapsed(session)
+        if not is_open(elapsed, question.get("seconds"), screen in (session.revealed_screens or [])):
+            return JSONResponse({"ok": False, "message": "Time's up for this question."}, status_code=409)
+        if not 0 <= choice < len(question.get("choices", [])):
+            return JSONResponse({"ok": False, "message": "Pick one option."}, status_code=400)
+        points = points_for(choice == question.get("answer"), elapsed or 0, question.get("seconds") or 20)
+        db.add(LiveResponse(session_id=session.id, participant_id=participant.id, screen_index=screen,
+                            question_key=question_key, answer_choice=choice, points=points))
+        db.commit()
+        return {"ok": True}  # whether it was right is only shown when the lecturer reveals it
     if question["kind"] == "confidence":
         if not 0 <= choice < len(question.get("choices", [])):
             return JSONResponse({"ok": False, "message": "Pick one option."}, status_code=400)
@@ -312,8 +396,6 @@ def student_answer(code: str, request: Request, screen: int = Form(...), questio
         value_text, value_choice = clean_answer(text), None
         if not value_text:
             return JSONResponse({"ok": False, "message": "Type an answer first."}, status_code=400)
-    existing = db.query(LiveResponse).filter(LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id,
-                                             LiveResponse.question_key == question_key).first()
     if existing:
         existing.answer_text, existing.answer_choice, existing.screen_index = value_text, value_choice, screen
     else:

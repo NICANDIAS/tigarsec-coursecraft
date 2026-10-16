@@ -1051,6 +1051,26 @@ class PracticeSet(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class QuizSet(Base):
+    """
+    Stage 8: a live multiple-choice quiz (Kahoot-style) - written by AI from a lesson deck's
+    content and checked by the lecturer, or typed in by hand. Run live: a countdown, points for
+    right and quick answers, the answer revealed with how the class voted, and a leaderboard.
+    """
+    __tablename__ = "quiz_sets"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    lesson_deck_id = Column(Integer, ForeignKey("lesson_decks.id"), nullable=True)
+    title = Column(String(255), nullable=False)
+    questions_json = Column(JSON, nullable=True)        # [{"question", "choices": [...], "answer": index, "explanation"}]
+    seconds_per_question = Column(Integer, default=20, nullable=False)
+    status = Column(String(50), default="ready", nullable=False)  # generating | ready | failed
+    error_detail = Column(Text, nullable=True)
+    generated_by_provider = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 class LiveSession(Base):
     """
     Stage 6 (B): a live, interactive lesson - the lecturer presents a lesson deck (or a
@@ -1064,10 +1084,12 @@ class LiveSession(Base):
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
     lesson_deck_id = Column(Integer, ForeignKey("lesson_decks.id"), nullable=True)
     practice_set_id = Column(Integer, ForeignKey("practice_sets.id"), nullable=True)
+    quiz_set_id = Column(Integer, ForeignKey("quiz_sets.id"), nullable=True)   # Stage 8
     title = Column(String(255), nullable=False)
     join_code = Column(String(12), nullable=False, index=True)
     screens_json = Column(JSON, nullable=True)           # a snapshot of what was shown, taken at the start - the summary stays right even if the deck is later regenerated or deleted
     current_screen = Column(Integer, default=0, nullable=False)
+    screen_started_at = Column(DateTime, nullable=True)  # Stage 8: when the current screen was shown - quiz countdown and speed points
     revealed_screens = Column(JSON, nullable=True)       # screens whose answers the lecturer has shown to the class
     state = Column(String(20), default="open", nullable=False)  # open | ended
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -1096,4 +1118,5 @@ class LiveResponse(Base):
     question_key = Column(String(20), nullable=False)
     answer_text = Column(Text, nullable=True)
     answer_choice = Column(Integer, nullable=True)
+    points = Column(Integer, nullable=True)  # Stage 8: quiz points (right + speed); empty for other questions
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

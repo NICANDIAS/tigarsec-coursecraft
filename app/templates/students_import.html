@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Import class list - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<style>
+  .imp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px 16px; }
+  .imp-grid label { font-weight:600; font-size:0.9rem; }
+  .imp-grid select { width:100%; }
+  .imp-group { display:inline-flex; align-items:center; gap:6px; margin:4px 14px 4px 0; }
+  .imp-list { border:1px solid var(--border); border-radius:8px; max-height:340px; overflow:auto; }
+  .imp-list label { display:flex; gap:10px; align-items:center; padding:7px 12px; border-bottom:1px solid var(--border); font-weight:400; margin:0; }
+  .imp-list label:last-child { border-bottom:none; }
+  .imp-ref { color:var(--text-muted); font-size:0.85rem; margin-left:auto; }
+  .imp-change { font-size:0.85rem; color:var(--text-muted); }
+  .imp-count { display:inline-block; min-width:26px; text-align:center; font-weight:800; padding:1px 8px; border-radius:10px;
+               background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); margin-right:6px; }
+  .imp-tabs { display:flex; gap:16px; flex-wrap:wrap; }
+  .imp-tabs > div { flex:1; min-width:260px; }
+  textarea.paste { width:100%; min-height:140px; font-family:ui-monospace,Menlo,monospace; font-size:0.85rem; }
+</style>
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<h1>Import class list</h1>
+<p class="muted">Bring your students in from ProSolution (or any student records system) instead of typing them again.
+Only each student's <strong>name</strong> and <strong>student reference</strong> are saved - every other column in the file
+(emails, dates of birth, addresses...) is ignored and never stored. The uploaded file itself is deleted once you import
+(or after an hour).</p>
+
+{% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
+
+{% if not token %}
+<form class="card" method="post" action="/courses/{{ course.id }}/class-list/import" enctype="multipart/form-data">
+  <div class="imp-tabs">
+    <div>
+      <h2 style="margin-top:0;font-size:1.05rem;">Upload an export</h2>
+      <p class="muted">A CSV or Excel (.xlsx) file - e.g. a ProSolution class list / register report. Title rows above
+      the headings are fine.</p>
+      <input type="file" name="file" accept=".csv,.xlsx,.xlsm,.txt,text/csv">
+    </div>
+    <div>
+      <h2 style="margin-top:0;font-size:1.05rem;">...or paste it</h2>
+      <p class="muted">Select the rows on screen (including the heading row), copy, and paste here.</p>
+      <textarea class="paste" name="pasted" placeholder="Student Ref&#9;Forename&#9;Surname&#10;S1234567&#9;Amira&#9;KHAN&#10;S1234568&#9;Ben&#9;O'NEILL"></textarea>
+    </div>
+  </div>
+  <button class="btn" type="submit" style="margin-top:12px;">Read the list &rarr;</button>
+  <p class="muted" style="margin-top:10px;">Nothing is changed yet - you'll see exactly who would be added or updated first.</p>
+</form>
+{% else %}
+
+<form method="get" action="/courses/{{ course.id }}/class-list/import" id="imp-form">
+  <input type="hidden" name="t" value="{{ token }}">
+  <input type="hidden" name="mapped" value="1">
+
+  <div class="card">
+    <h2 style="margin-top:0;font-size:1.05rem;">1. Check the columns <span class="muted" style="font-weight:400;">({{ filename }})</span></h2>
+    <p class="muted">CourseCraft matched these by their headings. Change any that are wrong, then press <em>Update preview</em>.</p>
+    <div class="imp-grid">
+      {% for field, label in labels.items() %}
+        <div>
+          <label for="col_{{ field }}">{{ label }}</label>
+          <select id="col_{{ field }}" name="col_{{ field }}" form="imp-form">
+            <option value="">- not in this file -</option>
+            {% for h in headers %}<option value="{{ loop.index0 }}" {% if columns[field] == loop.index0 %}selected{% endif %}>{{ h or ("Column " ~ loop.index) }}</option>{% endfor %}
+          </select>
+        </div>
+      {% endfor %}
+    </div>
+    {% if not has_name %}<div class="error-box" role="alert" style="margin-top:10px;">Choose which column holds the students' names.</div>{% endif %}
+  </div>
+
+  {% if groups %}
+  <div class="card">
+    <h2 style="margin-top:0;font-size:1.05rem;">2. Which class{{ "es" if groups|length > 1 }}?</h2>
+    {% if groups|length > 1 %}<p class="muted">This file has {{ groups|length }} classes/groups. Tick the one(s) for <strong>{{ course.name }}</strong>.</p>{% endif %}
+    {% for g, n in groups %}
+      <label class="imp-group"><input type="checkbox" name="group" value="{{ g }}" form="imp-form" {% if g in chosen %}checked{% endif %}>
+        {{ g or "(no group)" }} <span class="muted">({{ n }})</span></label>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <label style="display:flex;gap:8px;align-items:center;font-weight:400;">
+      <input type="checkbox" name="archive" value="1" form="imp-form" {% if archive %}checked{% endif %}>
+      Also <strong>archive</strong> students on this course who are <strong>not</strong> in the list (e.g. withdrawn). They are never deleted - their marks stay.
+    </label>
+    <button class="btn btn-secondary" type="submit" style="margin-top:10px;">Update preview</button>
+  </div>
+</form>
+
+{% if needs_group %}
+  <div class="card" role="status"><strong>Tick your class above</strong> and press <em>Update preview</em> to see who would be imported.</div>
+{% elif has_name %}
+<form method="post" action="/courses/{{ course.id }}/class-list/import/confirm" class="card">
+  <input type="hidden" name="t" value="{{ token }}">
+  {% for field in labels %}<input type="hidden" name="col_{{ field }}" value="{{ columns[field] if columns[field] is not none else '' }}">{% endfor %}
+  {% for g in chosen %}<input type="hidden" name="group" value="{{ g }}">{% endfor %}
+  {% if archive %}<input type="hidden" name="archive" value="1">{% endif %}
+
+  <h2 style="margin-top:0;font-size:1.05rem;">3. Check and import</h2>
+  <p>
+    <span class="imp-count">{{ plan["add"]|length }}</span>new
+    &nbsp; <span class="imp-count">{{ plan["update"]|length }}</span>updated
+    &nbsp; <span class="imp-count">{{ plan["reactivate"]|length }}</span>back from archived
+    &nbsp; <span class="imp-count">{{ plan["same"]|length }}</span>already here, no change
+    {% if archive %}&nbsp; <span class="imp-count">{{ plan["archive"]|length }}</span>to archive{% endif %}
+  </p>
+  {% if plan["duplicates"] %}<p class="muted">{{ plan["duplicates"] }} repeated row(s) in the list were skipped.</p>{% endif %}
+  <p class="muted">Untick anyone you don't want changed.</p>
+
+  {% for kind, heading in [("add", "New students"), ("update", "Updated (name or reference changed)"), ("reactivate", "Back from archived"), ("archive", "Will be archived (not in the list)")] %}
+    {% if plan[kind] %}
+      <h3 style="font-size:0.95rem;margin:14px 0 6px;">{{ heading }}</h3>
+      <div class="imp-list">
+        {% for p in plan[kind] %}
+          <label><input type="checkbox" name="pick" value="{{ p.key }}" checked>
+            <span>{{ p.name }}
+              {% if p.changes and p.changes.name %}<span class="imp-change">(was {{ p.old_name }})</span>{% endif %}
+              {% if p.changes and p.changes.ref %}<span class="imp-change">(reference now {{ p.changes.ref }})</span>{% endif %}
+            </span>
+            <span class="imp-ref">{{ p.ref }}</span></label>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endfor %}
+
+  {% if plan["add"] or plan["update"] or plan["reactivate"] or plan["archive"] %}
+    <button class="btn" type="submit" style="margin-top:14px;">Import ticked students</button>
+  {% else %}
+    <p><strong>Everyone in this list is already on the course - nothing to change.</strong></p>
+  {% endif %}
+  <a class="btn btn-secondary" href="/courses/{{ course.id }}/class-list/import" style="margin-top:14px;">Start again</a>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -108,7 +108,7 @@
 <div class="section-card">
   <div class="section-header">
     <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg></span>
-    <h2>Live lessons and exam practice</h2>
+    <h2 id="live">Live lessons, quizzes and exam practice</h2>
   </div>
   <p class="muted">Run any lesson above <strong>live</strong>: students join on their phones with a code (no account) and answer the
   lesson's questions while you teach; you see every answer as it arrives. Open a lesson and choose "Run live with students".</p>
@@ -125,6 +125,19 @@
         {% endif %}</span>
     </div>
   {% endfor %}
+  <h3 style="font-size:0.95rem;margin:16px 0 6px;">Live quizzes</h3>
+  {% for qz in quizzes | default([]) %}
+    <div class="list-item">
+      <a href="/quizzes/{{ qz.id }}">{{ qz.title }}</a>
+      <span class="muted">{% if qz.status == "generating" %}Writing…{% elif qz.status == "failed" %}Failed{% else %}{{ (qz.questions_json or [])|length }} questions{% endif %}</span>
+    </div>
+  {% else %}
+    <p class="muted">Make a quiz from any lesson above ("Make a quiz from this lesson"), or type one in here.</p>
+  {% endfor %}
+  <form method="post" action="/courses/{{ course.id }}/quizzes/new" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <input type="text" name="title" placeholder="Quiz title, e.g. Networking recap" maxlength="255" style="flex:1;min-width:200px;" aria-label="New quiz title">
+    <button class="btn btn-secondary" type="submit">New quiz</button>
+  </form>
   {% if is_exam_spec | default(false) %}
     <div style="margin-top:12px;">
       <a class="btn" href="/courses/{{ course.id }}/practice-questions">Exam practice questions (AO1–AO4)</a>
@@ -161,10 +174,15 @@
   </div>
 </div>
 
-<div class="section-card">
+<div class="section-card" id="students">
   <div class="section-header">
     <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
     <h2>Students</h2>
+  </div>
+  {% if request.query_params.get("imported") %}<div class="card" role="status" style="border-left:4px solid var(--accent);">{{ request.query_params.get("imported") }}</div>{% endif %}
+  <div style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <a class="btn" href="/courses/{{ course.id }}/class-list/import">Import class list (ProSolution / CSV / Excel)</a>
+    <span class="muted">No double entry - re-import any time to pick up new starters and name changes.</span>
   </div>
   {% if active_students %}
     {% for student in active_students %}

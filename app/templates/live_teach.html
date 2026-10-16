@@ -55,6 +55,40 @@
   .overlay .copy { background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.6); padding:10px 16px; border-radius:8px; cursor:pointer; margin-left:10px; }
   .warn { background:#fff4d6; color:#5c4300; border-radius:10px; padding:12px 14px; max-width:520px; font-size:0.98rem; line-height:1.45; }
   .warn a { color:#5c4300; font-weight:700; }
+  /* Stage 8: live quiz */
+  .stage.quiz { display:flex; flex-direction:column; padding:28px 40px; background:linear-gradient(160deg,#f4f6fb,#e9eef8); }
+  .qz-top { display:flex; align-items:center; gap:16px; }
+  .qz-top .label { flex:1; }
+  .qz-clock { width:84px; height:84px; border-radius:50%; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center;
+              font-size:2.2rem; font-weight:800; flex:none; }
+  .qz-clock.low { background:var(--low); }
+  .qz-count { font-size:1.1rem; color:var(--muted); text-align:center; }
+  .qz-count strong { display:block; font-size:2rem; color:var(--ink); }
+  .stage.quiz h1 { font-size:2.4rem; text-align:center; margin:auto 0; padding:20px 0; line-height:1.25; }
+  .qz-tiles { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:auto; }
+  .qz-tile { position:relative; display:flex; align-items:center; gap:16px; padding:22px 20px; border-radius:10px; color:#fff; font-size:1.5rem;
+             font-weight:700; min-height:96px; box-shadow:0 3px 0 rgba(0,0,0,0.18); overflow:hidden; }
+  .qz-tile .shape { font-size:1.8rem; width:40px; text-align:center; flex:none; }
+  .qz-tile .txt { flex:1; position:relative; z-index:1; }
+  .qz-tile .n { position:relative; z-index:1; font-size:1.6rem; font-weight:800; }
+  .qz-tile .fill { position:absolute; left:0; top:0; bottom:0; background:rgba(255,255,255,0.18); }
+  .qz-tile.dim { opacity:0.35; }
+  .qz-tile.right { outline:5px solid #fff; outline-offset:-5px; }
+  .qz-c0 { background:#e21b3c; } .qz-c1 { background:#1368ce; } .qz-c2 { background:#c98a00; } .qz-c3 { background:#26890c; }
+  .qz-why { margin-top:14px; font-size:1.2rem; background:#fff; border-radius:10px; padding:12px 16px; border-left:5px solid var(--ok); }
+  .board { list-style:none; padding:0; margin:0; }
+  .board li { display:flex; gap:10px; align-items:center; padding:8px 10px; border-radius:8px; margin:5px 0; background:#fff; border:1px solid #e1e1e6; font-size:0.98rem; }
+  .board .rk { width:28px; font-weight:800; color:var(--accent); }
+  .board .pts { margin-left:auto; font-weight:800; }
+  .podium { display:flex; align-items:flex-end; justify-content:center; gap:18px; margin:30px 0 20px; }
+  .podium > div { width:min(28%,240px); text-align:center; border-radius:12px 12px 0 0; color:#fff; padding:18px 12px; font-weight:800;
+                  display:flex; flex-direction:column; justify-content:flex-start; box-sizing:border-box; }
+  .podium .nm { font-size:1.5rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .podium .pt { font-size:1.05rem; opacity:0.9; margin-top:6px; }
+  .podium .p1 { background:#c98a00; height:300px; } .podium .p2 { background:#7c8696; height:230px; } .podium .p3 { background:#a0623a; height:180px; }
+  .stage.quiz .board { max-width:640px; margin:0 auto; width:100%; }
+  body.final .panel { display:none; }
+  .podium .medal { font-size:2.4rem; }
   @media (max-width: 900px) { main { flex-direction:column; } .panel { max-width:none; border-left:none; border-top:1px solid #e1e1e6; } .stage { padding:24px; } }
 </style>
 </head>
@@ -135,7 +169,8 @@
       document.getElementById("next").disabled = current >= screens.length - 1;
       return;
     }
-    stage.className = "stage"; stage.innerHTML = "";
+    if (s.kind === "quiz_question" || s.kind === "leaderboard" || s.kind === "quiz_intro") { drawQuiz(stage, s); return; }
+    stage.className = "stage"; stage.innerHTML = ""; document.body.classList.remove("final");
     if (LABELS[s.kind]) stage.appendChild(el("div", LABELS[s.kind], "label"));
     stage.appendChild(el("h1", s.title || ""));
     if (s.body && s.body.length) { var ul = el("ul"); s.body.forEach(function (b) { ul.appendChild(el("li", b)); }); stage.appendChild(ul); }
@@ -143,6 +178,97 @@
     document.getElementById("counter").textContent = (current + 1) + " / " + screens.length;
     document.getElementById("prev").disabled = current === 0;
     document.getElementById("next").disabled = current >= screens.length - 1;
+  }
+
+  // ---------------------------------------------------------------- Stage 8: live quiz
+  var SHAPES = ["▲", "◆", "●", "■"], quiz = {data: null, deadline: null, autoRevealed: {}};
+  function counterAndButtons() {
+    document.getElementById("counter").textContent = (current + 1) + " / " + screens.length;
+    document.getElementById("prev").disabled = current === 0;
+    document.getElementById("next").disabled = current >= screens.length - 1;
+  }
+  function boardList(rows, limit) {
+    var ol = el("ol", null, "board");
+    rows.slice(0, limit).forEach(function (r) {
+      var li = el("li"); li.appendChild(el("span", String(r.rank), "rk")); li.appendChild(el("span", r.name));
+      li.appendChild(el("span", r.points.toLocaleString(), "pts")); ol.appendChild(li);
+    });
+    return ol;
+  }
+  function drawQuiz(stage, s) {
+    var d = quiz.data && quiz.data.current === current ? quiz.data : null;
+    stage.className = "stage quiz"; stage.innerHTML = "";
+    document.body.classList.toggle("final", s.kind === "leaderboard");
+    counterAndButtons();
+    if (s.kind === "quiz_intro") {
+      stage.appendChild(el("div", "Live quiz", "label"));
+      stage.appendChild(el("h1", s.title));
+      (s.body || []).forEach(function (b) { var p = el("p", b); p.style.textAlign = "center"; p.style.fontSize = "1.5rem"; stage.appendChild(p); });
+      var hint = el("p", "Press Next when everyone has joined - the clock starts then."); hint.className = "muted"; hint.style.textAlign = "center";
+      stage.appendChild(hint);
+      return;
+    }
+    if (s.kind === "leaderboard") {
+      stage.appendChild(el("div", "Final leaderboard", "label"));
+      var rows = (d && d.leaderboard) || [];
+      if (!rows.length) { stage.appendChild(el("h1", "No scores yet")); return; }
+      stage.firstChild.style.textAlign = "center";
+      var podium = el("div", null, "podium"), medals = ["🥇", "🥈", "🥉"];
+      [1, 0, 2].forEach(function (i) {
+        if (!rows[i]) return;
+        var p = el("div", null, "p" + (i + 1)); p.appendChild(el("div", medals[i], "medal"));
+        p.appendChild(el("div", rows[i].name, "nm")); p.appendChild(el("div", rows[i].points.toLocaleString() + " pts", "pt"));
+        podium.appendChild(p);
+      });
+      stage.appendChild(podium);
+      if (rows.length > 3) stage.appendChild(boardList(rows.slice(3), 7));
+      return;
+    }
+    var q = s.questions[0], t = d && d.tally[q.key], revealedNow = d && d.revealed;
+    var top = el("div", null, "qz-top");
+    top.appendChild(el("div", s.title, "label"));
+    var count = el("div", null, "qz-count"); count.appendChild(el("strong", String(t ? t.count : 0))); count.appendChild(document.createTextNode("answered"));
+    top.appendChild(count);
+    var clock = el("div", "", "qz-clock"); clock.id = "qz-clock"; top.appendChild(clock);
+    stage.appendChild(top);
+    stage.appendChild(el("h1", q.prompt));
+    var tiles = el("div", null, "qz-tiles"), max = Math.max(1, t ? t.count : 1);
+    q.choices.forEach(function (c, i) {
+      var tile = el("div", null, "qz-tile qz-c" + i);
+      if (revealedNow) tile.className += (i === q.answer ? " right" : " dim");
+      if (revealedNow && t) { var fill = el("span", null, "fill"); fill.style.width = (t.counts[i] / max * 100) + "%"; tile.appendChild(fill); }
+      tile.appendChild(el("span", SHAPES[i], "shape")); tile.appendChild(el("span", c + (revealedNow && i === q.answer ? "  ✓" : ""), "txt"));
+      if (revealedNow && t) tile.appendChild(el("span", String(t.counts[i]), "n"));
+      tiles.appendChild(tile);
+    });
+    stage.appendChild(tiles);
+    if (revealedNow && q.explanation) stage.appendChild(el("div", q.explanation, "qz-why"));
+    tickClock();
+  }
+  function tickClock() {
+    var clock = document.getElementById("qz-clock"), s = screens[current];
+    if (!clock || !s || s.kind !== "quiz_question") return;
+    if (quiz.data && quiz.data.current === current && quiz.data.revealed) { clock.textContent = "✓"; clock.className = "qz-clock"; return; }
+    if (quiz.deadline == null) { clock.textContent = s.questions[0].seconds; return; }
+    var left = Math.max(0, Math.ceil((quiz.deadline - Date.now()) / 1000));
+    clock.textContent = left; clock.className = "qz-clock" + (left <= 5 ? " low" : "");
+    // the answer is shown by itself when the time is up, or as soon as everyone has answered
+    var d = quiz.data, t = d && d.current === current && d.tally[s.questions[0].key];
+    var everyone = t && d.joined.length > 0 && t.count >= d.joined.length;
+    if ((left === 0 || everyone) && !quiz.autoRevealed[current] && d && d.current === current && !d.revealed) {
+      quiz.autoRevealed[current] = true;
+      post("/live/{{ session.id }}/reveal", {screen: current, show: 1}).then(poll);
+    }
+  }
+  setInterval(tickClock, 250);
+  function drawQuizPanel(data) {
+    var box = document.getElementById("answers"); box.innerHTML = "";
+    document.querySelector(".panel h2 > span").firstChild.textContent = "Leaderboard ";
+    document.getElementById("answer-count").textContent = "";
+    document.getElementById("reveal").textContent = data.revealed ? "Hide answer" : "Show answer";
+    document.getElementById("reveal").style.display = screens[current].kind === "quiz_question" ? "" : "none";
+    if (!data.leaderboard || !data.leaderboard.length) { box.appendChild(el("p", "Scores appear here after the first answer is revealed.", "muted")); return; }
+    box.appendChild(boardList(data.leaderboard, 10));
   }
 
   var JOIN_LINK = {{ join_link|tojson }};
@@ -172,6 +298,15 @@
     document.getElementById("people").textContent = data.joined.length + " joined";
     document.getElementById("people").title = data.joined.join(", ");
     revealed = data.revealed;
+    var sc = screens[current] || {};
+    if (sc.kind === "quiz_question" || sc.kind === "leaderboard" || sc.kind === "quiz_intro") {
+      quiz.data = data;
+      if (data.elapsed != null && sc.kind === "quiz_question") quiz.deadline = Date.now() + (sc.questions[0].seconds - data.elapsed) * 1000;
+      drawQuizPanel(data); drawStage();
+      return;
+    }
+    document.querySelector(".panel h2 > span").firstChild.textContent = "Answers ";
+    document.getElementById("reveal").style.display = "";
     document.getElementById("reveal").textContent = revealed ? "Hide from class" : "Share with class";
     var box = document.getElementById("answers"); box.innerHTML = "";
     var keys = Object.keys(data.tally), total = 0;
@@ -202,7 +337,11 @@
   function post(url, body) {
     return fetch(url, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams(body), credentials: "same-origin"});
   }
-  function go(i) { current = Math.max(0, Math.min(screens.length - 1, i)); drawStage(); post("/live/{{ session.id }}/screen", {screen: current}).then(poll); }
+  function go(i) {
+    var next = Math.max(0, Math.min(screens.length - 1, i));
+    if (next !== current) { quiz.deadline = null; quiz.data = null; }
+    current = next; drawStage(); post("/live/{{ session.id }}/screen", {screen: current}).then(poll);
+  }
   function poll() {
     fetch("/live/{{ session.id }}/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
       if (d.state !== "open") { window.location = "/live/{{ session.id }}/summary"; return; }
