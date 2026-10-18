@@ -89,11 +89,27 @@
   .stage.quiz .board { max-width:640px; margin:0 auto; width:100%; }
   body.final .panel { display:none; }
   .podium .medal { font-size:2.4rem; }
+  /* Projector-safe: the answers panel is a hidden drawer on the projected screen (like PowerPoint's
+     speaker notes), opened only when the lecturer chooses; names are hidden unless asked for.
+     The presenter view (a second window on the lecturer's laptop) always shows it, with names. */
+  body:not(.presenter) .panel { position:fixed; top:0; right:0; bottom:0; width:min(460px, 92vw); max-width:none; z-index:15;
+                                box-shadow:-8px 0 30px rgba(0,0,0,0.25); transform:translateX(105%); transition:transform .2s ease; }
+  body.answers-open:not(.presenter) .panel { transform:none; }
+  body.presenter .panel { min-width:360px; }
+  .panel .close { border:none; background:transparent; font-size:1.3rem; cursor:pointer; color:var(--muted); margin-left:8px; }
+  body.presenter .panel .close { display:none; }
+  footer .tool { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  footer .tool .badge { display:inline-block; min-width:20px; padding:0 6px; margin-left:6px; border-radius:10px; background:var(--accent); color:#fff; font-size:0.8rem; }
+  footer .tool .badge:empty { display:none; }
+  body.presenter #toggle-answers, body.presenter #open-presenter, body.presenter .names-toggle { display:none !important; }
+  body.fs header { display:none; }
+  .presenter-note { background:#fff4d6; color:#5c4300; padding:6px 22px; font-size:0.9rem; }
+  body:not(.presenter) .presenter-note { display:none; }
   @media (max-width: 900px) { main { flex-direction:column; } .panel { max-width:none; border-left:none; border-top:1px solid #e1e1e6; } .stage { padding:24px; } }
 </style>
 </head>
-<body>
-<div class="overlay" id="join-overlay" {% if session.current_screen > 0 %}hidden{% endif %} role="dialog" aria-label="Join this lesson">
+<body class="{{ 'presenter' if presenter else '' }}">
+<div class="overlay" id="join-overlay" {% if session.current_screen > 0 or presenter %}hidden{% endif %} role="dialog" aria-label="Join this lesson">
   <div class="qrbox">{{ qr|safe }}</div>
   <div>
     <h1>Scan to join</h1>
@@ -118,11 +134,17 @@
   <button type="button" class="copy-link" title="Copy the join link, e.g. to paste into a Teams meeting chat">Copy join link</button>
   <a href="/" title="Leave this page - the session stays open">Leave</a>
 </header>
+<div class="presenter-note">Presenter view - only for your screen. The projector window shows the slides only; both stay in step.</div>
 <main>
   <section class="stage" id="stage" aria-live="polite"></section>
   <aside class="panel">
     <h2><span>Answers <span class="muted" id="answer-count"></span></span>
-      <button type="button" id="reveal" style="font-size:0.85rem;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;">Share with class</button></h2>
+      <span style="display:flex;align-items:center;gap:6px;">
+        <label class="names-toggle" style="font-size:0.8rem;font-weight:400;display:flex;align-items:center;gap:4px;" title="Names stay hidden on the projected screen unless you tick this">
+          <input type="checkbox" id="show-names"> Names</label>
+        <button type="button" id="reveal" style="font-size:0.85rem;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;">Share with class</button>
+        <button type="button" class="close" id="close-answers" title="Hide answers (A)" aria-label="Hide answers">&times;</button>
+      </span></h2>
     <div class="answers" id="answers"><p class="muted">Answers to this screen's questions appear here as students send them.</p></div>
   </aside>
 </main>
@@ -130,6 +152,9 @@
   <button type="button" id="prev">&larr; Back</button>
   <button type="button" id="next">Next &rarr;</button>
   <span class="counter" id="counter"></span>
+  <button type="button" class="tool" id="toggle-answers" title="Show or hide students' answers on this screen (A)">Answers<span class="badge" id="answers-badge"></span></button>
+  <button type="button" class="tool" id="open-presenter" title="Open a private window for your laptop with the answers and names, while this one stays on the projector">Presenter view</button>
+  <button type="button" class="tool" id="fullscreen" title="Full screen (F)">Full screen</button>
   <form method="post" action="/live/{{ session.id }}/end" style="margin-left:auto;" onsubmit="return confirm('End the live session? Students will be told it has finished.');">
     <button class="end" type="submit">End session</button>
   </form>
@@ -326,25 +351,59 @@
         block.appendChild(bars);
       } else {
         t.answers.slice().reverse().forEach(function (a) {
-          var card = el("div", null, "ans"); card.appendChild(el("div", a.name, "who")); card.appendChild(el("div", a.text)); block.appendChild(card);
+          var card = el("div", null, "ans");
+          if (PRESENTER || showNames) card.appendChild(el("div", a.name, "who"));
+          card.appendChild(el("div", a.text)); block.appendChild(card);
         });
       }
       box.appendChild(block);
     });
     document.getElementById("answer-count").textContent = total ? "(" + total + ")" : "";
+    document.getElementById("answers-badge").textContent = total ? String(total) : "";
   }
 
   function post(url, body) {
     return fetch(url, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams(body), credentials: "same-origin"});
   }
+  // ---------------------------------------------------------------- projector-safe answers drawer
+  var PRESENTER = document.body.classList.contains("presenter"), showNames = false, lastNav = 0, lastData = null;
+  function setAnswers(open) { document.body.classList.toggle("answers-open", !!open); }
+  function hasQuestions(i) { return ((screens[i] || {}).questions || []).length > 0; }
+  document.getElementById("toggle-answers").onclick = function () { setAnswers(!document.body.classList.contains("answers-open")); };
+  document.getElementById("close-answers").onclick = function () { setAnswers(false); };
+  document.getElementById("show-names").onchange = function () { showNames = this.checked; if (lastData) drawAnswers(lastData); };
+  document.getElementById("open-presenter").onclick = function () {
+    window.open("/live/{{ session.id }}/teach?view=presenter", "coursecraft-presenter-{{ session.id }}", "width=1200,height=800");
+  };
+  function toggleFullscreen() {
+    var on = !document.fullscreenElement;
+    if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {});
+    if (!on && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+  }
+  document.getElementById("fullscreen").onclick = toggleFullscreen;
+  document.addEventListener("fullscreenchange", function () {
+    document.body.classList.toggle("fs", !!document.fullscreenElement); setTimeout(drawStage, 50);
+  });
+  function arrived(i) {
+    // moving to another slide always hides the answers again - the class sees the slide, and the
+    // new answers only appear when the lecturer chooses (the "Answers" button shows how many are in)
+    setAnswers(false);
+  }
+
   function go(i) {
     var next = Math.max(0, Math.min(screens.length - 1, i));
     if (next !== current) { quiz.deadline = null; quiz.data = null; }
-    current = next; drawStage(); post("/live/{{ session.id }}/screen", {screen: current}).then(poll);
+    current = next; lastNav = Date.now(); arrived(current); drawStage();
+    post("/live/{{ session.id }}/screen", {screen: current}).then(poll);
   }
   function poll() {
     fetch("/live/{{ session.id }}/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
       if (d.state !== "open") { window.location = "/live/{{ session.id }}/summary"; return; }
+      // follow a move made in the other window (projector <-> presenter view)
+      if (d.current !== current && Date.now() - lastNav > 2500) {
+        current = d.current; quiz.deadline = null; quiz.data = null; arrived(current); drawStage();
+      }
+      lastData = d;
       if (d.current === current) drawAnswers(d); else drawJoined(d.joined);
     }).catch(function () {});
   }
@@ -355,6 +414,8 @@
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); go(current + 1); }
     if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(current - 1); }
+    if (e.key === "a" || e.key === "A") { if (!PRESENTER) setAnswers(!document.body.classList.contains("answers-open")); }
+    if (e.key === "f" || e.key === "F") { toggleFullscreen(); }
   });
   drawStage(); poll(); setInterval(poll, 2000);
 })();

@@ -150,7 +150,7 @@ def live_teach(session_id: int, request: Request, db: Session = Depends(get_db),
         "request": request, "teacher": teacher, "session": session, "screens": session.screens_json or [],
         "join_url": base + "/join", "join_link": link, "qr": qr_svg(link, size_px=320),
         "local_only": is_local_only(base), "from_setting": from_setting, "is_admin": teacher.role == "admin",
-        "layout": layout})
+        "layout": layout, "presenter": request.query_params.get("view") == "presenter"})
 
 
 def join_base(request, db):
