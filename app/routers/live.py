@@ -28,7 +28,7 @@ from ..course_access import get_course_for_teacher
 import os
 
 from ..live_activities import (screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally,
-                               clean_public_url, join_link, is_local_only, attach_pptx_slides)
+                               clean_public_url, join_link, is_local_only, attach_pptx_slides, choose_join_base)
 from ..qr import qr_svg
 from ..quiz import screens_from_quiz, public_screen, points_for, is_open, leaderboard
 from ..system_settings import get_system_settings
@@ -135,7 +135,7 @@ def live_teach(session_id: int, request: Request, db: Session = Depends(get_db),
         return RedirectResponse(url="/", status_code=303)
     if session.state != "open":
         return RedirectResponse(url=f"/live/{session.id}/summary", status_code=303)
-    base, from_setting = join_base(request, db)
+    base, from_setting, stale_setting = join_base_details(request, db)
     link = join_link(base, session.join_code)
     # the deck's real slides, when this session was started from a deck whose file still matches
     layout = None
@@ -150,17 +150,25 @@ def live_teach(session_id: int, request: Request, db: Session = Depends(get_db),
         "request": request, "teacher": teacher, "session": session, "screens": session.screens_json or [],
         "join_url": base + "/join", "join_link": link, "qr": qr_svg(link, size_px=320),
         "local_only": is_local_only(base), "from_setting": from_setting, "is_admin": teacher.role == "admin",
-        "layout": layout, "presenter": request.query_params.get("view") == "presenter"})
+        "layout": layout, "presenter": request.query_params.get("view") == "presenter",
+        "stale_setting": stale_setting})
 
 
 def join_base(request, db):
     """The address students' phones use: the admin's setting, else the COURSECRAFT_PUBLIC_URL
     server setting, else the address this browser used. Returns (address, came_from_a_setting)."""
+    base, from_setting, _stale = join_base_details(request, db)
+    return base, from_setting
+
+
+def join_base_details(request, db):
+    """(address, came_from_a_setting, the saved address if it was ignored as out of date)."""
+    saved = None
     for value in (getattr(get_system_settings(db), "public_base_url", None), os.getenv("COURSECRAFT_PUBLIC_URL")):
-        cleaned = clean_public_url(value)
-        if cleaned:
-            return cleaned, True
-    return str(request.base_url).rstrip("/"), False
+        saved = clean_public_url(value)
+        if saved:
+            break
+    return choose_join_base(saved, str(request.base_url))
 
 
 @router.get("/live/{session_id}/data")

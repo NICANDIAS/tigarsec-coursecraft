@@ -383,6 +383,7 @@ def update_public_url(
     public_base_url: str = Form(""),
     db: Session = Depends(get_db),
     admin: Teacher = Depends(require_admin),
+    back: str = Form(""),
 ):
     """Stage 6: the address put in the live lesson QR code (how students' phones reach CourseCraft)."""
     from ..live_activities import clean_public_url
@@ -395,6 +396,10 @@ def update_public_url(
     settings.updated_by_teacher_id = admin.id
     db.add(AuditLogEntry(actor=admin.email, action="system_settings_updated", detail=f"public_base_url={cleaned!r}"))
     db.commit()
+    # changed from a live lesson's join screen -> straight back to it (only ever a /live/ page)
+    import re
+    if isinstance(back, str) and re.match(r"^/live/\d+/teach$", back):
+        return RedirectResponse(url=back, status_code=303)
     return RedirectResponse(url="/admin/system-settings", status_code=303)
 
 

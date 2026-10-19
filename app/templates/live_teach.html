@@ -55,6 +55,13 @@
   .overlay .copy { background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.6); padding:10px 16px; border-radius:8px; cursor:pointer; margin-left:10px; }
   .warn { background:#fff4d6; color:#5c4300; border-radius:10px; padding:12px 14px; max-width:520px; font-size:0.98rem; line-height:1.45; }
   .warn a { color:#5c4300; font-weight:700; }
+  .overlay details.help { max-width:540px; margin-top:12px; font-size:0.95rem; line-height:1.45; }
+  .overlay details.help summary { cursor:pointer; font-weight:700; }
+  .overlay details.help code { background:rgba(255,255,255,0.18); padding:1px 6px; border-radius:4px; }
+  .overlay details.help li { margin:6px 0; }
+  .overlay form.addr { display:flex; gap:8px; }
+  .overlay form.addr input { flex:1; padding:8px 10px; border-radius:6px; border:none; font-size:1rem; }
+  .overlay form.addr button { background:#fff; color:var(--navy); border:none; border-radius:6px; padding:8px 12px; font-weight:700; cursor:pointer; }
   /* Stage 8: live quiz */
   .stage.quiz { display:flex; flex-direction:column; padding:28px 40px; background:linear-gradient(160deg,#f4f6fb,#e9eef8); }
   .qz-top { display:flex; align-items:center; gap:16px; }
@@ -121,6 +128,25 @@
         (e.g. this computer's network address, like 192.168.1.20:8000), then reopen this page.
         {% else %}Ask an admin to set the address students should use (Admin → System settings).{% endif %}</div>
     {% endif %}
+    {% if stale_setting %}
+      <div class="warn" role="status" style="margin-top:8px;">Using this laptop's current address, not the saved one ({{ stale_setting }}) - it looks like the laptop has moved network.</div>
+    {% endif %}
+    <details class="help">
+      <summary>Students can't connect?</summary>
+      <ol>
+        <li>The address above must be <strong>this laptop's address on the network it is on now</strong> (it changes between home and college).
+          On a Mac, open Terminal and run <code>ipconfig getifaddr en0</code> - add <code>:8000</code> to the number it shows.</li>
+        {% if is_admin %}
+        <li><form method="post" action="/admin/system-settings/public-url" class="addr">
+            <input type="hidden" name="back" value="/live/{{ session.id }}/teach">
+            <input name="public_base_url" placeholder="e.g. 10.20.30.40:8000" aria-label="Address students use" required>
+            <button type="submit">Use this address</button></form></li>
+        {% endif %}
+        <li>If the address is right and phones still can't open it, the Wi-Fi is blocking devices from reaching each other.
+          College networks such as <strong>eduroam</strong> usually do this on purpose. A laptop can't host for phones on that network -
+          CourseCraft needs to run on a college server that both can reach (ask IT), or everyone joins one hotspot for a test.</li>
+      </ol>
+    </details>
     <div class="names" id="joined-names" aria-live="polite"></div>
     <button type="button" class="start" id="start">Start the lesson &rarr;</button>
     <button type="button" class="copy copy-link">Copy join link</button>
@@ -155,6 +181,7 @@
   <button type="button" class="tool" id="toggle-answers" title="Show or hide students' answers on this screen (A)">Answers<span class="badge" id="answers-badge"></span></button>
   <button type="button" class="tool" id="open-presenter" title="Open a private window for your laptop with the answers and names, while this one stays on the projector">Presenter view</button>
   <button type="button" class="tool" id="fullscreen" title="Full screen (F)">Full screen</button>
+  {% if presenter %}<button type="button" class="tool" id="exit-presenter" title="Close this presenter window">Exit presenter view</button>{% endif %}
   <form method="post" action="/live/{{ session.id }}/end" style="margin-left:auto;" onsubmit="return confirm('End the live session? Students will be told it has finished.');">
     <button class="end" type="submit">End session</button>
   </form>
@@ -381,6 +408,11 @@
     if (!on && document.exitFullscreen) document.exitFullscreen().catch(function () {});
   }
   document.getElementById("fullscreen").onclick = toggleFullscreen;
+  var exitPresenter = document.getElementById("exit-presenter");
+  if (exitPresenter) exitPresenter.onclick = function () {
+    window.close();  // works when it was opened with the "Presenter view" button
+    setTimeout(function () { window.location = "/live/{{ session.id }}/teach"; }, 300);  // otherwise: back to the normal view
+  };
   document.addEventListener("fullscreenchange", function () {
     document.body.classList.toggle("fs", !!document.fullscreenElement); setTimeout(drawStage, 50);
   });

@@ -163,6 +163,31 @@ def join_link(base_url: str, code: str) -> str:
     return f"{base_url.rstrip('/')}/join?code={code}"
 
 
+def _host_port(url: str):
+    return url.split("://", 1)[-1].split("/", 1)[0].lower()
+
+
+def _is_ip_address(host: str) -> bool:
+    import re
+    return bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}(:\d+)?$", host))
+
+
+def choose_join_base(saved: str | None, browser_base: str):
+    """Which address goes in the QR code. A saved address that is a raw IP number (e.g.
+    192.168.0.177:8000) goes stale when the laptop moves to another network (home -> college),
+    so if the lecturer opened CourseCraft through a DIFFERENT IP address, that one is used
+    instead - it is the address this laptop really has now.
+    -> (address, came_from_the_setting, stale_setting_or_None)"""
+    browser_base = browser_base.rstrip("/")
+    if not saved:
+        return browser_base, False, None
+    browser_host = _host_port(browser_base)
+    if _is_ip_address(_host_port(saved)) and _is_ip_address(browser_host) and browser_host != _host_port(saved) \
+            and not is_local_only(browser_base):
+        return browser_base, False, saved
+    return saved, True, None
+
+
 def is_local_only(base_url: str) -> bool:
     """True for an address a student's phone can never open (this computer's own name)."""
     host = base_url.split("://", 1)[-1].split("/", 1)[0].lower()

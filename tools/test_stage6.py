@@ -4,7 +4,7 @@ database, no PDFs needed (the real-PDF checks SKIP if the PDFs are missing).
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_stage6.py
-Expected last line: "ALL 14 TESTS PASSED"
+Expected last line: "ALL 15 TESTS PASSED"
 """
 import sys
 import types
@@ -228,6 +228,18 @@ def the_join_address_is_checked_before_it_goes_in_a_qr_code():
     assert not la.is_local_only("http://192.168.1.20:8000") and not la.is_local_only("https://coursecraft.college.ac.uk")
     svg = qr.qr_svg("http://192.168.1.20:8000/join?code=K7QX2M")
     assert svg.startswith("<svg") and "<script" not in svg and "join?code" not in svg  # the link is only in the squares
+
+
+@test
+def a_saved_address_from_another_network_is_not_used():
+    # saved at home, laptop now at college and opened through its college address -> the college one
+    assert la.choose_join_base("http://192.168.0.177:8000", "http://10.20.30.40:8000/") == ("http://10.20.30.40:8000", False, "http://192.168.0.177:8000")
+    # opened as localhost: CourseCraft can't tell the laptop's address, so the saved one stays
+    assert la.choose_join_base("http://192.168.0.177:8000", "http://localhost:8000/") == ("http://192.168.0.177:8000", True, None)
+    # a proper name (a college server) always wins - it doesn't change with the network
+    assert la.choose_join_base("https://coursecraft.college.ac.uk", "http://10.20.30.40:8000/") == ("https://coursecraft.college.ac.uk", True, None)
+    assert la.choose_join_base(None, "http://10.20.30.40:8000/") == ("http://10.20.30.40:8000", False, None)
+    assert la.choose_join_base("http://10.20.30.40:8000", "http://10.20.30.40:8000/") == ("http://10.20.30.40:8000", True, None)
 
 
 if __name__ == "__main__":
