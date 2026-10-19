@@ -49,6 +49,9 @@
   .overlay h1 { font-size:2.2rem; margin:0 0 10px; }
   .overlay .bigcode { font-size:3.6rem; font-weight:800; letter-spacing:10px; background:#fff; color:var(--navy); border-radius:12px;
                       padding:4px 20px; display:inline-block; margin:6px 0 14px; }
+  .overlay .joined-count { margin-top:16px; font-size:1.3rem; font-weight:600; }
+  .overlay .joined-count #joined-number { display:inline-block; min-width:56px; padding:2px 14px; margin-right:6px; border-radius:10px;
+                                          background:#fff; color:var(--navy); font-size:2.2rem; font-weight:800; text-align:center; }
   .overlay .names { display:flex; flex-wrap:wrap; gap:8px; max-width:520px; margin:14px 0 20px; min-height:40px; }
   .overlay .names span { background:rgba(255,255,255,0.16); padding:6px 12px; border-radius:20px; font-size:1.05rem; }
   .overlay .start { background:#fff; color:var(--navy); border:none; font-size:1.2rem; font-weight:800; padding:14px 28px; border-radius:10px; cursor:pointer; }
@@ -147,7 +150,8 @@
           CourseCraft needs to run on a college server that both can reach (ask IT), or everyone joins one hotspot for a test.</li>
       </ol>
     </details>
-    <div class="names" id="joined-names" aria-live="polite"></div>
+    <div class="joined-count" aria-live="polite"><span id="joined-number">0</span> <span id="joined-word">students joined</span></div>
+    <div class="names" id="joined-names"></div>
     <button type="button" class="start" id="start">Start the lesson &rarr;</button>
     <button type="button" class="copy copy-link">Copy join link</button>
   </div>
@@ -326,6 +330,8 @@
   var JOIN_LINK = {{ join_link|tojson }};
   function drawJoined(names) {
     var box = document.getElementById("joined-names"); box.innerHTML = "";
+    document.getElementById("joined-number").textContent = names.length;
+    document.getElementById("joined-word").textContent = names.length === 1 ? "student joined" : "students joined";
     if (!names.length) { box.appendChild(el("span", "Waiting for students to join…")); return; }
     names.forEach(function (n) { box.appendChild(el("span", n)); });
   }
