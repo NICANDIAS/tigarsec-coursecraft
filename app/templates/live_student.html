@@ -213,6 +213,11 @@
   }
   function poll() {
     fetch("/live/s/" + code + "/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.state === "paused") {
+        if (shownKey !== "paused") { shownKey = "paused"; main.innerHTML = "";
+          main.appendChild(el("div", "Break - back soon. Keep this page open; the lesson carries on here.", "wait")); }
+        return;
+      }
       if (d.state !== "open") { main.innerHTML = ""; main.appendChild(el("div", "This lesson has finished. Thank you!", "wait")); clearInterval(timer); return; }
       draw(d);
     }).catch(function () {});

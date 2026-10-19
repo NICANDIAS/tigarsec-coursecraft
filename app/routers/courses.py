@@ -109,6 +109,11 @@ def course_detail(
             .limit(5)
             .all()
         )
+        # how many answers each listed session holds - deleting one with answers asks twice
+        from sqlalchemy import func
+        live_answer_counts = dict(db.query(LiveResponse.session_id, func.count(LiveResponse.id))
+                                  .filter(LiveResponse.session_id.in_([s.id for s in live_sessions] or [0]))
+                                  .group_by(LiveResponse.session_id).all())
         from ..models import QuizSet
         quizzes = db.query(QuizSet).filter(QuizSet.course_id == course_id).order_by(QuizSet.id.desc()).limit(10).all()
         spec_json = course.spec_version.structured_json if course.spec_version and course.spec_version.structured_json else {}
@@ -123,6 +128,7 @@ def course_detail(
                 "delete_error": delete_error or None,
                 "live_sessions": live_sessions,
                 "quizzes": quizzes,
+                "live_answer_counts": live_answer_counts,
                 "is_exam_spec": has_exam_objectives(spec_json),
             },
         )

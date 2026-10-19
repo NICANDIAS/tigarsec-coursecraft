@@ -41,8 +41,25 @@ COOKIE_HOURS = 6
 
 # ------------------------------------------------------------------------------- lecturer
 
+LIVE_STATES = ("open", "paused")  # students can join and see the lesson (a paused one shows "break")
+
+
+def _taken_codes(db):
+    return {c for (c,) in db.query(LiveSession.join_code).filter(LiveSession.state.in_(LIVE_STATES)).all()}
+
+
 def _new_session(db, teacher, course_id, title, screens, deck_id=None, practice_id=None, quiz_id=None):
-    taken = {c for (c,) in db.query(LiveSession.join_code).filter(LiveSession.state == "open").all()}
+    # Opening "Run live" again before pressing "Start the lesson" reuses that waiting session (same
+    # code, students already joined stay) instead of leaving a trail of never-started sessions.
+    waiting = (db.query(LiveSession).filter(LiveSession.teacher_id == teacher.id, LiveSession.state == "open",
+                                            LiveSession.started_at.is_(None), LiveSession.lesson_deck_id == deck_id,
+                                            LiveSession.practice_set_id == practice_id, LiveSession.quiz_set_id == quiz_id)
+               .order_by(LiveSession.id.desc()).first())
+    if waiting and waiting.current_screen == 0:
+        waiting.screens_json, waiting.title = screens, title[:255]
+        db.commit()
+        return waiting
+    taken = _taken_codes(db)
     session = LiveSession(teacher_id=teacher.id, course_id=course_id, lesson_deck_id=deck_id, practice_set_id=practice_id,
                           quiz_set_id=quiz_id, title=title[:255], join_code=new_join_code(taken), screens_json=screens,
                           current_screen=0, screen_started_at=datetime.datetime.utcnow(), revealed_screens=[], state="open")
@@ -133,7 +150,7 @@ def live_teach(session_id: int, request: Request, db: Session = Depends(get_db),
     session = _own(db, session_id, teacher)
     if not session:
         return RedirectResponse(url="/", status_code=303)
-    if session.state != "open":
+    if session.state not in LIVE_STATES:
         return RedirectResponse(url=f"/live/{session.id}/summary", status_code=303)
     base, from_setting, stale_setting = join_base_details(request, db)
     link = join_link(base, session.join_code)
@@ -195,6 +212,8 @@ def live_set_screen(session_id: int, screen: int = Form(...), db: Session = Depe
     if not session or session.state != "open":
         return JSONResponse({"ok": False}, status_code=404)
     new_index = max(0, min(screen, len(session.screens_json or []) - 1))
+    if new_index != session.current_screen and not session.started_at:
+        session.started_at = datetime.datetime.utcnow()  # moving on means the lesson has started
     if new_index != session.current_screen or session.screen_started_at is None:
         session.screen_started_at = datetime.datetime.utcnow()  # the quiz countdown starts now
     session.current_screen = new_index
@@ -216,10 +235,48 @@ def live_reveal(session_id: int, screen: int = Form(...), show: int = Form(1), d
     return {"ok": True}
 
 
+@router.post("/live/{session_id}/begin")
+def live_begin(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    """"Start the lesson" on the join screen - only now does the session count as started."""
+    session = _own(db, session_id, teacher)
+    if session and session.state == "open" and not session.started_at:
+        session.started_at = datetime.datetime.utcnow()
+        db.commit()
+    return {"ok": bool(session)}
+
+
+@router.post("/live/{session_id}/pause")
+def live_pause(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    """A break: students' phones say "Break - back soon" and keep waiting; nothing is lost."""
+    session = _own(db, session_id, teacher)
+    if session and session.state == "open":
+        session.state = "paused"
+        db.commit()
+    return RedirectResponse(url=f"/live/{session_id}/teach" if session else "/", status_code=303)
+
+
+@router.post("/live/{session_id}/resume")
+def live_resume(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    """Carry on after a break - or continue a session that was ended (e.g. ended by mistake, or the
+    second half of a split lesson). Students rejoin with the same code where possible."""
+    session = _own(db, session_id, teacher)
+    if not session:
+        return RedirectResponse(url="/", status_code=303)
+    if session.state == "ended":
+        if session.join_code in _taken_codes(db):  # the code went to another class meanwhile
+            session.join_code = new_join_code(_taken_codes(db))
+        session.ended_at = None
+    if session.state in ("paused", "ended"):
+        session.state = "open"
+        session.screen_started_at = datetime.datetime.utcnow()
+        db.commit()
+    return RedirectResponse(url=f"/live/{session_id}/teach", status_code=303)
+
+
 @router.post("/live/{session_id}/end")
 def live_end(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
     session = _own(db, session_id, teacher)
-    if session and session.state == "open":
+    if session and session.state in LIVE_STATES:
         session.state = "ended"
         session.ended_at = datetime.datetime.utcnow()
         db.commit()
@@ -240,7 +297,7 @@ def live_summary(session_id: int, request: Request, db: Session = Depends(get_db
     not_yet = sorted({r["name"] for i, s, t in per_screen for e in t.values() if e["kind"] == "confidence"
                       for r in e["answers"] if r.get("choice") == 0})
     board = _quiz_board(db, session, final=True) if _is_quiz(screens) else None
-    gaps = session_gaps(db, session) if session.state != "open" else []
+    gaps = session_gaps(db, session) if session.state == "ended" else []
     return templates.TemplateResponse("live_summary.html", {
         "request": request, "teacher": teacher, "session": session, "per_screen": per_screen, "people": people,
         "answered_count": len(answered), "not_yet": not_yet, "response_count": len(responses), "board": board,
@@ -275,7 +332,9 @@ def live_delete(session_id: int, db: Session = Depends(get_db), teacher: Teacher
     session = _own(db, session_id, teacher)
     if not session:
         return RedirectResponse(url="/", status_code=303)
-    if session.state == "open":  # a class may be answering right now - end it first
+    answers = db.query(LiveResponse).filter(LiveResponse.session_id == session.id).count()
+    never_started = session.state == "open" and not session.started_at and not answers
+    if session.state in LIVE_STATES and not never_started:  # a class may be answering right now - end it first
         return RedirectResponse(url=f"/live/{session.id}/summary", status_code=303)
     course_id = session.course_id
     db.query(LiveResponse).filter(LiveResponse.session_id == session.id).delete()
@@ -291,7 +350,7 @@ def _open_session(db, code):
     code = "".join(ch for ch in (code or "").upper() if ch.isalnum())[:12]
     if not code:
         return None
-    return db.query(LiveSession).filter(LiveSession.join_code == code, LiveSession.state == "open").first()
+    return db.query(LiveSession).filter(LiveSession.join_code == code, LiveSession.state.in_(LIVE_STATES)).first()
 
 
 def _participant(db, request, session):
@@ -340,6 +399,8 @@ def student_data(code: str, request: Request, db: Session = Depends(get_db)):
     participant = _participant(db, request, session) if session else None
     if not session or not participant:
         return {"state": "ended"}
+    if session.state == "paused":
+        return {"state": "paused", "current": session.current_screen}  # "Break - back soon": the phone keeps waiting
     screens = session.screens_json or []
     index = session.current_screen
     screen = screens[index] if 0 <= index < len(screens) else {"title": "", "body": [], "questions": []}
@@ -376,6 +437,8 @@ def student_answer(code: str, request: Request, screen: int = Form(...), questio
     participant = _participant(db, request, session) if session else None
     if not session or not participant:
         return JSONResponse({"ok": False, "message": "This session has ended."}, status_code=403)
+    if session.state == "paused":
+        return JSONResponse({"ok": False, "message": "It's a break - answers open again when the lesson continues."}, status_code=409)
     screens = session.screens_json or []
     if screen != session.current_screen or not 0 <= screen < len(screens):
         return JSONResponse({"ok": False, "message": "Your lecturer has moved on - this question is closed."}, status_code=409)

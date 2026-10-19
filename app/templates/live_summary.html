@@ -4,7 +4,14 @@
 <p><a href="/courses/{{ session.course_id }}">&larr; Back to the course</a></p>
 <h1>{{ session.title }}</h1>
 <p class="muted">Live lesson · {{ session.created_at.strftime("%d %b %Y %H:%M") if session.created_at else "" }}
-  {% if session.state == "open" %}· <strong>still open</strong> (code {{ session.join_code }}) · <a href="/live/{{ session.id }}/teach">back to presenting</a>{% endif %}</p>
+  {% if session.state == "open" %}· <strong>still open</strong> (code {{ session.join_code }}) · <a href="/live/{{ session.id }}/teach">back to presenting</a>
+  {% elif session.state == "paused" %}· <strong>on a break</strong> (code {{ session.join_code }}) · <a href="/live/{{ session.id }}/teach">back to presenting</a>{% endif %}</p>
+{% if session.state == "ended" %}
+  <form method="post" action="/live/{{ session.id }}/resume" style="margin:0 0 14px;">
+    <button class="btn" type="submit" title="Carry on with the same session - e.g. after a break, or if it was ended by mistake. Everything so far is kept.">Continue this session</button>
+    <span class="muted">Carries on where you left off; students rejoin with the code.</span>
+  </form>
+{% endif %}
 
 <div class="card" style="display:flex;gap:28px;flex-wrap:wrap;">
   <div><div style="font-size:2rem;font-weight:800;">{{ people|length }}</div><div class="muted">joined</div></div>
@@ -69,8 +76,8 @@
   <div class="card"><p class="muted">No questions were answered in this session.</p></div>
 {% endfor %}
 
-{% if session.state != "open" %}
-<form method="post" action="/live/{{ session.id }}/delete" style="margin-top:16px;" onsubmit="return confirm('Delete this session and all its answers? This cannot be undone.');">
+{% if session.state == "ended" %}
+<form method="post" action="/live/{{ session.id }}/delete" style="margin-top:16px;" onsubmit="return confirm('Delete this session and all its answers? This cannot be undone.') && ({{ response_count }} === 0 || confirm('It has {{ response_count }} answer(s) from students. Delete them for good?'));">
   <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete this session and its answers</button>
 </form>
 {% endif %}

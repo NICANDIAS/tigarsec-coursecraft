@@ -1111,7 +1111,8 @@ class LiveSession(Base):
     current_screen = Column(Integer, default=0, nullable=False)
     screen_started_at = Column(DateTime, nullable=True)  # Stage 8: when the current screen was shown - quiz countdown and speed points
     revealed_screens = Column(JSON, nullable=True)       # screens whose answers the lecturer has shown to the class
-    state = Column(String(20), default="open", nullable=False)  # open | ended
+    state = Column(String(20), default="open", nullable=False)  # open | paused (a break - students wait) | ended (can be continued)
+    started_at = Column(DateTime, nullable=True)  # when the lecturer actually started teaching - null while it's still the join screen
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     ended_at = Column(DateTime, nullable=True)
 

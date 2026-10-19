@@ -114,6 +114,7 @@ check("the live screen carries the real slides", (deck_data(teach, "layout-data"
       and len(deck_data(teach, "layout-data")["slides"]) == 5)
 
 # ------------------------------------------------------------------ delete rules
+lv.live_begin(session.id, db, lecturer)  # "Start the lesson" pressed - from now on it is a real, running session
 lv.live_delete(session.id, db, lecturer)
 db.expire_all()
 check("a session that is still live cannot be deleted (end it first)", db.get(LiveSession, session.id) is not None)

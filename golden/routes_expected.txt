@@ -141,8 +141,11 @@ POST   /lesson-decks/{deck_id}/regenerate  ->  presentations.py:regenerate_deck
 POST   /lesson-decks/{deck_id}/share  ->  presentations.py:share_deck
 POST   /lesson-decks/{deck_id}/share/{share_id}/revoke  ->  presentations.py:revoke_deck_share
 POST   /live/s/{code}/answer  ->  live.py:student_answer
+POST   /live/{session_id}/begin  ->  live.py:live_begin
 POST   /live/{session_id}/delete  ->  live.py:live_delete
 POST   /live/{session_id}/end  ->  live.py:live_end
+POST   /live/{session_id}/pause  ->  live.py:live_pause
+POST   /live/{session_id}/resume  ->  live.py:live_resume
 POST   /live/{session_id}/reveal  ->  live.py:live_reveal
 POST   /live/{session_id}/screen  ->  live.py:live_set_screen
 POST   /login  ->  auth_router.py:login_submit

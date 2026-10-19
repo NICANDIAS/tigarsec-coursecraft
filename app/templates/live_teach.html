@@ -156,6 +156,16 @@
     <button type="button" class="copy copy-link">Copy join link</button>
   </div>
 </div>
+<div class="overlay" id="break-overlay" {% if session.state != "paused" %}hidden{% endif %} role="dialog" aria-label="Break">
+  <div style="text-align:center;">
+    <h1 style="font-size:3rem;">Break</h1>
+    <p style="font-size:1.3rem;">We'll carry on shortly - stay joined, your answers are saved.</p>
+    <p>Joining late? Go to <strong>{{ join_url }}</strong> with code</p>
+    <div class="bigcode">{{ session.join_code }}</div>
+    <form method="post" action="/live/{{ session.id }}/resume" style="margin-top:16px;">
+      <button type="submit" class="start">Continue the lesson &rarr;</button></form>
+  </div>
+</div>
 <header>
   <span class="join">Join at <strong>{{ join_url }}</strong> with code</span>
   <span class="code" id="code">{{ session.join_code }}</span>
@@ -186,7 +196,10 @@
   <button type="button" class="tool" id="open-presenter" title="Open a private window for your laptop with the answers and names, while this one stays on the projector">Presenter view</button>
   <button type="button" class="tool" id="fullscreen" title="Full screen (F)">Full screen</button>
   {% if presenter %}<button type="button" class="tool" id="exit-presenter" title="Close this presenter window">Exit presenter view</button>{% endif %}
-  <form method="post" action="/live/{{ session.id }}/end" style="margin-left:auto;" onsubmit="return confirm('End the live session? Students will be told it has finished.');">
+  <form method="post" action="/live/{{ session.id }}/pause" style="margin:0 0 0 auto;">
+    <button type="submit" class="tool" title="Pause for a break - students' phones say 'Break' and wait; continue any time">Break</button>
+  </form>
+  <form method="post" action="/live/{{ session.id }}/end" style="margin:0;" onsubmit="return confirm('End the live session? Students will be told it has finished.');">
     <button class="end" type="submit">End session</button>
   </form>
 </footer>
@@ -335,7 +348,11 @@
     if (!names.length) { box.appendChild(el("span", "Waiting for students to join…")); return; }
     names.forEach(function (n) { box.appendChild(el("span", n)); });
   }
-  document.getElementById("start").onclick = function () { document.getElementById("join-overlay").hidden = true; };
+  function begin() {
+    // only now does the session count as started (opening the join screen doesn't)
+    fetch("/live/{{ session.id }}/begin", {method: "POST", credentials: "same-origin"}).catch(function () {});
+  }
+  document.getElementById("start").onclick = function () { document.getElementById("join-overlay").hidden = true; begin(); };
   document.getElementById("show-join").onclick = function () { document.getElementById("join-overlay").hidden = false; };
   document.querySelectorAll(".copy-link").forEach(function (b) {
     b.onclick = function () {
@@ -347,7 +364,8 @@
   document.addEventListener("keydown", function (e) {
     var overlay = document.getElementById("join-overlay");
     if (overlay.hidden) return;
-    if (e.key === "Enter" || e.key === "Escape") overlay.hidden = true;
+    if (e.key === "Enter") { overlay.hidden = true; begin(); }
+    if (e.key === "Escape") overlay.hidden = true;
     e.stopImmediatePropagation();  // while the join screen is up, arrow keys don't move the slides
   }, true);
 
@@ -436,7 +454,8 @@
   }
   function poll() {
     fetch("/live/{{ session.id }}/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
-      if (d.state !== "open") { window.location = "/live/{{ session.id }}/summary"; return; }
+      if (d.state === "ended") { window.location = "/live/{{ session.id }}/summary"; return; }
+      document.getElementById("break-overlay").hidden = d.state !== "paused";
       // follow a move made in the other window (projector <-> presenter view)
       if (d.current !== current && Date.now() - lastNav > 2500) {
         current = d.current; quiz.deadline = null; quiz.data = null; arrived(current); drawStage();

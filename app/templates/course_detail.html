@@ -112,14 +112,20 @@
   </div>
   <p class="muted">Run any lesson above <strong>live</strong>: students join on their phones with a code (no account) and answer the
   lesson's questions while you teach; you see every answer as it arrives. Open a lesson and choose "Run live with students".</p>
+  {% set counts = live_answer_counts | default({}) %}
   {% for s in live_sessions | default([]) %}
+    {% set n = counts.get(s.id, 0) %}
+    {% set waiting = s.state == "open" and not s.started_at and n == 0 %}
     <div class="list-item">
-      <a href="/live/{{ s.id }}/{{ 'teach' if s.state == 'open' else 'summary' }}">{{ s.title }}</a>
+      <a href="/live/{{ s.id }}/{{ 'teach' if s.state in ('open', 'paused') else 'summary' }}">{{ s.title }}</a>
       <span class="muted" style="display:flex;align-items:center;gap:8px;">{{ s.created_at.strftime("%d %b %H:%M") if s.created_at else "" }}
-        {% if s.state == "open" %}<span class="badge badge-needs_review">Live now · {{ s.join_code }}</span>
-        {% else %}· <a href="/live/{{ s.id }}/summary">summary</a>
+        {% if waiting %}<span class="badge">Not started · {{ s.join_code }}</span>
+        {% elif s.state == "open" %}<span class="badge badge-needs_review">Live now · {{ s.join_code }}</span>
+        {% elif s.state == "paused" %}<span class="badge badge-needs_review">On a break · {{ s.join_code }}</span>
+        {% else %}· <a href="/live/{{ s.id }}/summary">summary</a>{% if n %} · {{ n }} answer{{ "s" if n != 1 }}{% endif %}{% endif %}
+        {% if waiting or s.state == "ended" %}
           <form method="post" action="/live/{{ s.id }}/delete" style="margin:0;"
-                onsubmit="return confirm('Delete this live session and all the students\' answers in it? This cannot be undone.');">
+                onsubmit="return confirm('Delete this live session{{ ' and all the answers in it' if n else '' }}? This cannot be undone.') && ({{ n }} === 0 || confirm('It has {{ n }} answer(s) from students. Delete them for good?'));">
             <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.8rem;color:var(--danger);border-color:var(--danger);">Delete</button>
           </form>
         {% endif %}</span>
@@ -129,7 +135,11 @@
   {% for qz in quizzes | default([]) %}
     <div class="list-item">
       <a href="/quizzes/{{ qz.id }}">{{ qz.title }}</a>
-      <span class="muted">{% if qz.status == "generating" %}Writing…{% elif qz.status == "failed" %}Failed{% else %}{{ (qz.questions_json or [])|length }} questions{% endif %}</span>
+      <span class="muted" style="display:flex;align-items:center;gap:8px;">{% if qz.status == "generating" %}Writing…{% elif qz.status == "failed" %}<span style="color:var(--danger);">Failed</span>{% else %}{{ (qz.questions_json or [])|length }} questions{% endif %}
+        <form method="post" action="/quizzes/{{ qz.id }}/delete" style="margin:0;"
+              onsubmit="return confirm('Delete this quiz? Results of times you already ran it are kept.');">
+          <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.8rem;color:var(--danger);border-color:var(--danger);">Delete</button>
+        </form></span>
     </div>
   {% else %}
     <p class="muted">Make a quiz from any lesson above ("Make a quiz from this lesson"), or type one in here.</p>
