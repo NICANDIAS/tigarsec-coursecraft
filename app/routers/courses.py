@@ -147,6 +147,9 @@ def _delete_live_and_practice(db, course_id: int):
     """Stage 6: a course's live lesson sessions (with the students' nicknames and answers)
     and its practice question sets go with the course - nothing about students is left behind."""
     session_ids = [s.id for s in db.query(LiveSession).filter(LiveSession.course_id == course_id).all()]
+    import shutil
+    for sid in session_ids:  # photos students sent with answers
+        shutil.rmtree(f"storage/live_uploads/{int(sid)}", ignore_errors=True)
     if session_ids:
         db.query(LiveResponse).filter(LiveResponse.session_id.in_(session_ids)).delete(synchronize_session=False)
         db.query(LiveParticipant).filter(LiveParticipant.session_id.in_(session_ids)).delete(synchronize_session=False)

@@ -1113,6 +1113,7 @@ class LiveSession(Base):
     revealed_screens = Column(JSON, nullable=True)       # screens whose answers the lecturer has shown to the class
     state = Column(String(20), default="open", nullable=False)  # open | paused (a break - students wait) | ended (can be continued)
     started_at = Column(DateTime, nullable=True)  # when the lecturer actually started teaching - null while it's still the join screen
+    groups_json = Column(JSON, nullable=True)     # small-group work while it's on: {"size": 3, "groups": {participant id: group number}}
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     ended_at = Column(DateTime, nullable=True)
 
@@ -1140,4 +1141,6 @@ class LiveResponse(Base):
     answer_text = Column(Text, nullable=True)
     answer_choice = Column(Integer, nullable=True)
     points = Column(Integer, nullable=True)  # Stage 8: quiz points (right + speed); empty for other questions
+    group_no = Column(Integer, nullable=True)  # the student's group when this was answered during group work
+    image_path = Column(String(500), nullable=True)  # a photo with the answer (re-saved, location data removed) - lecturer only
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

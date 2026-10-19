@@ -41,7 +41,9 @@ GET    /lesson-decks/{deck_id}/slide-image/{slide_index}  ->  presentations.py:d
 GET    /lesson-decks/{deck_id}/status  ->  presentations.py:deck_status
 GET    /live/s/{code}  ->  live.py:student_page
 GET    /live/s/{code}/data  ->  live.py:student_data
+GET    /live/{session_id}/answer-photo/{response_id}  ->  live.py:live_answer_photo
 GET    /live/{session_id}/data  ->  live.py:live_teacher_data
+GET    /live/{session_id}/my-notes  ->  live.py:student_notes_page
 GET    /live/{session_id}/summary  ->  live.py:live_summary
 GET    /live/{session_id}/summary.csv  ->  live.py:live_summary_csv
 GET    /live/{session_id}/teach  ->  live.py:live_teach
@@ -124,6 +126,7 @@ POST   /courses/{course_id}/scheme-of-work/{sow_id}/template/use-shared  ->  sch
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/weeks/{week_number}  ->  scheme_of_work.py:update_sow_week
 POST   /courses/{course_id}/start-date  ->  courses.py:set_course_start_date
 POST   /courses/{course_id}/students/create  ->  students.py:create_student
+POST   /courses/{course_id}/students/{student_id}/delete  ->  students.py:delete_student
 POST   /courses/{course_id}/students/{student_id}/edit  ->  students.py:edit_student
 POST   /courses/{course_id}/students/{student_id}/submissions/upload  ->  submissions.py:upload_submission
 POST   /courses/{course_id}/students/{student_id}/toggle-active  ->  students.py:toggle_student_active
@@ -144,7 +147,11 @@ POST   /live/s/{code}/answer  ->  live.py:student_answer
 POST   /live/{session_id}/begin  ->  live.py:live_begin
 POST   /live/{session_id}/delete  ->  live.py:live_delete
 POST   /live/{session_id}/end  ->  live.py:live_end
+POST   /live/{session_id}/groups  ->  live.py:live_groups_start
+POST   /live/{session_id}/groups/end  ->  live.py:live_groups_end
 POST   /live/{session_id}/pause  ->  live.py:live_pause
+POST   /live/{session_id}/poll  ->  live.py:live_quick_poll
+POST   /live/{session_id}/remove-student  ->  live.py:live_remove_student
 POST   /live/{session_id}/resume  ->  live.py:live_resume
 POST   /live/{session_id}/reveal  ->  live.py:live_reveal
 POST   /live/{session_id}/screen  ->  live.py:live_set_screen

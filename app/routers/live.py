@@ -16,8 +16,11 @@ import datetime
 import io
 import secrets
 
-from fastapi import APIRouter, Request, Depends, Form
-from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, Response
+import shutil
+import uuid
+
+from fastapi import APIRouter, Request, Depends, Form, UploadFile, File
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, Response, FileResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -28,7 +31,8 @@ from ..course_access import get_course_for_teacher
 import os
 
 from ..live_activities import (screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally,
-                               clean_public_url, join_link, is_local_only, attach_pptx_slides, choose_join_base)
+                               clean_public_url, join_link, is_local_only, attach_pptx_slides, choose_join_base,
+                               poll_screen, make_groups, smallest_group, student_notes)
 from ..qr import qr_svg
 from ..quiz import screens_from_quiz, public_screen, points_for, is_open, leaderboard
 from ..system_settings import get_system_settings
@@ -142,7 +146,22 @@ def _responses(db, session, screen_index=None):
     if screen_index is not None:
         q = q.filter(LiveResponse.screen_index == screen_index)
     return [{"question_key": r.question_key, "name": p.display_name, "participant": p.id, "text": r.answer_text,
-             "choice": r.answer_choice, "screen": r.screen_index, "points": r.points} for r, p in q.order_by(LiveResponse.id).all()]
+             "choice": r.answer_choice, "screen": r.screen_index, "points": r.points, "group": r.group_no,
+             "response_id": r.id, "image": bool(r.image_path)} for r, p in q.order_by(LiveResponse.id).all()]
+
+
+UPLOAD_DIR = "storage/live_uploads"
+MAX_PHOTO_BYTES = 8 * 1024 * 1024
+
+
+def _groups(session):
+    """{participant id: group number} while group work is on, else {} (JSON keys come back as text)."""
+    g = (session.groups_json or {}).get("groups") or {}
+    return {int(k): v for k, v in g.items()}
+
+
+def _remove_uploads(session_id):
+    shutil.rmtree(os.path.join(UPLOAD_DIR, str(int(session_id))), ignore_errors=True)
 
 
 @router.get("/live/{session_id}/teach", response_class=HTMLResponse)
@@ -197,7 +216,10 @@ def live_teacher_data(session_id: int, db: Session = Depends(get_db), teacher: T
     index = session.current_screen
     people = db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).order_by(LiveParticipant.id).all()
     screen = screens[index] if 0 <= index < len(screens) else {"questions": []}
+    groups = _groups(session)
     data = {"state": session.state, "current": index, "joined": [p.display_name for p in people],
+            "people": [{"id": p.id, "name": p.display_name, "group": groups.get(p.id)} for p in people],
+            "groups_on": bool(groups),
             "revealed": index in (session.revealed_screens or []), "tally": tally(screen, _responses(db, session, index))}
     if _is_quiz(screens):
         data["elapsed"] = _elapsed(session)
@@ -318,6 +340,10 @@ def live_summary_csv(session_id: int, db: Session = Depends(get_db), teacher: Te
     for r in _responses(db, session):
         title, prompt, choices = prompts.get(r["question_key"], ("", r["question_key"], None))
         answer = choices[r["choice"]] if choices and r["choice"] is not None and 0 <= r["choice"] < len(choices) else (r["text"] or "")
+        if r.get("image"):
+            answer = (answer + " " if answer else "") + "(photo)"
+        if r.get("group"):
+            answer = f"[Group {r['group']}] {answer}"
         is_quiz = r["question_key"] in answers
         # a leading = + - @ would make a spreadsheet run it as a formula - prefix it so it stays text
         cells = [r["name"], title, prompt, answer, ("yes" if r["choice"] == answers[r["question_key"]] else "no") if is_quiz else "",
@@ -339,9 +365,93 @@ def live_delete(session_id: int, db: Session = Depends(get_db), teacher: Teacher
     course_id = session.course_id
     db.query(LiveResponse).filter(LiveResponse.session_id == session.id).delete()
     db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).delete()
+    _remove_uploads(session.id)
     db.delete(session)
     db.commit()
     return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+
+
+@router.post("/live/{session_id}/poll")
+def live_quick_poll(session_id: int, question: str = Form(""), kind: str = Form("yesno"), options: str = Form(""),
+                    db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    """"Poll it": a quick poll on the spot, slotted in straight after the current slide and shown at once."""
+    session = _own(db, session_id, teacher)
+    if not session or session.state != "open":
+        return RedirectResponse(url="/", status_code=303)
+    screen = poll_screen(question, kind, options)
+    if not screen:
+        return RedirectResponse(url=f"/live/{session.id}/teach", status_code=303)
+    at = session.current_screen + 1
+    screens = list(session.screens_json or [])
+    screens.insert(at, screen)
+    # later screens move up one place - keep their answers and "shared" flags with them
+    db.query(LiveResponse).filter(LiveResponse.session_id == session.id, LiveResponse.screen_index >= at) \
+        .update({LiveResponse.screen_index: LiveResponse.screen_index + 1}, synchronize_session=False)
+    session.revealed_screens = sorted(i + 1 if i >= at else i for i in (session.revealed_screens or []))
+    session.screens_json = screens
+    session.current_screen = at
+    session.screen_started_at = datetime.datetime.utcnow()
+    session.started_at = session.started_at or datetime.datetime.utcnow()
+    db.commit()
+    return RedirectResponse(url=f"/live/{session.id}/teach", status_code=303)
+
+
+@router.post("/live/{session_id}/remove-student")
+def live_remove_student(session_id: int, participant_id: int = Form(...), db: Session = Depends(get_db),
+                        teacher: Teacher = Depends(get_current_teacher)):
+    """Removes a student from the session (e.g. an unsuitable name): their answers go too, and their
+    phone is sent back to the join page to join again properly."""
+    session = _own(db, session_id, teacher)
+    person = db.query(LiveParticipant).filter(LiveParticipant.id == participant_id,
+                                              LiveParticipant.session_id == session_id).first() if session else None
+    if person:
+        for r in db.query(LiveResponse).filter(LiveResponse.participant_id == person.id).all():
+            if r.image_path and os.path.exists(r.image_path):
+                os.remove(r.image_path)
+            db.delete(r)
+        groups = _groups(session)
+        if person.id in groups:
+            groups.pop(person.id)
+            session.groups_json = {**(session.groups_json or {}), "groups": {str(k): v for k, v in groups.items()}}
+        db.delete(person)
+        db.commit()
+    return {"ok": bool(person)}
+
+
+@router.post("/live/{session_id}/groups")
+def live_groups_start(session_id: int, size: int = Form(3), db: Session = Depends(get_db),
+                      teacher: Teacher = Depends(get_current_teacher)):
+    """Small-group work: everyone joined is put in a random group of about `size`. While it is on, a
+    group shares one answer to each question; phones show who is in their group."""
+    session = _own(db, session_id, teacher)
+    if not session or session.state not in LIVE_STATES:
+        return JSONResponse({"ok": False}, status_code=404)
+    ids = [p.id for p in db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).all()]
+    groups = make_groups(ids, size)
+    session.groups_json = {"size": max(2, min(8, size)), "groups": {str(k): v for k, v in groups.items()}}
+    db.commit()
+    return {"ok": True, "groups": len(set(groups.values()))}
+
+
+@router.post("/live/{session_id}/groups/end")
+def live_groups_end(session_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+    """Back to working on their own - answers given in groups keep their group number in the summary."""
+    session = _own(db, session_id, teacher)
+    if session:
+        session.groups_json = None
+        db.commit()
+    return {"ok": bool(session)}
+
+
+@router.get("/live/{session_id}/answer-photo/{response_id}")
+def live_answer_photo(session_id: int, response_id: int, db: Session = Depends(get_db),
+                      teacher: Teacher = Depends(get_current_teacher)):
+    """A photo a student sent with an answer - only ever for the lecturer who runs the session."""
+    session = _own(db, session_id, teacher)
+    r = db.get(LiveResponse, response_id) if session else None
+    if not r or r.session_id != session.id or not r.image_path or not os.path.exists(r.image_path):
+        return Response(status_code=404)
+    return FileResponse(r.image_path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=600"})
 
 
 # ------------------------------------------------------------------------------- students (no account)
@@ -378,6 +488,11 @@ def join_submit(request: Request, code: str = Form(""), name: str = Form(""), db
     else:
         participant = LiveParticipant(session_id=session.id, display_name=display, token=secrets.token_urlsafe(24))
         db.add(participant)
+        db.flush()
+        groups = _groups(session)
+        if groups:  # group work is on - a latecomer joins the smallest group
+            groups[participant.id] = smallest_group(groups)
+            session.groups_json = {**session.groups_json, "groups": {str(k): v for k, v in groups.items()}}
     db.commit()
     response = RedirectResponse(url=f"/live/s/{session.join_code}", status_code=303)
     response.set_cookie(f"live_{session.id}", participant.token, max_age=COOKIE_HOURS * 3600, httponly=True, samesite="lax")
@@ -397,6 +512,8 @@ def student_page(code: str, request: Request, db: Session = Depends(get_db)):
 def student_data(code: str, request: Request, db: Session = Depends(get_db)):
     session = _open_session(db, code)
     participant = _participant(db, request, session) if session else None
+    if session and not participant:
+        return {"state": "removed"}  # removed by the lecturer (or never joined) - the phone goes back to the join page
     if not session or not participant:
         return {"state": "ended"}
     if session.state == "paused":
@@ -404,7 +521,7 @@ def student_data(code: str, request: Request, db: Session = Depends(get_db)):
     screens = session.screens_json or []
     index = session.current_screen
     screen = screens[index] if 0 <= index < len(screens) else {"title": "", "body": [], "questions": []}
-    mine = {r.question_key: {"text": r.answer_text, "choice": r.answer_choice}
+    mine = {r.question_key: {"text": r.answer_text, "choice": r.answer_choice, "image": bool(r.image_path)}
             for r in db.query(LiveResponse).filter(LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id,
                                                    LiveResponse.screen_index == index).all()}
     revealed = index in (session.revealed_screens or [])
@@ -414,7 +531,20 @@ def student_data(code: str, request: Request, db: Session = Depends(get_db)):
         shared = {k: {"answers": [a["text"] for a in v["answers"] if a.get("text")], "counts": v.get("counts"), "choices": v.get("choices")}
                   for k, v in tally(screen, _responses(db, session, index)).items()}
     data = {"state": session.state, "current": index, "total": len(screens), "screen": public_screen(screen, revealed),
-            "mine": mine, "shared": shared, "revealed": revealed}
+            "mine": mine, "shared": shared, "revealed": revealed, "notes_url": f"/live/{session.id}/my-notes"}
+    groups = _groups(session)
+    if participant.id in groups:
+        mine_group = groups[participant.id]
+        names = {p.id: p.display_name for p in db.query(LiveParticipant).filter(LiveParticipant.session_id == session.id).all()}
+        members = [pid for pid, g in groups.items() if g == mine_group]
+        data["group"] = {"no": mine_group, "members": [names[pid] for pid in members if pid in names]}
+        # the group's latest answer to each question on this screen - members build one answer together
+        latest = {}
+        for r in db.query(LiveResponse).filter(LiveResponse.session_id == session.id, LiveResponse.screen_index == index,
+                                               LiveResponse.participant_id.in_(members)).order_by(LiveResponse.id).all():
+            if r.answer_text:
+                latest[r.question_key] = {"text": r.answer_text, "by": names.get(r.participant_id, "")}
+        data["group_answers"] = latest
     if _is_quiz(screens):
         mine_points = {r.question_key: r.points for r in db.query(LiveResponse).filter(
             LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id).all()}
@@ -432,7 +562,7 @@ def student_data(code: str, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/live/s/{code}/answer")
 def student_answer(code: str, request: Request, screen: int = Form(...), question_key: str = Form(...),
-                   text: str = Form(""), choice: int = Form(-1), db: Session = Depends(get_db)):
+                   text: str = Form(""), choice: int = Form(-1), db: Session = Depends(get_db), photo: UploadFile = File(None)):
     session = _open_session(db, code)
     participant = _participant(db, request, session) if session else None
     if not session or not participant:
@@ -461,18 +591,70 @@ def student_answer(code: str, request: Request, screen: int = Form(...), questio
                             question_key=question_key, answer_choice=choice, points=points))
         db.commit()
         return {"ok": True}  # whether it was right is only shown when the lecturer reveals it
-    if question["kind"] == "confidence":
+    image_path = None
+    if question["kind"] in ("confidence", "poll"):
         if not 0 <= choice < len(question.get("choices", [])):
             return JSONResponse({"ok": False, "message": "Pick one option."}, status_code=400)
         value_text, value_choice = None, choice
     else:
         value_text, value_choice = clean_answer(text), None
-        if not value_text:
-            return JSONResponse({"ok": False, "message": "Type an answer first."}, status_code=400)
+        if photo is not None and getattr(photo, "filename", ""):
+            image_path, problem = _save_photo(session.id, photo)
+            if problem:
+                return JSONResponse({"ok": False, "message": problem}, status_code=400)
+        if not value_text and not image_path and not (existing and existing.image_path):
+            return JSONResponse({"ok": False, "message": "Type an answer (or add a photo) first."}, status_code=400)
+    group_no = _groups(session).get(participant.id)
     if existing:
         existing.answer_text, existing.answer_choice, existing.screen_index = value_text, value_choice, screen
+        existing.group_no = group_no
+        if image_path:
+            if existing.image_path and os.path.exists(existing.image_path):
+                os.remove(existing.image_path)
+            existing.image_path = image_path
     else:
-        db.add(LiveResponse(session_id=session.id, participant_id=participant.id, screen_index=screen,
-                            question_key=question_key, answer_text=value_text, answer_choice=value_choice))
+        db.add(LiveResponse(session_id=session.id, participant_id=participant.id, screen_index=screen, group_no=group_no,
+                            question_key=question_key, answer_text=value_text, answer_choice=value_choice, image_path=image_path))
     db.commit()
     return {"ok": True}
+
+
+def _save_photo(session_id, upload):
+    """Checks a student's photo really is an image, then saves a fresh copy (max 1600px, JPEG) - which
+    also drops hidden data such as where it was taken. -> (path, None) or (None, a plain message)."""
+    data = upload.file.read(MAX_PHOTO_BYTES + 1)
+    if len(data) > MAX_PHOTO_BYTES:
+        return None, "That photo is too big (8 MB at most)."
+    try:
+        from PIL import Image, ImageOps
+        image = Image.open(io.BytesIO(data))
+        image.load()
+        image = ImageOps.exif_transpose(image).convert("RGB")
+    except Exception:
+        return None, "That file isn't a photo CourseCraft can open - try a JPEG or PNG."
+    image.thumbnail((1600, 1600))
+    folder = os.path.join(UPLOAD_DIR, str(int(session_id)))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{uuid.uuid4().hex}.jpg")
+    image.save(path, "JPEG", quality=85)
+    return path, None
+
+
+@router.get("/live/{session_id}/my-notes")
+def student_notes_page(session_id: int, request: Request, download: int = 0, db: Session = Depends(get_db)):
+    """A student's own copy of the lesson - the slides' points and THEIR answers - to keep and read later.
+    Works during and after the lesson, from the same phone (it uses the student's join cookie)."""
+    session = db.get(LiveSession, session_id)
+    participant = _participant(db, request, session) if session else None
+    if not session or not participant:
+        return PlainTextResponse("These notes are only on the phone or laptop you joined the lesson with.", status_code=404)
+    mine = {r.question_key: {"text": r.answer_text, "choice": r.answer_choice, "image": bool(r.image_path)}
+            for r in db.query(LiveResponse).filter(LiveResponse.session_id == session.id,
+                                                   LiveResponse.participant_id == participant.id).all()}
+    when = session.created_at.strftime("%d %b %Y") if session.created_at else ""
+    text = student_notes(session.title, session.screens_json or [], mine, when)
+    headers = {}
+    if download:
+        safe = "".join(ch for ch in session.title if ch.isalnum() or ch in " -_")[:60].strip() or "lesson"
+        headers["Content-Disposition"] = f'attachment; filename="{safe} - my notes.txt"'
+    return PlainTextResponse(text, headers=headers)

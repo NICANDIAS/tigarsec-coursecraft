@@ -16,7 +16,16 @@
   h1 { font-size:1.3rem; margin:0 0 10px; color:#0f2744; }
   li { margin:6px 0; line-height:1.45; }
   .prompt { font-weight:600; margin-bottom:8px; line-height:1.4; }
-  textarea { width:100%; min-height:90px; font-size:1.05rem; padding:10px; border:2px solid #d5d9e2; border-radius:10px; font-family:inherit; }
+  textarea { width:100%; min-height:90px; font-size:1.05rem; padding:10px; border:2px solid #d5d9e2; border-radius:10px; font-family:inherit;
+             resize:none; overflow:hidden; }  /* grows with the answer instead of being dragged about */
+  .photo-row { display:flex; align-items:center; gap:10px; margin-top:8px; font-size:0.9rem; color:#5b5b63; }
+  .photo-row label { border:2px dashed #d5d9e2; border-radius:10px; padding:8px 12px; cursor:pointer; color:#1e3a5f; font-weight:600; }
+  .photo-row input { display:none; }
+  .group-banner { background:#eef3fd; border:2px solid #2f6fed; border-radius:12px; padding:10px 14px; margin-bottom:14px; }
+  .group-answer { margin-top:8px; font-size:0.9rem; background:#f3f5f9; border-radius:8px; padding:6px 10px; }
+  .notes { color:#fff; font-size:0.8rem; text-decoration:underline; white-space:nowrap; }
+  .end-notes { display:block; margin:10px auto 0; max-width:320px; text-align:center; background:#2f6fed; color:#fff; padding:12px; border-radius:10px;
+               font-weight:700; text-decoration:none; }
   textarea.long { min-height:200px; }
   textarea:focus { outline:none; border-color:#2f6fed; }
   button.send { margin-top:10px; width:100%; padding:12px; font-size:1.05rem; border:none; border-radius:10px; background:#2f6fed; color:#fff; font-weight:700; }
@@ -55,15 +64,20 @@
 </style>
 </head>
 <body>
-<header><span class="t">{{ session.title }}</span><span class="me">{{ name }}</span></header>
+<header><span class="t">{{ session.title }}</span>
+  <span class="me">{{ name }} · <a class="notes" href="/live/{{ session.id }}/my-notes" target="_blank">My notes</a></span></header>
 <main id="main"><div class="wait">Connecting…</div></main>
 <script>
 (function () {
-  var code = {{ session.join_code|tojson }}, shownKey = null, drafts = {};
+  var code = {{ session.join_code|tojson }}, shownKey = null, drafts = {}, lastGroup = "null";
   var main = document.getElementById("main");
   function el(tag, text, cls) { var e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; }
-  function send(screen, key, body, status) {
-    var data = new URLSearchParams(Object.assign({screen: screen, question_key: key}, body));
+  function grow(t) { t.style.height = "auto"; t.style.height = Math.max(t.scrollHeight + 4, t.classList.contains("long") ? 200 : 90) + "px"; }
+  function send(screen, key, body, status, photo) {
+    var data = new FormData();
+    data.append("screen", screen); data.append("question_key", key);
+    Object.keys(body).forEach(function (k) { data.append(k, body[k]); });
+    if (photo) data.append("photo", photo);
     status.textContent = "Sending…"; status.className = "status";
     fetch("/live/s/" + code + "/answer", {method: "POST", body: data, credentials: "same-origin"})
       .then(function (r) { return r.json(); })
@@ -161,6 +175,12 @@
     if (key === shownKey) return;  // nothing changed - don't wipe what the student is typing
     document.querySelectorAll("textarea").forEach(function (t) { drafts[t.dataset.key] = t.value; });
     shownKey = key; main.innerHTML = "";
+    if (d.group) {
+      var gb = el("div", null, "group-banner");
+      gb.appendChild(el("strong", "Group " + d.group.no + ": ")); gb.appendChild(document.createTextNode(d.group.members.join(", ")));
+      gb.appendChild(el("div", "Work together - one answer for the group (any of you can write or change it)."));
+      main.appendChild(gb);
+    }
     var card = el("div", null, "card");
     card.appendChild(el("h1", s.title || "Look at the front"));
     if (s.body && s.body.length) { var ul = el("ul"); s.body.forEach(function (b) { ul.appendChild(el("li", b)); }); card.appendChild(ul); }
@@ -182,7 +202,7 @@
     (s.questions || []).forEach(function (q) {
       var box = el("div", null, "card"), status = el("div", "", "status"), mine = d.mine[q.key] || {};
       box.appendChild(el("div", q.prompt, "prompt"));
-      if (q.kind === "confidence") {
+      if (q.kind === "confidence" || q.kind === "poll") {
         var row = el("div", null, "choices");
         q.choices.forEach(function (c, i) {
           var b = el("button", c); b.type = "button"; if (mine.choice === i) b.className = "on";
@@ -192,10 +212,19 @@
         box.appendChild(row);
       } else {
         var t = el("textarea"); t.dataset.key = q.key; t.maxLength = 1000; if (q.long) t.className = "long";
-        t.value = drafts[q.key] != null ? drafts[q.key] : (mine.text || ""); t.setAttribute("aria-label", q.prompt);
+        var groupAnswer = d.group_answers && d.group_answers[q.key];
+        t.value = drafts[q.key] != null ? drafts[q.key] : (mine.text || (groupAnswer ? groupAnswer.text : "")); t.setAttribute("aria-label", q.prompt);
+        t.addEventListener("input", function () { grow(t); });
+        // a photo of written work or a diagram - only the lecturer sees it
+        var row = el("div", null, "photo-row"), pick = el("label", mine.image ? "Change photo" : "📷 Add a photo"), file = el("input");
+        file.type = "file"; file.accept = "image/*"; pick.appendChild(file); row.appendChild(pick);
+        var picked = el("span", mine.image ? "Photo sent ✓ (only your lecturer sees it)" : ""); row.appendChild(picked);
+        file.onchange = function () { picked.textContent = file.files.length ? file.files[0].name + " - press Send" : ""; };
         var b = el("button", "Send", "send"); b.type = "button";
-        b.onclick = function () { send(d.current, q.key, {text: t.value}, status); };
-        box.appendChild(t); box.appendChild(b);
+        b.onclick = function () { send(d.current, q.key, {text: t.value}, status, file.files[0]); };
+        box.appendChild(t); box.appendChild(row); box.appendChild(b);
+        if (d.group) { var ga = el("div", "", "group-answer"); ga.id = "ga-" + q.key; box.appendChild(ga); }
+        setTimeout(function () { grow(t); }, 0);
       }
       if (mine.text || mine.choice != null) { status.textContent = "Sent ✓ (you can change it)"; }
       box.appendChild(status);
@@ -211,15 +240,28 @@
     });
     if (!(s.questions || []).length && !s.support && !s.stretch) main.appendChild(el("div", "No question on this slide - listen and watch the front.", "wait"));
   }
+  function showGroupAnswers(d) {
+    Object.keys(d.group_answers || {}).forEach(function (k) {
+      var box = document.getElementById("ga-" + k), a = d.group_answers[k];
+      if (box) box.textContent = "Your group's answer so far (by " + a.by + "): " + a.text;
+    });
+  }
   function poll() {
     fetch("/live/s/" + code + "/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.state === "removed") { window.location = "/join?code=" + encodeURIComponent(code); return; }
       if (d.state === "paused") {
         if (shownKey !== "paused") { shownKey = "paused"; main.innerHTML = "";
           main.appendChild(el("div", "Break - back soon. Keep this page open; the lesson carries on here.", "wait")); }
         return;
       }
-      if (d.state !== "open") { main.innerHTML = ""; main.appendChild(el("div", "This lesson has finished. Thank you!", "wait")); clearInterval(timer); return; }
-      draw(d);
+      if (d.state !== "open") {
+        main.innerHTML = ""; main.appendChild(el("div", "This lesson has finished. Thank you!", "wait"));
+        var dl = el("a", "Download my notes and answers", "end-notes"); dl.href = "/live/{{ session.id }}/my-notes?download=1"; main.appendChild(dl);
+        clearInterval(timer); return;
+      }
+      var groupKey = JSON.stringify(d.group || null);
+      if (groupKey !== lastGroup) { lastGroup = groupKey; shownKey = null; }  // groups started/ended -> redraw
+      draw(d); showGroupAnswers(d);
     }).catch(function () {});
   }
   var timer = setInterval(poll, 2000); poll();

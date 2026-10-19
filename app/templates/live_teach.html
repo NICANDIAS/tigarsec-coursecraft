@@ -109,6 +109,26 @@
   .panel .close { border:none; background:transparent; font-size:1.3rem; cursor:pointer; color:var(--muted); margin-left:8px; }
   body.presenter .panel .close { display:none; }
   footer .tool { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  footer .tool.on { background:var(--accent); color:#fff; }
+  .overlay .names span .x { background:transparent; border:none; color:#fff; opacity:0.7; cursor:pointer; font-size:1rem; margin-left:6px; padding:0; }
+  .overlay .names span .x:hover { opacity:1; }
+  .modal { position:fixed; inset:0; background:rgba(10,20,40,0.55); z-index:30; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .modal[hidden] { display:none; }
+  .modal .box { background:#fff; border-radius:14px; padding:20px 22px; width:min(560px, 100%); max-height:86vh; overflow:auto; box-shadow:0 20px 50px rgba(0,0,0,0.3); }
+  .modal h2 { margin:0 0 12px; font-size:1.25rem; }
+  .modal label { display:block; font-weight:600; margin:10px 0 4px; }
+  .modal input[type=text], .modal select, .modal textarea { width:100%; padding:9px 10px; border:1px solid #d5d9e2; border-radius:8px; font-size:1rem; font-family:inherit; }
+  .modal .row { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
+  .modal button { padding:9px 16px; border-radius:8px; border:1px solid var(--accent); background:#fff; color:var(--accent); font-size:0.95rem; cursor:pointer; }
+  .modal button.primary { background:var(--accent); color:#fff; }
+  .modal .person { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #eef0f4; }
+  .modal .person button { color:var(--low); border-color:var(--low); padding:4px 10px; font-size:0.85rem; }
+  .groups-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:16px; width:min(1100px, 92vw); text-align:left; }
+  .groups-grid div { background:rgba(255,255,255,0.12); border-radius:12px; padding:14px 16px; font-size:1.2rem; }
+  .groups-grid strong { display:block; font-size:1.4rem; margin-bottom:6px; }
+  .ans .grp { font-size:0.75rem; background:var(--tint); color:var(--accent); border-radius:8px; padding:1px 7px; margin-left:6px; }
+  .ans img { max-width:100%; border-radius:6px; margin-top:6px; display:block; }
+  .ans a.photo { font-size:0.85rem; }
   footer .tool .badge { display:inline-block; min-width:20px; padding:0 6px; margin-left:6px; border-radius:10px; background:var(--accent); color:#fff; font-size:0.8rem; }
   footer .tool .badge:empty { display:none; }
   body.presenter #toggle-answers, body.presenter #open-presenter, body.presenter .names-toggle { display:none !important; }
@@ -166,10 +186,60 @@
       <button type="submit" class="start">Continue the lesson &rarr;</button></form>
   </div>
 </div>
+<div class="modal" id="poll-modal" hidden role="dialog" aria-label="Quick poll">
+  <form class="box" method="post" action="/live/{{ session.id }}/poll">
+    <h2>Poll it</h2>
+    <label for="poll-q">Question <span class="muted" style="font-weight:400;">(or leave blank and ask it out loud)</span></label>
+    <input type="text" id="poll-q" name="question" maxlength="300" placeholder="e.g. Which port does HTTPS use?">
+    <label for="poll-kind">Answers</label>
+    <select id="poll-kind" name="kind">
+      <option value="yesno">Yes / No / Not sure</option>
+      <option value="abcd">A / B / C / D</option>
+      <option value="agree">Agree / Not sure / Disagree</option>
+      <option value="scale">1 to 5</option>
+      <option value="custom">My own options...</option>
+      <option value="text">A short written answer</option>
+    </select>
+    <div id="poll-options-box" hidden>
+      <label for="poll-options">Options (one per line, 2-6)</label>
+      <textarea id="poll-options" name="options" rows="4"></textarea>
+    </div>
+    <div class="row"><button type="button" data-close>Cancel</button><button type="submit" class="primary">Ask the class now</button></div>
+  </form>
+</div>
+<div class="modal" id="groups-modal" hidden role="dialog" aria-label="Small groups">
+  <div class="box">
+    <h2>Small groups</h2>
+    <p class="muted" id="groups-state" style="margin-top:0;">Put everyone who has joined into random groups. Each group writes one shared answer on their phones until you end group work.</p>
+    <label for="group-size">About how many in each group?</label>
+    <select id="group-size">{% for n in [2, 3, 4, 5, 6] %}<option value="{{ n }}" {% if n == 3 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    <div class="row">
+      <button type="button" data-close>Close</button>
+      <button type="button" id="groups-show" hidden>Show groups on screen</button>
+      <button type="button" id="groups-end" hidden>End group work</button>
+      <button type="button" class="primary" id="groups-start">Make groups</button>
+    </div>
+  </div>
+</div>
+<div class="modal" id="people-modal" hidden role="dialog" aria-label="Who has joined">
+  <div class="box">
+    <h2>Who has joined</h2>
+    <p class="muted" style="margin-top:0;">Removing someone also removes their answers; their phone goes back to the join page to join again with a proper name.</p>
+    <div id="people-list"></div>
+    <div class="row"><button type="button" data-close>Close</button></div>
+  </div>
+</div>
+<div class="overlay" id="groups-overlay" hidden role="dialog" aria-label="Groups">
+  <div style="text-align:center;">
+    <h1>Groups</h1>
+    <div class="groups-grid" id="groups-grid"></div>
+    <button type="button" class="start" id="groups-overlay-close" style="margin-top:20px;">Back to the lesson</button>
+  </div>
+</div>
 <header>
   <span class="join">Join at <strong>{{ join_url }}</strong> with code</span>
   <span class="code" id="code">{{ session.join_code }}</span>
-  <span class="people" id="people">0 joined</span>
+  <button type="button" class="people" id="people" title="See who has joined - remove someone (e.g. an unsuitable name)">0 joined</button>
   <button type="button" id="show-join" title="Show the QR code again (for latecomers)">QR code</button>
   <button type="button" class="copy-link" title="Copy the join link, e.g. to paste into a Teams meeting chat">Copy join link</button>
   <a href="/" title="Leave this page - the session stays open">Leave</a>
@@ -192,6 +262,8 @@
   <button type="button" id="prev">&larr; Back</button>
   <button type="button" id="next">Next &rarr;</button>
   <span class="counter" id="counter"></span>
+  <button type="button" class="tool" id="open-poll" title="Ask the class a quick poll right now (P)">Poll it</button>
+  <button type="button" class="tool" id="open-groups" title="Put students in small groups for an activity">Groups</button>
   <button type="button" class="tool" id="toggle-answers" title="Show or hide students' answers on this screen (A)">Answers<span class="badge" id="answers-badge"></span></button>
   <button type="button" class="tool" id="open-presenter" title="Open a private window for your laptop with the answers and names, while this one stays on the projector">Presenter view</button>
   <button type="button" class="tool" id="fullscreen" title="Full screen (F)">Full screen</button>
@@ -213,7 +285,7 @@
   var revealed = false;
   var LABELS = {retrieval_starter: "Do now", retrieval_plenary: "Plenary", objectives_review: "Confidence check",
                 objectives: "Objectives", real_life_example: "Real-life example", activity: "Activity", practical: "Practical",
-                exam_question: "Exam practice", content: "", content_question: "Think first", title: ""};
+                exam_question: "Exam practice", content: "", content_question: "Think first", title: "", poll: ""};
   function el(tag, text, cls) { var e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; }
 
   var LAYOUT = JSON.parse(document.getElementById("layout-data").textContent);
@@ -341,12 +413,33 @@
   }
 
   var JOIN_LINK = {{ join_link|tojson }};
-  function drawJoined(names) {
+  var people = [];
+  function removeStudent(p) {
+    if (!confirm("Remove " + p.name + "? Their answers are removed too, and they can join again with a proper name.")) return;
+    post("/live/{{ session.id }}/remove-student", {participant_id: p.id}).then(poll);
+  }
+  function drawJoined(list) {
     var box = document.getElementById("joined-names"); box.innerHTML = "";
-    document.getElementById("joined-number").textContent = names.length;
-    document.getElementById("joined-word").textContent = names.length === 1 ? "student joined" : "students joined";
-    if (!names.length) { box.appendChild(el("span", "Waiting for students to join…")); return; }
-    names.forEach(function (n) { box.appendChild(el("span", n)); });
+    people = (list || []).map(function (p) { return typeof p === "string" ? {id: null, name: p} : p; });
+    document.getElementById("joined-number").textContent = people.length;
+    document.getElementById("joined-word").textContent = people.length === 1 ? "student joined" : "students joined";
+    if (!people.length) { box.appendChild(el("span", "Waiting for students to join…")); drawPeopleList(); return; }
+    people.forEach(function (p) {
+      var chip = el("span", p.name);
+      if (p.id) { var x = el("button", "×", "x"); x.type = "button"; x.title = "Remove " + p.name; x.onclick = function () { removeStudent(p); }; chip.appendChild(x); }
+      box.appendChild(chip);
+    });
+    drawPeopleList();
+  }
+  function drawPeopleList() {
+    var list = document.getElementById("people-list"); list.innerHTML = "";
+    if (!people.length) { list.appendChild(el("p", "Nobody has joined yet.", "muted")); return; }
+    people.forEach(function (p) {
+      var row = el("div", null, "person");
+      row.appendChild(el("span", p.name + (p.group ? "  (group " + p.group + ")" : "")));
+      if (p.id) { var b = el("button", "Remove"); b.type = "button"; b.onclick = function () { removeStudent(p); }; row.appendChild(b); }
+      list.appendChild(row);
+    });
   }
   function begin() {
     // only now does the session count as started (opening the join screen doesn't)
@@ -370,7 +463,7 @@
   }, true);
 
   function drawAnswers(data) {
-    drawJoined(data.joined);
+    drawJoined(data.people || data.joined); updateGroups(data);
     document.getElementById("people").textContent = data.joined.length + " joined";
     document.getElementById("people").title = data.joined.join(", ");
     revealed = data.revealed;
@@ -391,7 +484,7 @@
       var t = data.tally[k], block = el("div", null, "qblock");
       total += t.count;
       block.appendChild(el("div", t.prompt + "  (" + t.count + ")", "prompt"));
-      if (t.kind === "confidence") {
+      if (t.kind === "confidence" || t.kind === "poll") {
         var bars = el("div", null, "bars"), max = Math.max.apply(null, t.counts.concat([1])), colours = ["var(--low)", "var(--mid)", "var(--ok)"];
         t.choices.forEach(function (c, i) {
           var row = el("div", null, "row"), bar = el("span", null, "bar");
@@ -404,7 +497,16 @@
         t.answers.slice().reverse().forEach(function (a) {
           var card = el("div", null, "ans");
           if (PRESENTER || showNames) card.appendChild(el("div", a.name, "who"));
-          card.appendChild(el("div", a.text)); block.appendChild(card);
+          var txt = el("div", a.text || "");
+          if (a.group) txt.appendChild(el("span", "group " + a.group, "grp"));
+          card.appendChild(txt);
+          if (a.image) {
+            // photos stay off the projector: inline only in the presenter view, otherwise opened privately
+            var url = "/live/{{ session.id }}/answer-photo/" + a.response_id;
+            if (PRESENTER) { var im = el("img"); im.src = url; im.alt = "Photo from " + a.name; im.loading = "lazy"; card.appendChild(im); }
+            else { var link = el("a", "📷 open photo", "photo"); link.href = url; link.target = "_blank"; card.appendChild(link); }
+          }
+          block.appendChild(card);
         });
       }
       box.appendChild(block);
@@ -416,6 +518,44 @@
   function post(url, body) {
     return fetch(url, {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams(body), credentials: "same-origin"});
   }
+  // ---------------------------------------------------------------- Poll it, groups, people
+  function openModal(id) { document.getElementById(id).hidden = false; }
+  document.querySelectorAll(".modal [data-close]").forEach(function (b) { b.onclick = function () { b.closest(".modal").hidden = true; }; });
+  document.querySelectorAll(".modal").forEach(function (m) { m.addEventListener("click", function (e) { if (e.target === m) m.hidden = true; }); });
+  document.getElementById("open-poll").onclick = function () { openModal("poll-modal"); setTimeout(function () { document.getElementById("poll-q").focus(); }, 50); };
+  document.getElementById("poll-kind").onchange = function () { document.getElementById("poll-options-box").hidden = this.value !== "custom"; };
+  document.getElementById("people").onclick = function () { drawPeopleList(); openModal("people-modal"); };
+  document.getElementById("open-groups").onclick = function () { openModal("groups-modal"); };
+  var groupsOn = false;
+  function updateGroups(d) {
+    groupsOn = !!d.groups_on;
+    var btn = document.getElementById("open-groups");
+    btn.textContent = groupsOn ? "Groups (on)" : "Groups"; btn.classList.toggle("on", groupsOn);
+    document.getElementById("groups-end").hidden = !groupsOn;
+    document.getElementById("groups-show").hidden = !groupsOn;
+    document.getElementById("groups-start").textContent = groupsOn ? "Make new groups" : "Make groups";
+    document.getElementById("groups-state").textContent = groupsOn
+      ? "Group work is on - each group writes one shared answer. End it to go back to working alone."
+      : "Put everyone who has joined into random groups. Each group writes one shared answer on their phones until you end group work.";
+    var grid = document.getElementById("groups-grid"); grid.innerHTML = "";
+    var byGroup = {};
+    (d.people || []).forEach(function (p) { if (p.group) (byGroup[p.group] = byGroup[p.group] || []).push(p.name); });
+    Object.keys(byGroup).sort(function (a, b) { return a - b; }).forEach(function (g) {
+      var box = el("div"); box.appendChild(el("strong", "Group " + g)); box.appendChild(document.createTextNode(byGroup[g].join(", "))); grid.appendChild(box);
+    });
+  }
+  document.getElementById("groups-start").onclick = function () {
+    post("/live/{{ session.id }}/groups", {size: document.getElementById("group-size").value}).then(function () {
+      document.getElementById("groups-modal").hidden = true; poll();
+      setTimeout(function () { document.getElementById("groups-overlay").hidden = false; }, 700);
+    });
+  };
+  document.getElementById("groups-end").onclick = function () {
+    post("/live/{{ session.id }}/groups/end", {}).then(function () { document.getElementById("groups-modal").hidden = true; poll(); });
+  };
+  document.getElementById("groups-show").onclick = function () { document.getElementById("groups-modal").hidden = true; document.getElementById("groups-overlay").hidden = false; };
+  document.getElementById("groups-overlay-close").onclick = function () { document.getElementById("groups-overlay").hidden = true; };
+
   // ---------------------------------------------------------------- projector-safe answers drawer
   var PRESENTER = document.body.classList.contains("presenter"), showNames = false, lastNav = 0, lastData = null;
   function setAnswers(open) { document.body.classList.toggle("answers-open", !!open); }
@@ -461,7 +601,7 @@
         current = d.current; quiz.deadline = null; quiz.data = null; arrived(current); drawStage();
       }
       lastData = d;
-      if (d.current === current) drawAnswers(d); else drawJoined(d.joined);
+      if (d.current === current) drawAnswers(d); else { drawJoined(d.people || d.joined); updateGroups(d); }
     }).catch(function () {});
   }
   document.getElementById("prev").onclick = function () { go(current - 1); };
@@ -471,6 +611,8 @@
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); go(current + 1); }
     if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(current - 1); }
+    if (document.querySelectorAll(".modal:not([hidden])").length) { if (e.key === "Escape") document.querySelectorAll(".modal").forEach(function (m) { m.hidden = true; }); return; }
+    if (e.key === "p" || e.key === "P") { e.preventDefault(); openModal("poll-modal"); return; }
     if (e.key === "a" || e.key === "A") { if (!PRESENTER) setAnswers(!document.body.classList.contains("answers-open")); }
     if (e.key === "f" || e.key === "F") { toggleFullscreen(); }
   });

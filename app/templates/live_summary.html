@@ -59,13 +59,14 @@
         <table style="max-width:560px;">
           {% for c in r.choices %}<tr><td>{% if loop.index0 == r.answer %}<strong>{{ c }} ✓</strong>{% else %}{{ c }}{% endif %}</td><td style="width:60px;"><strong>{{ r.counts[loop.index0] }}</strong></td></tr>{% endfor %}
         </table>
-      {% elif r.kind == "confidence" %}
+      {% elif r.kind in ("confidence", "poll") %}
         <table style="max-width:420px;">
           {% for c in r.choices %}<tr><td>{{ c }}</td><td><strong>{{ r.counts[loop.index0] }}</strong></td></tr>{% endfor %}
         </table>
       {% elif r.answers %}
         <details><summary>Show answers</summary>
-          <table>{% for a in r.answers %}<tr><td style="width:150px;">{{ a.name }}</td><td>{{ a.text }}</td></tr>{% endfor %}</table>
+          <table>{% for a in r.answers %}<tr><td style="width:150px;">{{ a.name }}{% if a.group %} <span class="muted">(group {{ a.group }})</span>{% endif %}</td>
+            <td>{{ a.text or "" }}{% if a.image %} <a href="/live/{{ session.id }}/answer-photo/{{ a.response_id }}" target="_blank">photo</a>{% endif %}</td></tr>{% endfor %}</table>
         </details>
       {% else %}
         <p class="muted">No answers.</p>

@@ -19,8 +19,28 @@
       {% if student.is_active %}Archive student{% else %}Reactivate student{% endif %}
     </button>
   </form>
-  <p class="muted" style="margin-top:8px;">Students aren't permanently deleted — archiving keeps
-  their submission/marking history intact but hides them from the active list.</p>
+  <p class="muted" style="margin-top:8px;">Archiving keeps their submission/marking history intact but hides them
+  from the active list - the safe choice for a student who has left.</p>
+</div>
+
+<div class="card" style="border-left:4px solid var(--danger);">
+  <h2>Delete student</h2>
+  {% if request.query_params.get("error") %}<div class="error-box" role="alert">{{ request.query_params.get("error") }}</div>{% endif %}
+  {% if student.submissions %}
+    <p class="muted">{{ student.name }} has {{ student.submissions|length }} submission(s). Deleting removes them <strong>and all their
+    work, marks and feedback</strong> for good. Type their name to confirm.</p>
+    <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/delete"
+          onsubmit="return confirm('Delete this student and all their work for good?');">
+      <input type="text" name="confirm_name" placeholder="{{ student.name }}" autocomplete="off" required aria-label="Type the student's name to confirm">
+      <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete student and their work</button>
+    </form>
+  {% else %}
+    <p class="muted">Remove {{ student.name }} from this course (e.g. added by mistake). They have no submissions.</p>
+    <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/delete"
+          onsubmit="return confirm('Remove this student from this course?');">
+      <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete student</button>
+    </form>
+  {% endif %}
 </div>
 
 <div class="card">

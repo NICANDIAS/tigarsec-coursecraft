@@ -63,6 +63,41 @@ def edit_student(
     return RedirectResponse(url=f"/courses/{course_id}/students/{student_id}", status_code=303)
 
 
+@router.post("/courses/{course_id}/students/{student_id}/delete")
+def delete_student(
+    course_id: int,
+    student_id: int,
+    confirm_name: str = Form(""),
+    db: Session = Depends(get_db),
+    teacher: Teacher = Depends(get_current_teacher),
+):
+    """
+    Removes a student from the course for good - e.g. added by mistake, or left the college.
+    A student with NO submissions is simply removed. One WITH submissions (marks, feedback,
+    IV records) needs their name typed to confirm, and all of that work goes too - archiving
+    stays the safe choice for anyone whose history should be kept.
+    """
+    from urllib.parse import quote as q
+    from ..models import Submission, AuditLogEntry
+    from .submissions import delete_submission
+    course = get_course_for_teacher(db, course_id, teacher)
+    student = db.query(Student).filter(Student.id == student_id, Student.course_id == course_id).first()
+    if not course or not student:
+        return RedirectResponse(url="/", status_code=303)
+    submissions = db.query(Submission).filter(Submission.student_id == student.id).all()
+    if submissions and confirm_name.strip() != student.name:
+        message = f"Nothing was deleted - type {student.name}'s name exactly to delete them and their {len(submissions)} submission(s)."
+        return RedirectResponse(url=f"/courses/{course_id}/students/{student_id}?error={q(message)}", status_code=303)
+    db.add(AuditLogEntry(actor=teacher.email, action="student_deleted",
+                         detail=f"Deleted student id={student.id} from course id={course.id} with {len(submissions)} submission(s)."))
+    db.commit()
+    for sub in submissions:
+        delete_submission(sub.id, db, teacher)
+    db.delete(db.get(Student, student_id))
+    db.commit()
+    return RedirectResponse(url=f"/courses/{course_id}?imported={q('Student deleted.')}#students", status_code=303)
+
+
 @router.post("/courses/{course_id}/students/{student_id}/toggle-active")
 def toggle_student_active(
     course_id: int,

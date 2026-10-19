@@ -128,7 +128,7 @@ def tally(screen: dict, responses: list) -> dict:
     for q in screen.get("questions", []):
         answers = [r for r in responses if r["question_key"] == q["key"]]
         entry = {"prompt": q["prompt"], "kind": q["kind"], "answers": answers, "count": len(answers)}
-        if q["kind"] in ("confidence", "mcq"):
+        if q["kind"] in ("confidence", "mcq", "poll"):
             entry["counts"] = [sum(1 for r in answers if r.get("choice") == i) for i in range(len(q.get("choices", [])))]
             entry["choices"] = q.get("choices", [])
         if q["kind"] == "mcq":  # Stage 8 quiz question
@@ -192,3 +192,83 @@ def is_local_only(base_url: str) -> bool:
     """True for an address a student's phone can never open (this computer's own name)."""
     host = base_url.split("://", 1)[-1].split("/", 1)[0].lower()
     return any(host.startswith(h) for h in LOCAL_HOSTS)
+
+
+# ------------------------------------------------------------------ quick polls, groups, students' notes
+
+POLL_KINDS = {
+    "yesno": ["Yes", "No", "Not sure"],
+    "abcd": ["A", "B", "C", "D"],
+    "scale": ["1", "2", "3", "4", "5"],
+    "agree": ["Agree", "Not sure", "Disagree"],
+}
+
+
+def poll_screen(question: str, kind: str, options_text: str = "") -> dict | None:
+    """A quick poll the lecturer launches mid-lesson ("Poll it"). kind: yesno | abcd | scale | agree |
+    custom (one option per line, 2-6) | text (a short open answer). None if it isn't usable."""
+    prompt = _clean(question, 300) or "Look at the board and answer"
+    if kind == "text":
+        q = {"prompt": prompt, "kind": "text"}
+    else:
+        choices = POLL_KINDS.get(kind) or _list((options_text or "").splitlines(), 6)
+        choices = list(dict.fromkeys(c[:80] for c in choices))
+        if len(choices) < 2:
+            return None
+        q = {"prompt": prompt, "kind": "poll", "choices": choices}
+    q["key"] = "poll-" + secrets.token_hex(4)  # unique, so it never clashes with the lesson's own question keys
+    return {"kind": "poll", "title": "Quick poll", "body": [], "questions": [q]}
+
+
+def make_groups(participant_ids: list, size: int, seed=None) -> dict:
+    """Random groups of about `size` students: {participant id: group number}. Nobody is left on
+    their own - a leftover single student joins the last group."""
+    import random
+    ids = list(participant_ids)
+    random.Random(seed).shuffle(ids)
+    size = max(2, min(8, int(size or 3)))
+    count = max(1, len(ids) // size + (1 if len(ids) % size > 1 else 0))
+    return {pid: (i % count) + 1 for i, pid in enumerate(ids)}
+
+
+def smallest_group(groups: dict) -> int:
+    """For a latecomer during group work: the group with fewest members."""
+    if not groups:
+        return 1
+    sizes = {}
+    for g in groups.values():
+        sizes[g] = sizes.get(g, 0) + 1
+    return min(sizes, key=lambda g: (sizes[g], g))
+
+
+def student_notes(title: str, screens: list, mine: dict, when: str = "") -> str:
+    """A student's own copy of the lesson: each slide's title and points, and what THEY answered.
+    mine: {question key: {"text", "choice", "image"}}. Plain text, so it opens on any phone."""
+    lines = [title, f"My lesson notes{(' - ' + when) if when else ''}", "=" * 40, ""]
+    for s in screens or []:
+        if s.get("kind") in ("leaderboard", "quiz_intro"):
+            continue
+        head = s.get("title") or ""
+        if s.get("kind") == "content_question":
+            head = f"{head} (think first)"
+        if head:
+            lines.append(head)
+        for b in s.get("body") or []:
+            lines.append(f"  - {b}")
+        for q in s.get("questions") or []:
+            a = mine.get(q.get("key"))
+            lines.append(f"  Q: {q.get('prompt')}")
+            if not a:
+                lines.append("  My answer: (not answered)")
+                continue
+            if a.get("choice") is not None and q.get("choices") and 0 <= a["choice"] < len(q["choices"]):
+                answer = q["choices"][a["choice"]]
+                if q.get("kind") == "mcq" and q.get("answer") is not None:
+                    answer += " - right" if a["choice"] == q["answer"] else f" - the answer was: {q['choices'][q['answer']]}"
+            else:
+                answer = a.get("text") or ""
+            if a.get("image"):
+                answer = (answer + " " if answer else "") + "(photo sent)"
+            lines.append(f"  My answer: {answer}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
