@@ -34,7 +34,7 @@ from ..live_activities import (screens_from_deck, screens_from_practice, new_joi
                                clean_public_url, join_link, is_local_only, attach_pptx_slides, choose_join_base,
                                poll_screen, make_groups, smallest_group, student_notes)
 from ..qr import qr_svg
-from ..quiz import screens_from_quiz, public_screen, points_for, is_open, leaderboard
+from ..quiz import screens_from_quiz, public_screen, points_for, is_open, leaderboard, revision_for
 from ..system_settings import get_system_settings
 from .presentations import _can_access_deck, deck_layout, session_gaps
 
@@ -638,6 +638,25 @@ def _save_photo(session_id, upload):
     path = os.path.join(folder, f"{uuid.uuid4().hex}.jpg")
     image.save(path, "JPEG", quality=85)
     return path, None
+
+
+@router.get("/live/{session_id}/my-revision")
+def student_revision(session_id: int, request: Request, db: Session = Depends(get_db)):
+    """After a quiz: the questions THIS student got wrong or missed, to practise again on their phone.
+    Only once the quiz is over (or its final leaderboard is showing), so it can't give answers away."""
+    session = db.get(LiveSession, session_id)
+    participant = _participant(db, request, session) if session else None
+    if not session or not participant:
+        return JSONResponse({"questions": []}, status_code=404)
+    screens = session.screens_json or []
+    at_end = session.state == "ended" or (0 <= session.current_screen < len(screens)
+                                          and screens[session.current_screen].get("kind") == "leaderboard")
+    if not _is_quiz(screens) or not at_end:
+        return {"title": session.title, "questions": [], "total": 0}
+    mine = {r.question_key: r.answer_choice for r in db.query(LiveResponse).filter(
+        LiveResponse.session_id == session.id, LiveResponse.participant_id == participant.id).all()}
+    total = sum(1 for s in screens for q in s.get("questions", []) if q.get("kind") == "mcq")
+    return {"title": session.title, "questions": revision_for(screens, mine), "total": total}
 
 
 @router.get("/live/{session_id}/my-notes")

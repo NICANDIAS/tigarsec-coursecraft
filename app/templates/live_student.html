@@ -37,6 +37,46 @@
   .shared { margin-top:10px; padding-top:10px; border-top:1px dashed #d5d9e2; }
   .shared .a { background:#f3f5f9; border-radius:8px; padding:6px 10px; margin:4px 0; font-size:0.92rem; }
   .wait { text-align:center; color:#5b5b63; padding:30px 10px; }
+  /* Stage 12 (4): personal revision after a quiz */
+  .rev-btn { display:block; width:100%; margin-top:12px; padding:12px; border:none; border-radius:10px; background:#1b8a4b; color:#fff;
+             font-size:1.02rem; font-weight:700; }
+  .rev-choices { display:grid; gap:8px; margin-top:10px; }
+  .rev-choices button { text-align:left; padding:12px; border-radius:10px; border:2px solid #d5d9e2; background:#fff; font-size:1rem; }
+  .rev-choices button.right { border-color:#1b8a4b; background:#e8f6ee; font-weight:700; }
+  .rev-choices button.wrong { border-color:#a3261b; background:#fdecea; }
+  .rev-choices button:disabled { opacity:1; color:#1b1b1f; }
+  .rev-why { margin-top:10px; padding:10px 12px; border-radius:8px; background:#f3f5f9; }
+  .rev-progress { color:#5b5b63; font-size:0.85rem; margin-bottom:6px; }
+  /* Stage 12 (5): reading options - each student's own choice, on their own phone */
+  .aa-btn { background:rgba(255,255,255,0.18); color:#fff; border:none; border-radius:8px; padding:4px 10px; font-weight:800; font-size:0.95rem; }
+  .aa-panel { position:fixed; left:0; right:0; bottom:0; background:#fff; color:#1a1a1e; border-radius:16px 16px 0 0; padding:16px 18px 22px;
+              box-shadow:0 -10px 30px rgba(0,0,0,0.25); z-index:40; max-width:640px; margin:0 auto; }
+  .aa-panel[hidden] { display:none; }
+  .aa-panel h2 { margin:0 0 10px; font-size:1.1rem; }
+  .aa-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0; }
+  .aa-row > span { min-width:110px; font-weight:600; }
+  .aa-row button { border:2px solid #d5d9e2; background:#fff; border-radius:10px; padding:8px 12px; font-size:0.95rem; }
+  .aa-row button.on { border-color:#2f6fed; background:#eef3fd; font-weight:700; }
+  .aa-swatch { width:38px; height:38px; padding:0 !important; }
+  .say { background:none; border:none; font-size:1.1rem; cursor:pointer; padding:0 4px; vertical-align:middle; }
+  body.easy-read, body.easy-read button, body.easy-read textarea { font-family:Verdana, Tahoma, "Segoe UI", sans-serif;
+             letter-spacing:0.04em; word-spacing:0.14em; }
+  body.easy-read li, body.easy-read .prompt, body.easy-read p { line-height:1.75; }
+  body.easy-read main { text-align:left; }
+  body.tint-cream { --tint:#fbf3dc; } body.tint-yellow { --tint:#fff7b0; } body.tint-blue { --tint:#dcebfb; }
+  body.tint-green { --tint:#dff3e2; } body.tint-pink { --tint:#fbe3ec; }
+  body[class*="tint-"] { background:var(--tint); }
+  body[class*="tint-"] .card { background:color-mix(in srgb, var(--tint) 55%, #fff); }
+  body.dark { background:#101418; color:#f2f4f7; }
+  body.dark .card { background:#1b2129; color:#f2f4f7; box-shadow:none; }
+  body.dark h1 { color:#f2f4f7; }
+  body.dark textarea, body.dark .choices button, body.dark .rev-choices button { background:#232b35; color:#f2f4f7; border-color:#3a4553; }
+  body.dark .wait, body.dark .status, body.dark .rev-progress { color:#c3cad4; }
+  body.dark .photo-row label { color:#9cc3ff; border-color:#4a5666; }
+  body.dark .rev-choices button.right { background:#14532d; border-color:#4ade80; color:#fff; }
+  body.dark .rev-choices button.wrong { background:#5b1a14; border-color:#f87171; color:#fff; }
+  body.dark .rev-choices button:disabled { color:#f2f4f7; }
+  body.dark .rev-why { background:#232b35; color:#f2f4f7; }
   details.version summary { font-weight:700; cursor:pointer; padding:4px 0; }
   details.version.support { border-left:4px solid #1b8a4b; }
   details.version.stretch { border-left:4px solid #2f6fed; }
@@ -65,7 +105,24 @@
 </head>
 <body>
 <header><span class="t">{{ session.title }}</span>
-  <span class="me">{{ name }} · <a class="notes" href="/live/{{ session.id }}/my-notes" target="_blank">My notes</a></span></header>
+  <span class="me">{{ name }} · <a class="notes" href="/live/{{ session.id }}/my-notes" target="_blank">My notes</a>
+    <button type="button" class="aa-btn" id="aa-open" aria-label="Reading options: text size, colours, read aloud">Aa</button></span></header>
+<div class="aa-panel" id="aa-panel" hidden role="dialog" aria-label="Reading options">
+  <h2>Reading options <span style="font-weight:400;font-size:0.85rem;color:#5b5b63;">- only on your phone</span></h2>
+  <div class="aa-row"><span>Text size</span>
+    <button type="button" data-size="-1" aria-label="Smaller text">A−</button><button type="button" data-size="1" aria-label="Bigger text">A+</button></div>
+  <div class="aa-row"><span>Easier reading</span><button type="button" id="aa-easy">Spaced, clear letters</button></div>
+  <div class="aa-row"><span>Colour</span>
+    <button type="button" class="aa-swatch" data-tint="" style="background:#f3f5f9;" aria-label="No colour"></button>
+    <button type="button" class="aa-swatch" data-tint="cream" style="background:#fbf3dc;" aria-label="Cream"></button>
+    <button type="button" class="aa-swatch" data-tint="yellow" style="background:#fff7b0;" aria-label="Yellow"></button>
+    <button type="button" class="aa-swatch" data-tint="blue" style="background:#dcebfb;" aria-label="Blue"></button>
+    <button type="button" class="aa-swatch" data-tint="green" style="background:#dff3e2;" aria-label="Green"></button>
+    <button type="button" class="aa-swatch" data-tint="pink" style="background:#fbe3ec;" aria-label="Pink"></button>
+    <button type="button" id="aa-dark">Dark</button></div>
+  <div class="aa-row"><span>Read aloud</span><button type="button" id="aa-say">🔊 buttons on</button></div>
+  <button type="button" class="send" id="aa-close">Done</button>
+</div>
 <main id="main"><div class="wait">Connecting…</div></main>
 <script>
 (function () {
@@ -116,7 +173,9 @@
       });
       card.appendChild(ol);
       var r = rankLine(d.me); if (r) card.appendChild(r);
-      main.appendChild(card); return;
+      main.appendChild(card);
+      offerRevision(main);
+      return;
     }
     var q = s.questions[0], mine = d.mine[q.key] || {}, answered = mine.choice != null;
     var head = el("div", null, "qz-head"); head.appendChild(el("span", s.title));
@@ -182,7 +241,8 @@
       main.appendChild(gb);
     }
     var card = el("div", null, "card");
-    card.appendChild(el("h1", s.title || "Look at the front"));
+    var h1 = el("h1", s.title || "Look at the front"); card.appendChild(h1);
+    addSay(h1, [s.title].concat(s.body || []).filter(Boolean).join(". "));
     if (s.body && s.body.length) { var ul = el("ul"); s.body.forEach(function (b) { ul.appendChild(el("li", b)); }); card.appendChild(ul); }
     main.appendChild(card);
     // Stage 10: support / stretch versions of an activity - each student opens them privately
@@ -201,7 +261,7 @@
     });
     (s.questions || []).forEach(function (q) {
       var box = el("div", null, "card"), status = el("div", "", "status"), mine = d.mine[q.key] || {};
-      box.appendChild(el("div", q.prompt, "prompt"));
+      var promptEl = el("div", q.prompt, "prompt"); box.appendChild(promptEl); addSay(promptEl, q.prompt);
       if (q.kind === "confidence" || q.kind === "poll") {
         var row = el("div", null, "choices");
         q.choices.forEach(function (c, i) {
@@ -246,7 +306,91 @@
       if (box) box.textContent = "Your group's answer so far (by " + a.by + "): " + a.text;
     });
   }
+  // ---------------------------------------------------------------- Stage 12 (4): personal revision
+  var practising = false;
+  function offerRevision(target) {
+    fetch("/live/{{ session.id }}/my-revision", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.total) return;
+      var box = el("div", null, "card");
+      if (!d.questions.length) { box.appendChild(el("strong", "You got every question right - nothing to revise!")); target.appendChild(box); return; }
+      box.appendChild(el("strong", "Revise what you missed"));
+      box.appendChild(el("p", d.questions.length + " of " + d.total + " question" + (d.total !== 1 ? "s" : "") + " to go over - with the right answers and why."));
+      var b = el("button", "Start my revision", "rev-btn"); b.type = "button";
+      b.onclick = function () { practise(d.questions, 0, 0, []); };
+      box.appendChild(b); target.appendChild(box);
+    }).catch(function () {});
+  }
+  function practise(list, i, right, missed) {
+    practising = true; main.innerHTML = "";
+    if (i >= list.length) {
+      var done = el("div", null, "card");
+      done.appendChild(el("h1", right === list.length ? "All right this time!" : right + " of " + list.length + " right"));
+      if (missed.length) {
+        var again = el("button", "Try the " + missed.length + " I missed again", "rev-btn"); again.type = "button";
+        again.onclick = function () { practise(missed, 0, 0, []); }; done.appendChild(again);
+      } else { done.appendChild(el("p", "Well done - you've revised every question you missed.")); }
+      var dl = el("a", "Download my notes and answers", "end-notes"); dl.href = "/live/{{ session.id }}/my-notes?download=1"; done.appendChild(dl);
+      main.appendChild(done); return;
+    }
+    var q = list[i], card = el("div", null, "card");
+    card.appendChild(el("div", "Question " + (i + 1) + " of " + list.length, "rev-progress"));
+    var h = el("div", q.question, "prompt"); card.appendChild(h); addSay(h, q.question);
+    if (q.picked != null && q.picked >= 0) card.appendChild(el("div", "In the quiz you picked: " + q.choices[q.picked], "rev-progress"));
+    var grid = el("div", null, "rev-choices");
+    q.choices.forEach(function (c, k) {
+      var b = el("button", c); b.type = "button";
+      b.onclick = function () {
+        grid.querySelectorAll("button").forEach(function (x, n) { x.disabled = true; if (n === q.answer) x.className = "right"; });
+        var ok = k === q.answer; if (!ok) b.className = "wrong";
+        var why = el("div", (ok ? "Right! " : "Not quite - the answer is: " + q.choices[q.answer] + ". ") + (q.explanation || ""), "rev-why");
+        card.appendChild(why);
+        var next = el("button", i + 1 < list.length ? "Next question" : "See how I did", "send"); next.type = "button";
+        next.onclick = function () { practise(list, i + 1, right + (ok ? 1 : 0), ok ? missed : missed.concat([q])); };
+        card.appendChild(next);
+      };
+      grid.appendChild(b);
+    });
+    card.appendChild(grid); main.appendChild(card);
+  }
+
+  // ---------------------------------------------------------------- Stage 12 (5): reading options
+  var prefs = {size: 0, easy: false, tint: "", dark: false, say: false};
+  try { prefs = Object.assign(prefs, JSON.parse(localStorage.getItem("cc-reading") || "{}")); } catch (e) {}
+  function savePrefs() { try { localStorage.setItem("cc-reading", JSON.stringify(prefs)); } catch (e) {} }
+  function applyPrefs() {
+    document.documentElement.style.fontSize = (100 + prefs.size * 12) + "%";
+    document.body.classList.toggle("easy-read", !!prefs.easy);
+    document.body.classList.toggle("dark", !!prefs.dark);
+    ["cream", "yellow", "blue", "green", "pink"].forEach(function (t) { document.body.classList.toggle("tint-" + t, prefs.tint === t && !prefs.dark); });
+    document.getElementById("aa-easy").className = prefs.easy ? "on" : "";
+    document.getElementById("aa-dark").className = prefs.dark ? "on" : "";
+    document.getElementById("aa-say").className = prefs.say ? "on" : "";
+    document.querySelectorAll(".say").forEach(function (b) { b.hidden = !prefs.say; });
+  }
+  var canSpeak = "speechSynthesis" in window;
+  if (!canSpeak) document.getElementById("aa-say").closest(".aa-row").hidden = true;
+  function addSay(elem, text) {
+    // a small speaker button that reads the text out (the phone's own voice - nothing is sent anywhere)
+    if (!canSpeak || !text) return;
+    var b = el("button", "🔊", "say"); b.type = "button"; b.setAttribute("aria-label", "Read aloud"); b.hidden = !prefs.say;
+    b.onclick = function () { speechSynthesis.cancel(); var u = new SpeechSynthesisUtterance(text); u.lang = "en-GB"; u.rate = 0.95; speechSynthesis.speak(u); };
+    elem.appendChild(b);
+  }
+  document.getElementById("aa-open").onclick = function () { document.getElementById("aa-panel").hidden = false; };
+  document.getElementById("aa-close").onclick = function () { document.getElementById("aa-panel").hidden = true; };
+  document.querySelectorAll("[data-size]").forEach(function (b) {
+    b.onclick = function () { prefs.size = Math.max(-1, Math.min(4, prefs.size + Number(b.dataset.size))); savePrefs(); applyPrefs(); };
+  });
+  document.querySelectorAll("[data-tint]").forEach(function (b) {
+    b.onclick = function () { prefs.tint = b.dataset.tint; prefs.dark = false; savePrefs(); applyPrefs(); };
+  });
+  document.getElementById("aa-easy").onclick = function () { prefs.easy = !prefs.easy; savePrefs(); applyPrefs(); };
+  document.getElementById("aa-dark").onclick = function () { prefs.dark = !prefs.dark; savePrefs(); applyPrefs(); };
+  document.getElementById("aa-say").onclick = function () { prefs.say = !prefs.say; savePrefs(); applyPrefs(); };
+  applyPrefs();
+
   function poll() {
+    if (practising) return;  // revising after the quiz - don't redraw over it
     fetch("/live/s/" + code + "/data", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
       if (d.state === "removed") { window.location = "/join?code=" + encodeURIComponent(code); return; }
       if (d.state === "paused") {
@@ -257,6 +401,7 @@
       if (d.state !== "open") {
         main.innerHTML = ""; main.appendChild(el("div", "This lesson has finished. Thank you!", "wait"));
         var dl = el("a", "Download my notes and answers", "end-notes"); dl.href = "/live/{{ session.id }}/my-notes?download=1"; main.appendChild(dl);
+        offerRevision(main);
         clearInterval(timer); return;
       }
       var groupKey = JSON.stringify(d.group || null);

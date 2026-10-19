@@ -161,3 +161,20 @@ def leaderboard(responses: list, names: dict) -> list:
             rank, last = i, (t["points"], t["correct"])
         t["rank"] = rank
     return ranked
+
+
+def revision_for(screens: list, mine: dict) -> list:
+    """Stage 12 (4): a student's personal revision after a quiz - every question they got wrong or
+    didn't answer, with the right answer and why. mine: {question key: chosen index}.
+    -> [{"question", "choices", "answer", "explanation", "picked"}] in quiz order."""
+    out = []
+    for s in screens or []:
+        for q in s.get("questions", []):
+            if q.get("kind") != "mcq":
+                continue
+            picked = mine.get(q["key"])
+            if picked == q.get("answer"):
+                continue
+            out.append({"question": q["prompt"], "choices": list(q["choices"]), "answer": q["answer"],
+                        "explanation": q.get("explanation", ""), "picked": picked})
+    return out

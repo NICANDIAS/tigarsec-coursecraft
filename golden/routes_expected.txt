@@ -24,6 +24,8 @@ GET    /courses/{course_id}/scheme-of-work/{sow_id}/status  ->  scheme_of_work.p
 GET    /courses/{course_id}/similarity-check  ->  submissions.py:similarity_check
 GET    /courses/{course_id}/students/{student_id}  ->  students.py:student_detail
 GET    /courses/{course_id}/students/{student_id}/submissions/new  ->  submissions.py:new_submission_page
+GET    /courses/{course_id}/tracker  ->  tracker.py:tracker_page
+GET    /courses/{course_id}/tracker.xlsx  ->  tracker.py:tracker_download
 GET    /exam-exemplars/{exemplar_id}/file  ->  exam_exemplars.py:view_exemplar_file
 GET    /feedback  ->  feedback.py:feedback_page
 GET    /iv  ->  iv.py:iv_list
@@ -44,6 +46,7 @@ GET    /live/s/{code}/data  ->  live.py:student_data
 GET    /live/{session_id}/answer-photo/{response_id}  ->  live.py:live_answer_photo
 GET    /live/{session_id}/data  ->  live.py:live_teacher_data
 GET    /live/{session_id}/my-notes  ->  live.py:student_notes_page
+GET    /live/{session_id}/my-revision  ->  live.py:student_revision
 GET    /live/{session_id}/summary  ->  live.py:live_summary
 GET    /live/{session_id}/summary.csv  ->  live.py:live_summary_csv
 GET    /live/{session_id}/teach  ->  live.py:live_teach

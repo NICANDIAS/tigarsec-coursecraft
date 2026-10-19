@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Tracking sheet - TIGARSEC CourseCraft{% endblock %}
+{% block content %}
+<style>
+  .tr-top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .tr-top h1 { margin:0; flex:1; min-width:220px; }
+  .tr-tiles { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+  .tr-tile { border:1px solid var(--border); background:var(--bg-elevated); border-radius:12px; padding:12px 16px; }
+  .tr-tile b { display:block; font-size:1.6rem; line-height:1.2; }
+  .tr-tile span { color:var(--text-muted); font-size:0.85rem; }
+  .tr-tile.warn b { color:var(--danger); }
+  .tr-filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .tr-filters select { width:auto; margin:0; }
+  .tr-key { display:flex; gap:14px; font-size:0.85rem; color:var(--text-muted); flex-wrap:wrap; }
+  .tr-wrap { overflow:auto; max-height:70vh; border:1px solid var(--border); border-radius:12px; background:var(--bg-elevated); }
+  table.tr { border-collapse:separate; border-spacing:0; font-size:0.88rem; min-width:100%; }
+  table.tr th, table.tr td { border-bottom:1px solid var(--border); border-right:1px solid var(--border); padding:6px 8px; text-align:center; white-space:nowrap; }
+  table.tr thead th { position:sticky; background:var(--bg-elevated); z-index:2; }
+  table.tr thead tr:first-child th { top:0; }
+  table.tr thead tr:nth-child(2) th { top:33px; font-weight:600; color:var(--text-muted); font-size:0.8rem; }
+  table.tr .name { position:sticky; left:0; background:var(--bg-elevated); z-index:1; text-align:left; min-width:170px; }
+  table.tr thead .name { z-index:3; }
+  table.tr .unit-head { text-align:left; font-weight:700; }
+  .c-met { background:color-mix(in srgb, var(--success) 26%, transparent); color:var(--success); font-weight:800; }
+  .c-partly { background:color-mix(in srgb, var(--warning) 26%, transparent); color:var(--warning); font-weight:800; }
+  .c-not { background:color-mix(in srgb, var(--danger) 24%, transparent); color:var(--danger); font-weight:800; }
+  table.tr td a { color:inherit; text-decoration:none; display:block; }
+  table.tr td.name a { display:inline; }
+  .grade { font-weight:700; }
+  .risk-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--danger); margin-left:6px; vertical-align:1px; }
+  tr.foot td { font-size:0.78rem; color:var(--text-muted); }
+  @media (max-width: 800px) { .tr-tiles { grid-template-columns:1fr; } }
+</style>
+<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
+<div class="tr-top">
+  <h1>Tracking sheet</h1>
+  {% if data.units %}<a class="btn btn-secondary" href="/courses/{{ course.id }}/tracker.xlsx">Download for Excel</a>{% endif %}
+</div>
+<p class="muted" style="margin-top:0;">Every student against every criterion, filled in from their latest marked work in each unit -
+it updates by itself as you mark. Click a result to open that piece of work.</p>
+
+{% if not data.units %}
+  <div class="card"><p style="margin:0;">Nothing marked yet on this course. Once submissions are marked, every student's results appear here.</p></div>
+{% else %}
+  <div class="tr-tiles">
+    <div class="tr-tile"><b>{{ data.rows|length }}</b><span>students on the course</span></div>
+    <div class="tr-tile {% if data.at_risk %}warn{% endif %}"><b>{{ data.at_risk }}</b><span>at risk - not yet passing a unit, or missing work most of the class has handed in</span></div>
+    <div class="tr-tile"><b>{{ data.units|length }}</b><span>unit{{ "s" if data.units|length != 1 }} with marked work</span></div>
+  </div>
+
+  <form method="get" class="tr-filters">
+    <label for="tr-unit" style="margin:0;">Show</label>
+    <select id="tr-unit" name="unit" onchange="this.form.submit()">
+      <option value="all" {% if unit_filter == "all" %}selected{% endif %}>All units</option>
+      {% for u in data.units %}<option value="{{ u.index }}" {% if unit_filter == u.index|string %}selected{% endif %}>{{ u.name }}</option>{% endfor %}
+    </select>
+    <label style="display:flex;gap:6px;align-items:center;margin:0;font-weight:400;">
+      <input type="checkbox" name="risk" value="1" {% if risk_only %}checked{% endif %} onchange="this.form.submit()" style="width:auto;margin:0;"> Only students at risk</label>
+    <span style="flex:1;"></span>
+    <span class="tr-key"><span class="c-met" style="padding:0 6px;border-radius:4px;">✓ met</span><span class="c-partly" style="padding:0 6px;border-radius:4px;">½ partly</span>
+      <span class="c-not" style="padding:0 6px;border-radius:4px;">✗ not met</span><span>blank = not assessed yet</span></span>
+  </form>
+
+  <div class="tr-wrap">
+    <table class="tr">
+      <thead>
+        <tr><th class="name" rowspan="2">Student</th>
+          {% for u in shown %}<th class="unit-head" colspan="{{ u.criteria|length + 1 }}">{{ u.name }}</th>{% endfor %}</tr>
+        <tr>{% for u in shown %}{% for code in u.criteria %}<th>{{ code }}</th>{% endfor %}<th>Grade</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="name"><a href="/courses/{{ course.id }}/students/{{ r.student.id }}" style="text-decoration:none;color:var(--text);">{{ r.student.name }}</a>
+              {% if r.risk %}<span class="risk-dot" title="At risk: {{ r.risk|join('; ') }}"></span>{% endif %}</td>
+            {% for u in shown %}
+              {% set cell = r.cells[u.name] %}
+              {% for code in u.criteria %}
+                {% set state = cell.crit[code] %}
+                <td class="{{ 'c-' ~ state if state else '' }}" title="{{ r.student.name }} - {{ code }}">
+                  {% if state and cell.submission_id %}<a href="/submissions/{{ cell.submission_id }}/review">{{ symbol[state] }}</a>{% endif %}</td>
+              {% endfor %}
+              <td class="grade">{% if cell.grade %}{{ cell.grade }}{% elif cell.has_work %}{{ cell.met }}/{{ u.criteria|length }}{% else %}<span class="muted">–</span>{% endif %}</td>
+            {% endfor %}
+          </tr>
+        {% else %}
+          <tr><td class="name" colspan="99">No students match.</td></tr>
+        {% endfor %}
+        <tr class="foot"><td class="name">Class: % met</td>
+          {% for u in shown %}
+            {% for code in u.criteria %}{% set pct = data.unit_summary[u.name].criteria_met_pct[code] %}<td>{{ pct ~ "%" if pct is not none else "" }}</td>{% endfor %}
+            <td>{{ data.unit_summary[u.name].handed_in }} in</td>
+          {% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% if data.at_risk %}
+    <div class="card" style="margin-top:14px;border-left:4px solid var(--danger);">
+      <h2 style="margin-top:0;">At risk</h2>
+      {% for r in data.rows if r.risk %}
+        <div class="list-item"><a href="/courses/{{ course.id }}/students/{{ r.student.id }}">{{ r.student.name }}</a><span class="muted">{{ r.risk|join("; ") }}</span></div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}
