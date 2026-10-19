@@ -5,7 +5,7 @@ database in /tmp. Your real database is not opened. No AI.
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/selftest_live_classroom_db.py
-Expected last line: "ALL LIVE CLASSROOM CHECKS PASSED (17)"
+Expected last line: "ALL LIVE CLASSROOM CHECKS PASSED (18)"
 """
 import io
 import os
@@ -172,6 +172,10 @@ db.add(spec)
 db.commit()
 db.add(Submission(student_id=worked.id, spec_version_id=spec.id, original_filename="a.docx"))
 db.commit()
+page = st.student_detail(course.id, worked.id, request("/s"), db, lecturer).body.decode()
+check("the student page shows the profile bar, tiles, submissions and Manage",
+      'class="sp-bar"' in page and "Has Work" in page and "a.docx" in page and "1</b><span>submission" in page
+      and "Delete student and their work" in page)
 st.delete_student(course.id, plain.id, "", db, lecturer)
 st.delete_student(course.id, worked.id, "wrong name", db, lecturer)
 db.expire_all()

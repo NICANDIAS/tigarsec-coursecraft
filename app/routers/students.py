@@ -38,11 +38,42 @@ def student_detail(
 ):
     course = get_course_for_teacher(db, course_id, teacher)
     student = db.query(Student).filter(Student.id == student_id, Student.course_id == course_id).first()
+    if not course or not student:
+        return RedirectResponse(url="/", status_code=303)
     has_parsed_spec = bool(course and course.spec_version and course.spec_version.structured_json)
+    summary = student_summary(db, student)
     return templates.TemplateResponse(
         "student_detail.html",
-        {"request": request, "teacher": teacher, "course": course, "student": student, "has_parsed_spec": has_parsed_spec},
+        {"request": request, "teacher": teacher, "course": course, "student": student, "has_parsed_spec": has_parsed_spec,
+         **summary},
     )
+
+
+GRADE_ORDER = {"Not yet achieved": 0, "Pass": 1, "Merit": 2, "Distinction": 3}
+MARKED = ("needs_review", "released")
+
+
+def student_summary(db, student):
+    """What the student page shows at a glance: submissions newest first, their best grade, and -
+    from the latest MARKED piece of work in each unit - the criteria still needed for the next grade."""
+    from ..models import Submission, CriterionMark
+    from .submissions import submission_next_steps
+    subs = db.query(Submission).filter(Submission.student_id == student.id).order_by(Submission.id.desc()).all()
+    marked = [s for s in subs if s.status in MARKED]
+    graded = [s.achieved_grade for s in marked if s.achieved_grade in GRADE_ORDER]
+    best = max(graded, key=lambda g: GRADE_ORDER[g]) if graded else None
+    next_by_unit, seen = [], set()
+    for sub in marked:  # newest first - one plan per unit, from its latest marked work
+        unit = sub.target_unit_name or "Unit not set"
+        if unit in seen or not sub.marking_run:
+            continue
+        seen.add(unit)
+        marks = db.query(CriterionMark).filter(CriterionMark.marking_run_id == sub.marking_run.id).all()
+        plan = submission_next_steps(sub, marks) if marks else {"target": None, "steps": []}
+        next_by_unit.append({"unit": unit, "grade": sub.achieved_grade, "plan": plan, "submission_id": sub.id})
+    return {"subs": subs, "best_grade": best, "next_by_unit": next_by_unit,
+            "steps_left": sum(len(n["plan"]["steps"]) for n in next_by_unit),
+            "to_review": sum(1 for s in subs if s.status == "needs_review")}
 
 
 @router.post("/courses/{course_id}/students/{student_id}/edit")

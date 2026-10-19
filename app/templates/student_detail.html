@@ -1,67 +1,144 @@
 {% extends "base.html" %}
 {% block title %}{{ student.name }} - TIGARSEC CourseCraft{% endblock %}
 {% block content %}
-<p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
-<h1>{{ student.name }} {% if not student.is_active %}<span class="badge badge-failed">Archived</span>{% endif %}</h1>
-{% if student.student_ref %}<p class="muted">Ref: {{ student.student_ref }}</p>{% endif %}
+<style>
+  .sp-bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; border:1px solid var(--border); background:var(--bg-elevated);
+            border-radius:14px; padding:16px 18px; margin-bottom:16px; box-shadow:var(--shadow); }
+  .sp-avatar { width:54px; height:54px; border-radius:50%; background:var(--accent); color:var(--accent-text); display:flex; align-items:center;
+               justify-content:center; font-weight:800; font-size:1.2rem; flex:none; letter-spacing:1px; }
+  .sp-who { flex:1; min-width:220px; }
+  .sp-who h1 { margin:0; font-size:1.55rem; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .sp-ref { color:var(--text-muted); font-size:0.95rem; }
+  .sp-chip { font-size:0.78rem; padding:2px 10px; border-radius:12px; font-weight:700; }
+  .sp-chip.active { background:color-mix(in srgb, var(--success) 18%, transparent); color:var(--success); }
+  .sp-chip.archived { background:color-mix(in srgb, var(--danger) 18%, transparent); color:var(--danger); }
+  .sp-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .sp-edit { display:none; flex:1; min-width:260px; gap:10px; align-items:end; flex-wrap:wrap; margin:0; }
+  .sp-edit > div { flex:1; min-width:160px; }
+  .sp-edit label { margin-top:0; font-size:0.85rem; }
+  .sp-edit input { margin:0; }
+  .sp-bar.editing .sp-who, .sp-bar.editing .sp-actions { display:none; }
+  .sp-bar.editing .sp-edit { display:flex; }
+  .sp-tiles { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+  .sp-tile { border:1px solid var(--border); background:var(--bg-elevated); border-radius:12px; padding:12px 16px; }
+  .sp-tile b { display:block; font-size:1.6rem; line-height:1.2; }
+  .sp-tile span { color:var(--text-muted); font-size:0.85rem; }
+  .sp-grid { display:grid; grid-template-columns:minmax(0, 2.2fr) minmax(260px, 1fr); gap:16px; align-items:start; }
+  .sp-grid .card { margin-top:0; }
+  .sp-table { width:100%; border-collapse:collapse; }
+  .sp-table th { text-align:left; font-size:0.78rem; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted);
+                 padding:8px 6px; border-bottom:1px solid var(--border); }
+  .sp-table td { padding:10px 6px; border-bottom:1px solid var(--border); vertical-align:top; }
+  .sp-small { font-size:0.85rem; color:var(--text-muted); }
+  .sp-danger { color:var(--danger) !important; border-color:var(--danger) !important; }
+  .sp-steps { margin:6px 0 0; padding-left:18px; }
+  .sp-steps li { margin:4px 0; }
+  @media (max-width: 900px) { .sp-grid { grid-template-columns:1fr; } .sp-tiles { grid-template-columns:1fr; } }
+</style>
 
-<div class="card">
-  <h2>Edit student</h2>
-  <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/edit">
-    <label>Name</label>
-    <input type="text" name="name" value="{{ student.name }}" required>
-    <label>Student reference</label>
-    <input type="text" name="student_ref" value="{{ student.student_ref or '' }}">
-    <button class="btn btn-secondary" type="submit">Save changes</button>
+<p><a href="/courses/{{ course.id }}#students">&larr; {{ course.name }}</a></p>
+
+{% set initials = (student.name.split()|map("first")|join)[:2]|upper %}
+<div class="sp-bar" id="sp-bar">
+  <div class="sp-avatar" aria-hidden="true">{{ initials }}</div>
+  <div class="sp-who">
+    <h1>{{ student.name }}
+      {% if student.is_active %}<span class="sp-chip active">Active</span>{% else %}<span class="sp-chip archived">Archived</span>{% endif %}</h1>
+    <span class="sp-ref">{% if student.student_ref %}Ref: {{ student.student_ref }}{% else %}No student reference{% endif %}</span>
+  </div>
+  <div class="sp-actions">
+    {% if has_parsed_spec %}<a class="btn" href="/courses/{{ course.id }}/students/{{ student.id }}/submissions/new">Upload submission</a>{% endif %}
+    <button class="btn btn-secondary" type="button" id="sp-edit-btn">&#9998; Edit</button>
+  </div>
+  <form class="sp-edit" method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/edit">
+    <div><label for="sp-name">Name</label><input id="sp-name" type="text" name="name" value="{{ student.name }}" required></div>
+    <div><label for="sp-ref">Student reference</label><input id="sp-ref" type="text" name="student_ref" value="{{ student.student_ref or '' }}"></div>
+    <button class="btn" type="submit">Save</button>
+    <button class="btn btn-secondary" type="button" id="sp-cancel">Cancel</button>
   </form>
-  <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/toggle-active" style="margin-top:10px;">
-    <button class="btn btn-secondary" type="submit">
-      {% if student.is_active %}Archive student{% else %}Reactivate student{% endif %}
-    </button>
-  </form>
-  <p class="muted" style="margin-top:8px;">Archiving keeps their submission/marking history intact but hides them
-  from the active list - the safe choice for a student who has left.</p>
 </div>
 
-<div class="card" style="border-left:4px solid var(--danger);">
-  <h2>Delete student</h2>
-  {% if request.query_params.get("error") %}<div class="error-box" role="alert">{{ request.query_params.get("error") }}</div>{% endif %}
-  {% if student.submissions %}
-    <p class="muted">{{ student.name }} has {{ student.submissions|length }} submission(s). Deleting removes them <strong>and all their
-    work, marks and feedback</strong> for good. Type their name to confirm.</p>
-    <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/delete"
-          onsubmit="return confirm('Delete this student and all their work for good?');">
-      <input type="text" name="confirm_name" placeholder="{{ student.name }}" autocomplete="off" required aria-label="Type the student's name to confirm">
-      <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete student and their work</button>
-    </form>
-  {% else %}
-    <p class="muted">Remove {{ student.name }} from this course (e.g. added by mistake). They have no submissions.</p>
-    <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/delete"
-          onsubmit="return confirm('Remove this student from this course?');">
-      <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete student</button>
-    </form>
-  {% endif %}
+{% if request.query_params.get("error") %}<div class="error-box" role="alert">{{ request.query_params.get("error") }}</div>{% endif %}
+
+<div class="sp-tiles">
+  <div class="sp-tile"><b>{{ subs|length }}</b><span>submission{{ "s" if subs|length != 1 }}{% if to_review %} · {{ to_review }} to review{% endif %}</span></div>
+  <div class="sp-tile"><b>{{ best_grade or "–" }}</b><span>{{ "best grade so far" if best_grade else "no grade yet" }}</span></div>
+  <div class="sp-tile"><b>{{ steps_left if next_by_unit else "–" }}</b>
+    <span>{% if not next_by_unit %}nothing marked yet{% elif steps_left %}criteri{{ "a" if steps_left != 1 else "on" }} to reach the next grade{% else %}every marked criterion met{% endif %}</span></div>
 </div>
 
-<div class="card">
-  <h2>Submissions</h2>
-  {% if student.submissions %}
-    {% for sub in student.submissions %}
-      <div class="list-item">
-        <a href="/submissions/{{ sub.id }}/review">{{ sub.original_filename }}</a>
-        <span class="badge badge-{{ sub.status }}">{{ sub.status }}</span>
-      </div>
-    {% endfor %}
-  {% else %}
-    <p class="muted">No submissions yet.</p>
-  {% endif %}
+<div class="sp-grid">
+  <div class="card">
+    <h2 style="margin-top:0;">Submissions</h2>
+    {% if subs %}
+      <table class="sp-table">
+        <tr><th>Work</th><th>Unit</th><th>Grade</th><th>Status</th><th>Date</th></tr>
+        {% for sub in subs %}
+          <tr>
+            <td><a href="/submissions/{{ sub.id }}/review">{{ sub.original_filename }}</a></td>
+            <td>{{ sub.target_unit_name or "–" }}</td>
+            <td>{{ sub.achieved_grade or "–" }}</td>
+            <td><span class="badge badge-{{ sub.status }}">{{ sub.status.replace("_", " ") }}</span></td>
+            <td class="sp-small">{{ (sub.submitted_at or sub.created_at).strftime("%d %b") if (sub.submitted_at or sub.created_at) else "" }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted">No submissions yet.</p>
+    {% endif %}
+    {% if not has_parsed_spec %}
+      <p class="error-box" style="margin-top:12px;">Attach a parsed course spec before submissions can be marked.</p>
+    {% endif %}
+  </div>
 
-  {% if has_parsed_spec %}
-    <div style="margin-top:14px;">
-      <a class="btn" href="/courses/{{ course.id }}/students/{{ student.id }}/submissions/new">Upload submission</a>
+  <div>
+    <div class="card">
+      <h2 style="margin-top:0;">Next steps</h2>
+      {% for n in next_by_unit %}
+        <div style="margin-bottom:12px;">
+          <div class="sp-small"><strong>{{ n.unit }}</strong>{% if n.grade %} · now {{ n.grade }}{% endif %}</div>
+          {% if n.plan.steps %}
+            {% if n.plan.target %}<div style="margin-top:2px;">To reach <strong>{{ n.plan.target }}</strong>:</div>{% endif %}
+            <ul class="sp-steps">{% for s in n.plan.steps %}<li><strong>{{ s.code }}</strong> {{ s.description }} <span class="sp-small">({{ s.status }})</span></li>{% endfor %}</ul>
+          {% else %}
+            <div style="margin-top:2px;">Every marked criterion met.</div>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="muted" style="margin:0;">Appears once their work is marked - the criteria still needed for the next grade, in the spec's own words.</p>
+      {% endfor %}
     </div>
-  {% else %}
-    <p class="error-box">Attach a parsed course spec before submissions can be marked.</p>
-  {% endif %}
+
+    <div class="card">
+      <h2 style="margin-top:0;">Manage</h2>
+      <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/toggle-active" style="margin:0;">
+        <button class="btn btn-secondary" type="submit" style="width:100%;">{% if student.is_active %}Archive student{% else %}Reactivate student{% endif %}</button>
+      </form>
+      <p class="sp-small">{% if student.is_active %}Hides them from the class list - their marks and history are kept. The safe choice for a student who has left.{% else %}Brings them back into the class list.{% endif %}</p>
+      {% if subs %}
+        <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/delete" style="margin:0;"
+              onsubmit="return confirm('Delete this student and all their work for good?');">
+          <input type="text" name="confirm_name" placeholder="Type {{ student.name }} to delete" autocomplete="off" required
+                 aria-label="Type the student's name to confirm" style="margin-bottom:8px;">
+          <button class="btn btn-secondary sp-danger" type="submit" style="width:100%;">Delete student and their work</button>
+        </form>
+        <p class="sp-small" style="margin-bottom:0;">Deletes them and their {{ subs|length }} submission{{ "s" if subs|length != 1 }}, marks and feedback for good.</p>
+      {% else %}
+        <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/delete" style="margin:0;"
+              onsubmit="return confirm('Remove this student from this course?');">
+          <button class="btn btn-secondary sp-danger" type="submit" style="width:100%;">Delete student</button>
+        </form>
+        <p class="sp-small" style="margin-bottom:0;">E.g. added by mistake - they have no submissions.</p>
+      {% endif %}
+    </div>
+  </div>
 </div>
+
+<script>
+(function () {
+  var bar = document.getElementById("sp-bar");
+  document.getElementById("sp-edit-btn").onclick = function () { bar.classList.add("editing"); document.getElementById("sp-name").focus(); };
+  document.getElementById("sp-cancel").onclick = function () { bar.classList.remove("editing"); };
+})();
+</script>
 {% endblock %}
