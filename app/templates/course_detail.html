@@ -1,306 +1,414 @@
 {% extends "base.html" %}
 {% block title %}{{ course.name }} - TIGARSEC Assess{% endblock %}
 {% block content %}
-<p><a href="/">&larr; Dashboard</a></p>
-<h1>{{ course.name }}</h1>
-{% if delete_error %}<div class="error-box">{{ delete_error }}</div>{% endif %}
+{#
+  Course page (redesign): a top bar, five number tiles, then a grid of small cards - each shows its
+  first few items with "See all". Spec, delete and admin tools are folded into "Course settings".
+#}
+<style>
+  .cd-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; border:1px solid var(--border); background:var(--bg-elevated);
+            border-radius:14px; padding:16px 18px; margin-bottom:14px; box-shadow:var(--shadow); }
+  .cd-logo { width:54px; height:54px; border-radius:12px; background:var(--accent); color:var(--accent-text); display:flex; align-items:center;
+             justify-content:center; font-weight:800; font-size:1.15rem; flex:none; }
+  .cd-who { flex:1; min-width:260px; }
+  .cd-who h1 { margin:0 0 6px; font-size:1.55rem; }
+  .cd-chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .cd-chip { display:inline-flex; align-items:center; gap:6px; font-size:.82rem; padding:3px 10px; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+  .cd-chip b { color:var(--text); }
+  .cd-chip.ok { color:var(--success); border-color:color-mix(in srgb, var(--success) 45%, transparent); }
+  .cd-chip.warn { color:var(--danger); border-color:color-mix(in srgb, var(--danger) 45%, transparent); }
+  .cd-acts { display:flex; gap:8px; flex-wrap:wrap; }
+  .cd-sm { padding:6px 12px !important; font-size:.85rem !important; }
+  .cd-tiles { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+  .cd-tile { display:flex; gap:12px; align-items:center; border:1px solid var(--border); background:var(--bg-elevated); border-radius:12px;
+             padding:12px 14px; text-decoration:none !important; color:var(--text) !important; }
+  .cd-tile:hover { border-color:var(--accent); }
+  .cd-tile .n { font-size:1.5rem; font-weight:800; min-width:30px; }
+  .cd-tile .t { font-size:.82rem; color:var(--text-muted); line-height:1.3; }
+  .cd-tile .t b { color:var(--text); display:block; font-size:.95rem; }
+  .cd-tile.acc .n { color:var(--accent); }
+  .cd-tile.warn .n { color:var(--danger); }
+  .cd-tile.good .n { color:var(--success); }
+  .cd-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; align-items:start; }
+  .cd-wide { grid-column:span 2; }
+  .cd-panel { border:1px solid var(--border); background:var(--bg-elevated); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); min-width:0; scroll-margin-top:16px; }
+  .cd-ph { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .cd-ph h2 { margin:0; font-size:1.1rem; flex:1; }
+  .cd-count { color:var(--text-muted); font-size:.85rem; }
+  .cd-row { display:flex; align-items:center; gap:10px; padding:8px 2px; border-bottom:1px solid var(--border); font-size:.93rem; min-width:0; }
+  .cd-row:last-child { border-bottom:none; }
+  .cd-row[hidden], .cd-foot[hidden] { display:none; }
+  .cd-row .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cd-row .meta { color:var(--text-muted); font-size:.8rem; white-space:nowrap; }
+  .cd-row form { margin:0; }
+  .cd-pill { font-size:.72rem; font-weight:700; padding:2px 9px; border-radius:10px; white-space:nowrap; }
+  .cd-pill.g { background:color-mix(in srgb, var(--success) 20%, transparent); color:var(--success); }
+  .cd-pill.a { background:color-mix(in srgb, var(--accent) 22%, transparent); color:var(--accent); }
+  .cd-pill.r { background:color-mix(in srgb, var(--danger) 20%, transparent); color:var(--danger); }
+  .cd-pill.m { background:var(--btn-secondary-bg); color:var(--text-muted); }
+  .cd-mini { font-size:.75rem !important; padding:2px 9px !important; border-radius:7px; border:1px solid var(--border); background:var(--btn-secondary-bg);
+             color:var(--text) !important; cursor:pointer; white-space:nowrap; text-decoration:none !important; line-height:1.5; }
+  .cd-mini:hover { border-color:var(--accent); }
+  .cd-mini.d { color:var(--danger) !important; border-color:color-mix(in srgb, var(--danger) 50%, transparent); }
+  .cd-foot { color:var(--text-muted); font-size:.85rem; text-align:center; padding-top:8px; }
+  .cd-foot button { background:none; border:none; color:var(--ts-link, var(--accent)); cursor:pointer; font:inherit; padding:0; }
+  .cd-search { width:100%; max-width:340px; margin:0 0 4px; padding:7px 12px; border:1px solid var(--border); border-radius:8px;
+               background:var(--btn-secondary-bg); color:var(--text); font:inherit; font-size:.9rem; }
+  .cd-av { width:28px; height:28px; border-radius:50%; background:var(--btn-secondary-bg); display:flex; align-items:center; justify-content:center;
+           font-size:.72rem; font-weight:800; flex:none; }
+  .cd-dot { width:8px; height:8px; border-radius:50%; background:var(--danger); display:inline-block; flex:none; }
+  .cd-scroll { max-height:340px; overflow:auto; }
+  .cd-week { border:1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+  .cd-week .lbl { font-size:.75rem; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:.5px; }
+  .cd-week b { display:block; margin:2px 0 6px; }
+  .cd-bar-track { height:8px; border-radius:6px; background:var(--btn-secondary-bg); margin-top:10px; overflow:hidden; }
+  .cd-bar-fill { height:100%; border-radius:6px; background:var(--accent); }
+  .cd-tools { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
+  .cd-tool { border:1px solid var(--border); border-radius:12px; padding:12px; text-decoration:none !important; color:var(--text) !important; display:block; background:var(--btn-secondary-bg); }
+  .cd-tool:hover { border-color:var(--accent); }
+  .cd-tool b { display:block; font-size:.92rem; margin:6px 0 2px; }
+  .cd-tool span { font-size:.76rem; color:var(--text-muted); }
+  .cd-tool svg { color:var(--accent); }
+  .cd-add { margin-top:10px; }
+  .cd-add summary { list-style:none; display:inline-block; }
+  .cd-add summary::-webkit-details-marker { display:none; }
+  .cd-add form { margin-top:8px; }
+  .cd-inline { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+  .cd-inline input { flex:1; min-width:150px; margin:0 !important; }
+  details.cd-settings { border:1px solid var(--border); border-radius:14px; padding:12px 18px; background:var(--bg-elevated); margin-top:14px; }
+  details.cd-settings > summary { cursor:pointer; font-weight:700; padding:4px 0; }
+  .cd-set-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:24px; margin-top:12px; }
+  .cd-set-grid h3 { margin:0 0 8px; font-size:1rem; }
+  .cd-empty { color:var(--text-muted); font-size:.9rem; margin:6px 0; }
+  @media (max-width: 1150px) { .cd-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } .cd-tiles { grid-template-columns:repeat(3, minmax(0,1fr)); }
+                               .cd-tools { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width: 760px) { .cd-grid, .cd-set-grid { grid-template-columns:1fr; } .cd-wide { grid-column:auto; } .cd-tiles { grid-template-columns:1fr 1fr; } }
+</style>
 
 {% set active_students = course.students|selectattr("is_active")|list %}
 {% set archived_students = course.students|rejectattr("is_active")|list %}
-{% set ready_decks = course.spec_version and course.schemes_of_work %}
-<div class="stats-strip">
-  <div class="stat-pill">
-    <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-    <span>
-      {% if course.spec_version and course.spec_version.parse_status == "parsed" %}Spec parsed
-      {% elif course.spec_version %}Spec {{ course.spec_version.parse_status }}
-      {% else %}No spec attached{% endif %}
-    </span>
-  </div>
-  <div class="stat-pill">
-    <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    <span class="stat-value">{{ active_students|length }}</span> student(s)
-  </div>
-  <div class="stat-pill">
-    <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-    <span class="stat-value">{{ course.schemes_of_work|selectattr("status","equalto","ready")|list|length }}</span> scheme(s) of work
-  </div>
-</div>
+{% set ov = overview | default({}) %}
+{% set at_risk = ov.get("at_risk") or [] %}
+{% set tw = ov.get("this_week") %}
+{% set open_live = ov.get("open_live") %}
+{% set generating = recent_decks|selectattr("status", "in", ["generating", "queued"])|list|length %}
+{% set failed_decks = recent_decks|selectattr("status", "equalto", "failed")|list|length %}
+{% set ready_sows = course.schemes_of_work|selectattr("status","equalto","ready")|list %}
+{% set words = course.name.replace("-", " ").split() %}
+{% set initials = (words|map("first")|select("upper")|join or course.name[:2])[:2]|upper %}
 
-<div class="section-card">
-  <div class="section-header">
-    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
-    <h2>Course specification</h2>
-  </div>
-  {% if course.spec_version %}
-    <p>Attached: <strong>{{ course.spec_version.label }}</strong>
-      {% if course.spec_version.parse_status == "parsed" %}
-        <span class="badge badge-released">Parsed</span>
-      {% elif course.spec_version.parse_status == "parsing" %}
-        <span class="badge badge-needs_review">Parsing…</span>
+<p style="margin:0 0 10px;"><a href="/">&larr; Dashboard</a></p>
+{% if delete_error %}<div class="error-box">{{ delete_error }}</div>{% endif %}
+{% if request.query_params.get("imported") %}<div class="card" role="status" style="border-left:4px solid var(--accent);margin-top:0;">{{ request.query_params.get("imported") }}</div>{% endif %}
+
+<!-- ============================================================ top bar -->
+<div class="cd-bar">
+  <div class="cd-logo" aria-hidden="true">{{ initials }}</div>
+  <div class="cd-who">
+    <h1>{{ course.name }}</h1>
+    <div class="cd-chips">
+      {% if course.spec_version and course.spec_version.parse_status == "parsed" %}
+        <span class="cd-chip ok">&#10003; Spec: <b>{{ course.spec_version.label }}</b> <a href="#settings" data-open-settings>change</a></span>
+      {% elif course.spec_version %}
+        <span class="cd-chip">Spec: <b>{{ course.spec_version.label }}</b> ({{ "parsing…" if course.spec_version.parse_status == "parsing" else "not parsed" }}) <a href="#settings" data-open-settings>change</a></span>
       {% else %}
-        <span class="badge badge-uploaded">Not parsed</span>
+        <span class="cd-chip warn">No spec attached <a href="#settings" data-open-settings>attach one</a></span>
       {% endif %}
-    </p>
-    <a class="btn btn-secondary" href="/spec-library/{{ course.spec_version.id }}">View spec</a>
-    <form method="post" action="/courses/{{ course.id }}/detach-spec" style="display:inline-block;">
-      <button class="btn btn-secondary" type="submit">Remove from this course</button>
-    </form>
-    <p class="muted" style="margin-top:8px;">This only unlinks it from THIS course - the spec
-    itself stays in the shared library. To delete it entirely, go to the spec's own page in
-    the <a href="/spec-library">spec library</a>.</p>
-  {% else %}
-    <p class="muted">No specification attached yet. Attach one from the shared library below.</p>
-  {% endif %}
-
-  <form method="post" action="/courses/{{ course.id }}/attach-spec" style="margin-top:14px;max-width:400px;">
-    <label>Attach a spec from the library</label>
-    <select name="spec_version_id" required>
-      <option value="">-- choose a specification --</option>
-      {% for s in all_specs %}
-        <option value="{{ s.id }}" {% if course.spec_version_id == s.id %}selected{% endif %}>
-          {{ s.label }} {% if s.parse_status != "parsed" %}({{ s.parse_status }}){% endif %}
-        </option>
-      {% endfor %}
-    </select>
-    <button class="btn btn-secondary" type="submit">Attach</button>
-  </form>
-  <p class="muted" style="margin-top:8px;">Don't see the one you need? Visit the
-    <a href="/spec-library">spec library</a> — only admins/curriculum managers can upload new ones.</p>
+      <span class="cd-chip"><b>{{ active_students|length }}</b> student{{ "s" if active_students|length != 1 }}</span>
+      <span class="cd-chip"><b>{{ ready_sows|length }}</b> scheme{{ "s" if ready_sows|length != 1 }} of work</span>
+      {% if course.start_date %}<span class="cd-chip">Starts <b>{{ course.start_date.strftime("%-d %b %Y") }}</b></span>{% endif %}
+    </div>
+  </div>
+  <div class="cd-acts">
+    {% if open_live %}<a class="btn btn-secondary cd-sm" href="/live/{{ open_live.id }}/teach">&#9679; Back to the live lesson</a>{% endif %}
+    <a class="btn cd-sm" href="/courses/{{ course.id }}/presentations/new">+ New lesson</a>
+  </div>
 </div>
 
-<div class="section-card">
-  <div class="section-header">
-    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
-    <h2>Lesson PowerPoints</h2>
-  </div>
-  <p class="muted">Retrieval starter → objectives → student-led content → activities/practicals →
-  retrieval plenary → objectives review.</p>
-  {% if recent_decks %}
+<!-- ============================================================ five number tiles -->
+<div class="cd-tiles">
+  <a class="cd-tile" href="#students"><span class="n">{{ active_students|length }}</span>
+    <span class="t"><b>Students</b>{% if archived_students %}{{ archived_students|length }} archived{% else %}on the course{% endif %}</span></a>
+  <a class="cd-tile {% if ov.get('to_review') %}acc{% endif %}" href="{{ '/submissions/%d/review' % ov.review_next if ov.get('review_next') else '#students' }}">
+    <span class="n">{{ ov.get("to_review", 0) }}</span><span class="t"><b>To review</b>{{ "waiting for you" if ov.get("to_review") else "all caught up" }}</span></a>
+  <a class="cd-tile {% if at_risk %}warn{% endif %}" href="/courses/{{ course.id }}/tracker{{ '?risk=1' if at_risk }}">
+    <span class="n">{{ at_risk|length }}</span><span class="t"><b>At risk</b>{{ "see the tracker" if at_risk else "no one flagged" }}</span></a>
+  <a class="cd-tile" href="#lessons"><span class="n">{{ recent_decks|length }}</span>
+    <span class="t"><b>Lesson{{ "s" if recent_decks|length != 1 }}</b>{% if generating %}{{ generating }} being made{% else %}PowerPoints{% endif %}</span></a>
+  <a class="cd-tile {% if ov.get('met_pct') is not none and ov.met_pct >= 60 %}good{% endif %}" href="/courses/{{ course.id }}/tracker">
+    <span class="n">{{ "%d%%" % ov.met_pct if ov.get("met_pct") is not none else "–" }}</span>
+    <span class="t"><b>Criteria met</b>{{ "class average" if ov.get("met_pct") is not none else "nothing marked yet" }}</span></a>
+</div>
+
+<div class="cd-grid">
+
+  <!-- ============================================================ lessons -->
+  <section class="cd-panel cd-wide" id="lessons">
+    <div class="cd-ph"><h2>Lesson PowerPoints</h2>
+      <span class="cd-count">{{ recent_decks|length }} lesson{{ "s" if recent_decks|length != 1 }}</span>
+      <a class="btn cd-sm" href="/courses/{{ course.id }}/presentations/new">+ New lesson</a></div>
+    {% if recent_decks|length > 6 %}<input type="search" class="cd-search" id="deck-search" placeholder="Search lessons…" aria-label="Search lessons">{% endif %}
+    <div id="deck-list">
     {% for deck in recent_decks %}
-      <div class="list-item">
-        <a href="/lesson-decks/{{ deck.id }}">{{ deck.title }}</a>
-        <span>
-          {% if deck.status == "ready" %}
-            <span class="badge badge-released">Ready</span>
-          {% elif deck.status in ("generating", "queued") %}
-            <span class="badge badge-needs_review">Generating…</span>
-          {% elif deck.status == "failed" %}
-            <span class="badge badge-failed">Failed</span>
-          {% endif %}
-          {% if deck.teacher_id == teacher.id %}
-            <form method="post" action="/lesson-decks/{{ deck.id }}/delete" style="display:inline;"
-                  onsubmit="return confirm('Delete this PowerPoint? This can\'t be undone.');">
-              <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.78rem;">Delete</button>
-            </form>
-          {% endif %}
-        </span>
-      </div>
-    {% endfor %}
-  {% else %}
-    <p class="muted">No PowerPoints generated yet.</p>
-  {% endif %}
-  <div style="margin-top:12px;">
-    <a class="btn" href="/courses/{{ course.id }}/presentations/new">Generate a PowerPoint</a>
-  </div>
-</div>
-
-<div class="section-card">
-  <div class="section-header">
-    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg></span>
-    <h2 id="live">Live lessons, quizzes and exam practice</h2>
-  </div>
-  <p class="muted">Run any lesson above <strong>live</strong>: students join on their phones with a code (no account) and answer the
-  lesson's questions while you teach; you see every answer as it arrives. Open a lesson and choose "Run live with students".</p>
-  {% set counts = live_answer_counts | default({}) %}
-  {% for s in live_sessions | default([]) %}
-    {% set n = counts.get(s.id, 0) %}
-    {% set waiting = s.state == "open" and not s.started_at and n == 0 %}
-    <div class="list-item">
-      <a href="/live/{{ s.id }}/{{ 'teach' if s.state in ('open', 'paused') else 'summary' }}">{{ s.title }}</a>
-      <span class="muted" style="display:flex;align-items:center;gap:8px;">{{ s.created_at.strftime("%d %b %H:%M") if s.created_at else "" }}
-        {% if waiting %}<span class="badge">Not started · {{ s.join_code }}</span>
-        {% elif s.state == "open" %}<span class="badge badge-needs_review">Live now · {{ s.join_code }}</span>
-        {% elif s.state == "paused" %}<span class="badge badge-needs_review">On a break · {{ s.join_code }}</span>
-        {% else %}· <a href="/live/{{ s.id }}/summary">summary</a>{% if n %} · {{ n }} answer{{ "s" if n != 1 }}{% endif %}{% endif %}
-        {% if waiting or s.state == "ended" %}
-          <form method="post" action="/live/{{ s.id }}/delete" style="margin:0;"
-                onsubmit="return confirm('Delete this live session{{ ' and all the answers in it' if n else '' }}? This cannot be undone.') && ({{ n }} === 0 || confirm('It has {{ n }} answer(s) from students. Delete them for good?'));">
-            <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.8rem;color:var(--danger);border-color:var(--danger);">Delete</button>
-          </form>
-        {% endif %}</span>
-    </div>
-  {% endfor %}
-  <h3 style="font-size:0.95rem;margin:16px 0 6px;">Live quizzes</h3>
-  {% for qz in quizzes | default([]) %}
-    <div class="list-item">
-      <a href="/quizzes/{{ qz.id }}">{{ qz.title }}</a>
-      <span class="muted" style="display:flex;align-items:center;gap:8px;">{% if qz.status == "generating" %}Writing…{% elif qz.status == "failed" %}<span style="color:var(--danger);">Failed</span>{% else %}{{ (qz.questions_json or [])|length }} questions{% endif %}
-        <form method="post" action="/quizzes/{{ qz.id }}/delete" style="margin:0;"
-              onsubmit="return confirm('Delete this quiz? Results of times you already ran it are kept.');">
-          <button class="btn btn-secondary" type="submit" style="padding:2px 10px;font-size:0.8rem;color:var(--danger);border-color:var(--danger);">Delete</button>
-        </form></span>
-    </div>
-  {% else %}
-    <p class="muted">Make a quiz from any lesson above ("Make a quiz from this lesson"), or type one in here.</p>
-  {% endfor %}
-  <form method="post" action="/courses/{{ course.id }}/quizzes/new" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-    <input type="text" name="title" placeholder="Quiz title, e.g. Networking recap" maxlength="255" style="flex:1;min-width:200px;" aria-label="New quiz title">
-    <button class="btn btn-secondary" type="submit">New quiz</button>
-  </form>
-  {% if is_exam_spec | default(false) %}
-    <div style="margin-top:12px;">
-      <a class="btn" href="/courses/{{ course.id }}/practice-questions">Exam practice questions (AO1–AO4)</a>
-      <span class="muted">Exam-style questions with mark schemes, written from this spec - print them or run them live.</span>
-    </div>
-  {% endif %}
-</div>
-
-<div class="section-card">
-  <div class="section-header">
-    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
-    <h2>Scheme of work</h2>
-  </div>
-  {% if course.schemes_of_work %}
-    {% for sow in course.schemes_of_work %}
-      <div class="list-item">
-        <a href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}">{{ sow.title }}</a>
-        {% if sow.status == "ready" %}
-          <span class="muted">{{ sow.weeks_json|length }} weeks</span>
-        {% elif sow.status == "generating" %}
-          <span class="badge badge-needs_review">Generating…</span>
-        {% elif sow.status == "failed" %}
-          <span class="badge badge-failed">Failed</span>
-        {% else %}
-          <span class="muted">{{ sow.status }}</span>
+      <div class="cd-row" data-deck {% if loop.index > 6 %}hidden data-more{% endif %}>
+        <a class="grow" href="/lesson-decks/{{ deck.id }}" title="{{ deck.title }}">{{ deck.title }}</a>
+        {% if deck.created_at %}<span class="meta">{{ deck.created_at.strftime("%-d %b") }}</span>{% endif %}
+        {% if deck.status == "ready" %}<span class="cd-pill g">Ready</span>
+        {% elif deck.status in ("generating", "queued") %}<span class="cd-pill a">Generating…</span>
+        {% elif deck.status == "failed" %}<span class="cd-pill r">Failed</span>{% endif %}
+        {% if deck.status == "ready" %}
+          <form method="post" action="/lesson-decks/{{ deck.id }}/live/start"><button class="cd-mini" type="submit" title="Students join on their phones">Run live</button></form>
+        {% endif %}
+        {% if deck.teacher_id == teacher.id %}
+          <form method="post" action="/lesson-decks/{{ deck.id }}/delete" onsubmit="return confirm('Delete this PowerPoint? This can\'t be undone.');">
+            <button class="cd-mini d" type="submit">Delete</button></form>
         {% endif %}
       </div>
+    {% else %}
+      <p class="cd-empty">No PowerPoints yet. Each one follows: retrieval starter → objectives → student-led content → activities → retrieval plenary → objectives review.</p>
     {% endfor %}
-  {% else %}
-    <p class="muted">No scheme of work generated yet.</p>
-  {% endif %}
-  <div style="margin-top:12px;">
-    <a class="btn" href="/courses/{{ course.id }}/scheme-of-work/new">Generate scheme of work</a>
-  </div>
-</div>
+    <p class="cd-empty" id="deck-none" hidden>No lessons match.</p>
+    </div>
+    {% if recent_decks|length > 6 %}<div class="cd-foot"><button type="button" id="deck-all">See all {{ recent_decks|length }}</button></div>{% endif %}
+  </section>
 
-<div class="section-card" id="students">
-  <div class="section-header">
-    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-    <h2>Students</h2>
-  </div>
-  {% if request.query_params.get("imported") %}<div class="card" role="status" style="border-left:4px solid var(--accent);">{{ request.query_params.get("imported") }}</div>{% endif %}
-  <div style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-    <a class="btn" href="/courses/{{ course.id }}/class-list/import">Import class list (ProSolution / CSV / Excel)</a>
-    <span class="muted">No double entry - re-import any time to pick up new starters and name changes.</span>
-  </div>
-  {% if active_students %}
+  <!-- ============================================================ needs you -->
+  <section class="cd-panel" id="needs">
+    <div class="cd-ph"><h2>Needs you</h2></div>
+    {% if tw %}
+      <div class="cd-week">
+        {% if tw.state == "teaching" %}<span class="lbl">This week · week {{ tw.week }} of {{ tw.total }}</span>
+        {% elif tw.state == "before" %}<span class="lbl">Starts in {{ tw.days_to_start }} day{{ "s" if tw.days_to_start != 1 }} · week {{ tw.week }}</span>
+        {% elif tw.state == "no_date" %}<span class="lbl">First week of your scheme</span>
+        {% else %}<span class="lbl">Scheme of work finished</span>{% endif %}
+        {% if tw.state != "finished" %}
+          <b>{{ tw.title }}</b>
+          {% if tw.deck %}
+            <a class="cd-mini" href="/lesson-decks/{{ tw.deck.id }}">Open this week's lesson</a>
+          {% else %}
+            <a class="cd-mini" href="/courses/{{ course.id }}/presentations/new?sow_id={{ tw.sow_id }}&week={{ tw.week }}">Make this week's lesson</a>
+          {% endif %}
+          {% if tw.next_title %}<div class="meta" style="color:var(--text-muted);font-size:.8rem;margin-top:6px;">Next: {{ tw.next_title }}</div>{% endif %}
+          {% if tw.state == "no_date" %}<div class="meta" style="color:var(--text-muted);font-size:.8rem;margin-top:6px;">Give the scheme a start date to follow the weeks.</div>{% endif %}
+        {% else %}
+          <div style="font-size:.88rem;margin-top:4px;">All {{ tw.total }} weeks are behind you - <a href="/courses/{{ course.id }}/scheme-of-work/new">plan the next one</a>.</div>
+        {% endif %}
+      </div>
+    {% endif %}
+    {% set nothing = not ov.get("to_review") and not at_risk and not open_live and not failed_decks %}
+    {% if ov.get("to_review") %}<div class="cd-row"><span class="cd-pill a">{{ ov.to_review }}</span><a class="grow" href="/submissions/{{ ov.review_next }}/review">Work to review</a></div>{% endif %}
+    {% if at_risk %}<div class="cd-row"><span class="cd-pill r">{{ at_risk|length }}</span><a class="grow" href="/courses/{{ course.id }}/tracker?risk=1" title="{{ at_risk|join(', ') }}">Student{{ "s" if at_risk|length != 1 }} at risk</a></div>{% endif %}
+    {% if open_live %}<div class="cd-row"><span class="cd-pill a">&#9679;</span><a class="grow" href="/live/{{ open_live.id }}/teach">Live lesson still {{ "on a break" if open_live.state == "paused" else "open" }}</a></div>{% endif %}
+    {% if failed_decks %}<div class="cd-row"><span class="cd-pill r">{{ failed_decks }}</span><a class="grow" href="#lessons">Lesson{{ "s" if failed_decks != 1 }} that failed to make</a></div>{% endif %}
+    {% if nothing %}<p class="cd-empty">&#10003; All caught up - nothing waiting for you.</p>{% endif %}
+  </section>
+
+  <!-- ============================================================ live sessions -->
+  <section class="cd-panel" id="live">
+    <div class="cd-ph"><h2>Live sessions</h2></div>
+    {% set counts = live_answer_counts | default({}) %}
+    <div class="cd-scroll">
+    {% for s in live_sessions | default([]) %}
+      {% set n = counts.get(s.id, 0) %}
+      {% set waiting = s.state == "open" and not s.started_at and n == 0 %}
+      <div class="cd-row">
+        <a class="grow" href="/live/{{ s.id }}/{{ 'teach' if s.state in ('open', 'paused') else 'summary' }}" title="{{ s.title }}">{{ s.title }}</a>
+        {% if waiting %}<span class="cd-pill m">Not started · {{ s.join_code }}</span>
+        {% elif s.state == "open" %}<span class="cd-pill a">Live now · {{ s.join_code }}</span>
+        {% elif s.state == "paused" %}<span class="cd-pill a">On a break · {{ s.join_code }}</span>
+        {% else %}<span class="meta"><a href="/live/{{ s.id }}/summary">summary</a>{% if n %} · {{ n }} answer{{ "s" if n != 1 }}{% endif %}</span>{% endif %}
+        {% if waiting or s.state == "ended" %}
+          <form method="post" action="/live/{{ s.id }}/delete"
+                onsubmit="return confirm('Delete this live session{{ ' and all the answers in it' if n else '' }}? This cannot be undone.') && ({{ n }} === 0 || confirm('It has {{ n }} answer(s) from students. Delete them for good?'));">
+            <button class="cd-mini d" type="submit" aria-label="Delete {{ s.title }}">&times;</button></form>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="cd-empty">Press <strong>Run live</strong> on any lesson: students join on their phones with a code (no account) and you see every answer as it arrives.</p>
+    {% endfor %}
+    </div>
+  </section>
+
+  <!-- ============================================================ quizzes -->
+  <section class="cd-panel" id="quizzes">
+    <div class="cd-ph"><h2>Quizzes</h2></div>
+    {% for qz in quizzes | default([]) %}
+      <div class="cd-row">
+        <a class="grow" href="/quizzes/{{ qz.id }}" title="{{ qz.title }}">{{ qz.title }}</a>
+        <span class="meta">{% if qz.status == "generating" %}Writing…{% elif qz.status == "failed" %}<span style="color:var(--danger);">Failed</span>{% else %}{{ (qz.questions_json or [])|length }} questions{% endif %}</span>
+        <form method="post" action="/quizzes/{{ qz.id }}/delete" onsubmit="return confirm('Delete this quiz? Results of times you already ran it are kept.');">
+          <button class="cd-mini d" type="submit" aria-label="Delete {{ qz.title }}">&times;</button></form>
+      </div>
+    {% else %}
+      <p class="cd-empty">Make one from any lesson ("Make a quiz from this lesson"), or start one here.</p>
+    {% endfor %}
+    <form method="post" action="/courses/{{ course.id }}/quizzes/new" class="cd-inline">
+      <input type="text" name="title" placeholder="New quiz title" maxlength="255" aria-label="New quiz title">
+      <button class="btn btn-secondary cd-sm" type="submit">New quiz</button>
+    </form>
+    {% if is_exam_spec | default(false) %}
+      <div class="cd-foot"><a href="/courses/{{ course.id }}/practice-questions">Exam practice questions (AO1–AO4)</a></div>
+    {% endif %}
+  </section>
+
+  <!-- ============================================================ students -->
+  <section class="cd-panel" id="students">
+    <div class="cd-ph"><h2>Students</h2>
+      <a class="cd-mini" href="/courses/{{ course.id }}/class-list/import" title="Import class list (ProSolution / CSV / Excel)">Import class list</a></div>
+    <div class="cd-scroll">
     {% for student in active_students %}
-      <div class="list-item">
-        <a href="/courses/{{ course.id }}/students/{{ student.id }}">{{ student.name }}</a>
-        <span class="muted">{{ student.submissions|length }} submission(s)</span>
+      <div class="cd-row">
+        <span class="cd-av" aria-hidden="true">{{ (student.name.split()|map("first")|join)[:2]|upper }}</span>
+        <a class="grow" href="/courses/{{ course.id }}/students/{{ student.id }}">{{ student.name }}</a>
+        {% if student.name in at_risk %}<span class="cd-dot" title="At risk - see the tracking sheet"></span>{% endif %}
+        <span class="meta">{{ student.submissions|length }} sub{{ "s" if student.submissions|length != 1 }}</span>
       </div>
+    {% else %}
+      <p class="cd-empty">No students yet. Import your class list - no double entry, and re-import any time for new starters and name changes.</p>
     {% endfor %}
-  {% else %}
-    <p class="muted">No students added yet.</p>
-  {% endif %}
-
-  {% if archived_students %}
-    <details style="margin-top:14px;">
-      <summary>Archived students ({{ archived_students|length }})</summary>
-      <div style="margin-top:10px;">
-        {% for student in archived_students %}
-          <div class="list-item">
-            <a href="/courses/{{ course.id }}/students/{{ student.id }}">{{ student.name }}</a>
-            <span class="muted">{{ student.submissions|length }} submission(s) — archived</span>
-          </div>
-        {% endfor %}
-      </div>
-      <p class="muted" style="margin-top:8px;">Open an archived student to reactivate them - the same
-      button just switches from "Archive student" to "Reactivate student" once they're archived.</p>
-    </details>
-  {% endif %}
-  <form method="post" action="/courses/{{ course.id }}/students/create" style="margin-top:14px;">
-    <label>Student name</label>
-    <input type="text" name="name" required>
-    <label>Student reference (optional)</label>
-    <input type="text" name="student_ref">
-    <button class="btn" type="submit">Add student</button>
-  </form>
-  <p class="muted" style="margin-top:12px;">
-    <a href="/courses/{{ course.id }}/marking-templates">Manage reusable marking templates</a>
-    - save a rubric once, use it for every student's upload.
-  </p>
-</div>
-
-<div class="utility-grid">
-  <div class="section-card category-insight">
-    <div class="section-header">
-      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-      <h2>Class marking report</h2>
     </div>
-    <p class="muted">Which criteria the class found hard in their marked work, the common problems behind them, every
-    student's next steps - and one click to re-teach the gaps in the next lesson.</p>
-    <a class="btn" href="/courses/{{ course.id }}/marking-report">Open the marking report</a>
-  </div>
-  <div class="section-card category-insight">
-    <div class="section-header">
-      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg></span>
-      <h2>Tracking sheet</h2>
-    </div>
-    <p class="muted">Every student against every criterion, filled in automatically as you mark - grades, who is at risk,
-    and an Excel download. No more hand-kept trackers.</p>
-    <a class="btn" href="/courses/{{ course.id }}/tracker">Open the tracking sheet</a>
-  </div>
-  <div class="section-card category-insight">
-    <div class="section-header">
-      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
-      <h2>Curriculum coverage</h2>
-    </div>
-    <p class="muted">See which criteria haven't been taught yet, taught but never assessed, or
-    where students are struggling - using data already in the system, no AI cost.</p>
-    <a class="btn btn-secondary" href="/courses/{{ course.id }}/coverage">View coverage dashboard</a>
-  </div>
-
-  <div class="section-card category-insight">
-    <div class="section-header">
-      <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-      <h2>Similarity check</h2>
-    </div>
-    <p class="muted">Compares this course's submissions against each other to catch students
-    copying from one another.</p>
-    <a class="btn btn-secondary" href="/courses/{{ course.id }}/similarity-check">Run similarity check</a>
-  </div>
-</div>
-
-<div class="section-card category-danger">
-  <div class="section-header">
-    <span class="section-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
-    <h2>Delete this course</h2>
-  </div>
-  <p class="muted">Only possible if it has no students, scheme of work, or lesson PowerPoints
-  attached yet - protects real work from being deleted by accident.</p>
-  <form method="post" action="/courses/{{ course.id }}/delete"
-        onsubmit="return confirm('Delete this course permanently? This can\'t be undone.');">
-    <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">
-      Delete course
-    </button>
-  </form>
-
-  {% if teacher.role == "admin" %}
-    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">
-      <p><strong>Admin: force delete</strong></p>
-      <p class="muted">Deletes this course AND everything under it - students, submissions,
-      marks, override history, IV records - permanently, with no safety check and no way
-      to recover any of it. Type the course's exact name below to confirm.</p>
-      <form method="post" action="/courses/{{ course.id }}/force-delete"
-            onsubmit="return confirm('This permanently destroys all student work, marks, and records for this course with no way back. Are you absolutely sure?');">
-        <input type="text" name="confirm_name" required placeholder="Type &quot;{{ course.name }}&quot; exactly to confirm" style="max-width:400px;">
-        <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);margin-top:8px;">
-          Force delete (destroys all student work)
-        </button>
+    <details class="cd-add">
+      <summary class="cd-mini">+ Add one student</summary>
+      <form method="post" action="/courses/{{ course.id }}/students/create">
+        <label for="cd-sname" style="margin-top:0;">Student name</label>
+        <input id="cd-sname" type="text" name="name" required>
+        <label for="cd-sref">Student reference (optional)</label>
+        <input id="cd-sref" type="text" name="student_ref">
+        <button class="btn cd-sm" type="submit">Add student</button>
       </form>
+    </details>
+    {% if archived_students %}
+      <details style="margin-top:10px;">
+        <summary class="cd-count" style="cursor:pointer;">Archived students ({{ archived_students|length }})</summary>
+        {% for student in archived_students %}
+          <div class="cd-row"><a class="grow" href="/courses/{{ course.id }}/students/{{ student.id }}">{{ student.name }}</a>
+            <span class="meta">{{ student.submissions|length }} sub{{ "s" if student.submissions|length != 1 }} — archived</span></div>
+        {% endfor %}
+        <p class="cd-empty" style="font-size:.8rem;">Open an archived student to reactivate them.</p>
+      </details>
+    {% endif %}
+    <div class="cd-foot"><a href="/courses/{{ course.id }}/marking-templates">Manage reusable marking templates</a></div>
+  </section>
+
+  <!-- ============================================================ scheme of work -->
+  <section class="cd-panel" id="schemes">
+    <div class="cd-ph"><h2>Scheme of work</h2><a class="cd-mini" href="/courses/{{ course.id }}/scheme-of-work/new">+ New</a></div>
+    {% for sow in course.schemes_of_work %}
+      <div class="cd-row">
+        <a class="grow" href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}" title="{{ sow.title }}">{{ sow.title }}</a>
+        {% if sow.status == "ready" %}<span class="meta">{{ (sow.weeks_json or [])|length }} weeks</span>
+        {% elif sow.status == "generating" %}<span class="cd-pill a">Generating…</span>
+        {% elif sow.status == "failed" %}<span class="cd-pill r">Failed</span>
+        {% else %}<span class="meta">{{ sow.status }}</span>{% endif %}
+      </div>
+    {% else %}
+      <p class="cd-empty">No scheme of work yet. Make one and this page shows what to teach each week.</p>
+    {% endfor %}
+    {% if tw and tw.state == "teaching" and tw.total %}
+      <div class="cd-bar-track" role="img" aria-label="Week {{ tw.week }} of {{ tw.total }}"><div class="cd-bar-fill" style="width:{{ (100 * tw.week / tw.total)|round|int }}%;"></div></div>
+      <div class="cd-foot">Week {{ tw.week }} of {{ tw.total }}</div>
+    {% endif %}
+  </section>
+
+  <!-- ============================================================ insights -->
+  <section class="cd-panel cd-wide" id="insights">
+    <div class="cd-ph"><h2>Insights</h2></div>
+    <div class="cd-tools">
+      <a class="cd-tool" href="/courses/{{ course.id }}/marking-report" title="Which criteria the class found hard, the common problems, every student's next steps">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <b>Marking report</b><span>What the class found hard</span></a>
+      <a class="cd-tool" href="/courses/{{ course.id }}/tracker" title="Every student against every criterion, with an Excel download">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        <b>Tracking sheet</b><span>{% if at_risk %}{{ at_risk|length }} at risk · {% endif %}Excel download</span></a>
+      <a class="cd-tool" href="/courses/{{ course.id }}/coverage" title="Criteria not taught yet, taught but never assessed, or where students struggle">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <b>Coverage</b><span>What isn't taught yet</span></a>
+      <a class="cd-tool" href="/courses/{{ course.id }}/similarity-check" title="Compares this course's submissions to catch copying">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <b>Similarity check</b><span>Spot copied work</span></a>
     </div>
-  {% endif %}
+  </section>
 </div>
+
+<!-- ============================================================ settings (folded away) -->
+<details class="cd-settings" id="settings" {% if not course.spec_version or delete_error %}open{% endif %}>
+  <summary>Course settings - specification, delete course</summary>
+  <div class="cd-set-grid">
+    <div>
+      <h3>Course specification</h3>
+      {% if course.spec_version %}
+        <p style="margin:0 0 8px;">Attached: <strong>{{ course.spec_version.label }}</strong>
+          {% if course.spec_version.parse_status == "parsed" %}<span class="badge badge-released">Parsed</span>
+          {% elif course.spec_version.parse_status == "parsing" %}<span class="badge badge-needs_review">Parsing…</span>
+          {% else %}<span class="badge badge-uploaded">Not parsed</span>{% endif %}</p>
+        <div class="cd-acts">
+          <a class="btn btn-secondary cd-sm" href="/spec-library/{{ course.spec_version.id }}">View spec</a>
+          <form method="post" action="/courses/{{ course.id }}/detach-spec" style="margin:0;">
+            <button class="btn btn-secondary cd-sm" type="submit">Remove from this course</button></form>
+        </div>
+        <p class="muted" style="font-size:.85rem;">This only unlinks it from THIS course - the spec stays in the shared
+          <a href="/spec-library">spec library</a>.</p>
+      {% else %}
+        <p class="muted">No specification attached yet. Attach one from the shared library.</p>
+      {% endif %}
+      <form method="post" action="/courses/{{ course.id }}/attach-spec" class="cd-inline">
+        <select name="spec_version_id" required aria-label="Attach a spec from the library" style="flex:1;min-width:180px;margin:0;">
+          <option value="">-- choose a specification --</option>
+          {% for s in all_specs %}
+            <option value="{{ s.id }}" {% if course.spec_version_id == s.id %}selected{% endif %}>{{ s.label }} {% if s.parse_status != "parsed" %}({{ s.parse_status }}){% endif %}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-secondary cd-sm" type="submit">Attach</button>
+      </form>
+      <p class="muted" style="font-size:.85rem;">Don't see the one you need? Only admins/curriculum managers can upload new ones to the
+        <a href="/spec-library">spec library</a>.</p>
+    </div>
+    <div>
+      <h3>Delete this course</h3>
+      <p class="muted" style="font-size:.85rem;margin-top:0;">Only possible if it has no students, scheme of work, or lesson PowerPoints
+        attached yet - protects real work from being deleted by accident.</p>
+      <form method="post" action="/courses/{{ course.id }}/delete" onsubmit="return confirm('Delete this course permanently? This can\'t be undone.');">
+        <button class="btn btn-secondary cd-sm" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete course</button>
+      </form>
+      {% if teacher.role == "admin" %}
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+          <p style="margin:0 0 4px;"><strong>Admin: force delete</strong></p>
+          <p class="muted" style="font-size:.85rem;">Deletes this course AND everything under it - students, submissions,
+            marks, override history, IV records - permanently, with no safety check and no way to recover any of it.
+            Type the course's exact name below to confirm.</p>
+          <form method="post" action="/courses/{{ course.id }}/force-delete"
+                onsubmit="return confirm('This permanently destroys all student work, marks, and records for this course with no way back. Are you absolutely sure?');">
+            <input type="text" name="confirm_name" required placeholder="Type &quot;{{ course.name }}&quot; exactly to confirm">
+            <button class="btn btn-secondary cd-sm" type="submit" style="color:var(--danger);border-color:var(--danger);margin-top:8px;">
+              Force delete (destroys all student work)</button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</details>
+
+<script>
+(function () {
+  // "change" on the spec chip opens Course settings
+  document.querySelectorAll("[data-open-settings]").forEach(function (a) {
+    a.addEventListener("click", function () { document.getElementById("settings").open = true; });
+  });
+  // lessons: first 6 shown; "See all" shows the rest; search looks through all of them
+  var rows = Array.prototype.slice.call(document.querySelectorAll("[data-deck]"));
+  var all = document.getElementById("deck-all"), search = document.getElementById("deck-search"), showAll = false;
+  function refresh() {
+    var q = search ? search.value.trim().toLowerCase() : "", shown = 0;
+    rows.forEach(function (r) {
+      var match = !q || r.textContent.toLowerCase().indexOf(q) !== -1;
+      var visible = match && (q || showAll || !r.hasAttribute("data-more"));
+      r.hidden = !visible; if (visible) shown++;
+    });
+    document.getElementById("deck-none").hidden = shown > 0 || !rows.length;
+    if (all) all.parentNode.hidden = !!q || showAll;
+  }
+  if (all) all.onclick = function () { showAll = true; refresh(); };
+  if (search) search.oninput = refresh;
+})();
+</script>
 {% endblock %}

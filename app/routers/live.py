@@ -368,7 +368,7 @@ def live_delete(session_id: int, db: Session = Depends(get_db), teacher: Teacher
     _remove_uploads(session.id)
     db.delete(session)
     db.commit()
-    return RedirectResponse(url=f"/courses/{course_id}", status_code=303)
+    return RedirectResponse(url=f"/courses/{course_id}#live", status_code=303)
 
 
 @router.post("/live/{session_id}/poll")

@@ -94,11 +94,12 @@ def course_detail(
 
     try:
         all_specs = db.query(SpecVersion).order_by(SpecVersion.label).all()
+        # all of the course's lessons (newest first) - the page shows 6 and searches the rest in the browser
         recent_decks = (
             db.query(LessonDeck)
             .filter(LessonDeck.course_id == course_id)
             .order_by(LessonDeck.id.desc())
-            .limit(20)
+            .limit(300)
             .all()
         )
         # Stage 6: live lessons this lecturer ran on this course, and whether the spec is exam-assessed
@@ -106,7 +107,7 @@ def course_detail(
             db.query(LiveSession)
             .filter(LiveSession.course_id == course_id, LiveSession.teacher_id == teacher.id)
             .order_by(LiveSession.id.desc())
-            .limit(5)
+            .limit(15)
             .all()
         )
         # how many answers each listed session holds - deleting one with answers asks twice
@@ -117,6 +118,7 @@ def course_detail(
         from ..models import QuizSet
         quizzes = db.query(QuizSet).filter(QuizSet.course_id == course_id).order_by(QuizSet.id.desc()).limit(10).all()
         spec_json = course.spec_version.structured_json if course.spec_version and course.spec_version.structured_json else {}
+        overview = _course_overview(db, course, teacher, recent_decks)
         return templates.TemplateResponse(
             "course_detail.html",
             {
@@ -130,6 +132,7 @@ def course_detail(
                 "quizzes": quizzes,
                 "live_answer_counts": live_answer_counts,
                 "is_exam_spec": has_exam_objectives(spec_json),
+                "overview": overview,
             },
         )
     except Exception:
@@ -141,6 +144,39 @@ def course_detail(
             {"request": request, "teacher": teacher, "course": course, "error_detail": traceback.format_exc()},
             status_code=500,
         )
+
+
+def _course_overview(db, course, teacher, decks):
+    """The course page's "needs you" numbers and "This week" card. Each part is worked out on its
+    own and a problem in one never stops the page loading - it just leaves that part out."""
+    from ..course_overview import this_week
+    out = {"to_review": 0, "review_next": None, "at_risk": [], "open_live": None, "this_week": None, "met_pct": None}
+    waiting = (db.query(Submission.id).join(Student, Submission.student_id == Student.id)
+               .filter(Student.course_id == course.id, Student.is_active.is_(True), Submission.status == "needs_review")
+               .order_by(Submission.id).all())
+    out["to_review"] = len(waiting)
+    out["review_next"] = waiting[0][0] if waiting else None
+    out["open_live"] = (db.query(LiveSession).filter(LiveSession.course_id == course.id, LiveSession.teacher_id == teacher.id,
+                                                     LiveSession.state.in_(("open", "paused")), LiveSession.started_at.isnot(None))
+                        .order_by(LiveSession.id.desc()).first())
+    try:
+        from .tracker import course_tracker
+        tracked = course_tracker(db, course)
+        out["at_risk"] = [r["student"]["name"] for r in tracked["rows"] if r["risk"]]
+        cells = [c for r in tracked["rows"] for c in r["cells"].values() if c["has_work"]]
+        assessed = sum(c["assessed"] for c in cells)
+        out["met_pct"] = round(100 * sum(c["met"] for c in cells) / assessed) if assessed else None  # class average, % of marked criteria met
+    except Exception:
+        pass
+    try:
+        schemes = [{"id": s.id, "title": s.title, "status": s.status, "start_date": s.start_date, "weeks": s.weeks_json or []}
+                   for s in course.schemes_of_work]
+        out["this_week"] = this_week(schemes, course.start_date, [
+            {"id": d.id, "status": d.status, "source_sow_id": d.source_sow_id, "source_week": d.source_week} for d in decks],
+            datetime.date.today())
+    except Exception:
+        pass
+    return out
 
 
 def _delete_live_and_practice(db, course_id: int):

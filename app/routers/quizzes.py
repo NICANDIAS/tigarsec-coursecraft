@@ -157,4 +157,4 @@ def quiz_delete(quiz_id: int, db: Session = Depends(get_db), teacher: Teacher = 
     db.query(LiveSession).filter(LiveSession.quiz_set_id == quiz.id).update({"quiz_set_id": None}, synchronize_session=False)
     db.delete(quiz)
     db.commit()
-    return RedirectResponse(url=f"/courses/{course_id}#live", status_code=303)
+    return RedirectResponse(url=f"/courses/{course_id}#quizzes", status_code=303)

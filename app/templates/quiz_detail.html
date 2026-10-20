@@ -16,7 +16,7 @@
   .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   @media (max-width: 640px) { .qz-choices { grid-template-columns:1fr; } }
 </style>
-<p><a href="/courses/{{ quiz.course_id }}#live">&larr; Back to the course</a>
+<p><a href="/courses/{{ quiz.course_id }}#quizzes">&larr; Back to the course</a>
   {% if quiz.lesson_deck_id %} · <a href="/lesson-decks/{{ quiz.lesson_deck_id }}">the lesson</a>{% endif %}</p>
 <h1>Quiz: {{ quiz.title }}</h1>
 
