@@ -5,7 +5,7 @@ Builds a small college-style template (a Word file) in /tmp, so no real files ar
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_scheme_calendar.py
-Expected last line: "ALL 3 TESTS PASSED"
+Expected last line: "ALL 5 TESTS PASSED"
 """
 import datetime
 import os
@@ -85,6 +85,56 @@ def this_week_and_to_half_term_follow_the_college_calendar():
     assert quick_pick(rows, 6, "half") == [6] and quick_pick(rows, 6, "rest") == [6, 7, 8]
     brk, _ = scheme_now(SOW, None, D(10, 28))
     assert brk["state"] == "break" and brk["week"] == 7
+
+
+# Abdulhakeem's case: a staff conference day in a week's row, half term, and a class a week behind the plan.
+CONF_CALENDAR = [("8-9-2026", "Induction Week"), ("15-9-2026", ""), ("22-9-2026", ""), ("29-9-2026", ""), ("6-10-2026", ""),
+                 ("13-10-2026", "Staff Conference Day (Friday)"), ("20-10-2026", ""), ("27-10-2026", "HALF TERM"),
+                 ("3-11-2026", ""), ("10-11-2026", ""), ("17-11-2026", "")]
+
+
+def make_conf_template():
+    doc = Document()
+    table = doc.add_table(rows=1, cols=4)
+    for cell, text in zip(table.rows[0].cells, ["Week commencing", "Topic", "Content", "Assessment"]):
+        cell.text = text
+    for date, label in CONF_CALENDAR:
+        row = table.add_row().cells
+        row[0].text = date
+        row[1].text = label
+    path = os.path.join(TMP, "conference_template.docx")
+    doc.save(path)
+    return path
+
+
+CONF = make_conf_template()
+
+
+@test
+def a_conference_day_is_still_a_teaching_week_and_gets_its_topic_in_print():
+    rows = template_calendar(CONF)
+    assert rows[5]["available"] is True and rows[7]["available"] is False   # conference day yes, half term no
+    sow = SimpleNamespace(format_sample_file_path=CONF, append_eligible_labels=None, weeks_json=WEEKS, start_date=None, week_anchor_json=None)
+    cal = scheme_calendar(sow)
+    assert cal["week_dates"][5] == D(10, 13) and cal["week_dates"][6] == D(10, 20) and cal["week_dates"][7] == D(11, 3)
+    out = os.path.join(TMP, "printed_conf.docx")
+    fill_sow_template_docx(CONF, WEEKS, {}, out)
+    cell = Document(out).tables[0].rows[6].cells[1].text
+    assert "Staff Conference Day" in cell and "Topic 5" in cell, cell   # the topic is written under the event
+
+
+@test
+def wrong_week_slides_the_scheme_along_the_calendar_and_keeps_half_term():
+    """The plan says week 6 this week (w/c 19 Oct), but the class is on week 5."""
+    sow = SimpleNamespace(format_sample_file_path=CONF, append_eligible_labels=None, weeks_json=WEEKS, start_date=None,
+                          week_anchor_json={"week": 5, "monday": "2026-10-19"})
+    now, cal = scheme_now(sow, None, D(10, 21))
+    assert now["state"] == "teaching" and now["week"] == 5 and now["source"] == "corrected" and cal["shifted"]
+    assert cal["week_dates"][5] == D(10, 20) and cal["week_dates"][6] == D(11, 3)      # week 6 = straight after half term
+    assert cal["breaks"] == [{"date": D(10, 27), "label": "HALF TERM", "after_week": 5}]
+    rows = plan_rows(WEEKS, 5, {1, 2, 3, 4, 5, 6}, cal["week_dates"], cal["breaks"], D(10, 21))
+    assert [r["week"] for r in rows][4:7] == [5, None, 6] and not rows[6]["past"]
+    assert cal["week_dates"][8] == D(11, 17) and scheme_now(sow, None, D(11, 4))[0]["week"] == 6  # it carries on each week
 
 
 if __name__ == "__main__":

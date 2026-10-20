@@ -65,7 +65,7 @@
     <summary class="tp-mini">Wrong week?</summary>
     <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/this-week">
       <p class="muted" style="font-size:.85rem;margin:0 0 8px;">
-        {% if now.source == "corrected" %}You set this week by hand - it counts on by one each week.
+        {% if now.source == "corrected" %}You set this week by hand - {{ "the weeks after it follow your college calendar, so half terms are still skipped." if from_template else "it counts on by one each week." }}
         {% elif now.source == "calendar" %}Worked out from the dates in your college template (half terms skipped).
         {% elif now.source == "start_date" %}Counted in calendar weeks from the start date - it can't see half terms or induction weeks.
         {% else %}This scheme has no start date.{% endif %}</p>

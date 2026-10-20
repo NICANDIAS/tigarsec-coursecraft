@@ -43,6 +43,13 @@ from .docx_xml_edit import (
 )
 
 WEEK_HEADER_HINTS = ("week", "date", "commencing")
+
+# A ONE-DAY event in a week's row (a staff conference day, an INSET day, a bank holiday) never stops
+# the rest of that week being taught - so those rows are filled like an append-eligible label, the
+# topic written under the event. Whole-week closures (half term, holidays, induction week) are not matched.
+SINGLE_DAY_EVENT = re.compile(
+    r"\b(conference|inset|insett|staff\s+development|staff\s+training|training|cpd|polling|exam\s+board)\s+days?\b|\bbank\s+holiday\b",
+    re.IGNORECASE)
 DATE_LABEL_PATTERNS = {
     "start_date": re.compile(r'\bstart\s*date\b', re.IGNORECASE),
     "end_date": re.compile(r'\bend\s*date\b', re.IGNORECASE),
@@ -207,6 +214,8 @@ def _row_fill_mode(row, append_eligible_labels: list[str]) -> str:
         return "blank"
     if append_eligible_labels and any(label.lower() in other_text.lower() for label in append_eligible_labels):
         return "append"
+    if SINGLE_DAY_EVENT.search(other_text):
+        return "append"  # a one-day event - the rest of the week is still taught
     return "protected"
 
 

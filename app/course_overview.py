@@ -98,7 +98,7 @@ def this_week(schemes, course_start, decks, today=None):
            "week": None, "title": "", "outcomes": [], "next_title": "", "days_to_start": 0, "deck": None}
     now = current_week([w["week"] for w in weeks], sow.get("start_date") or course_start, today,
                        sow.get("week_dates"), sow.get("anchor"))
-    out.update(state=now["state"], days_to_start=now["days_to_start"], source=now["source"])
+    out.update(state=now["state"], days_to_start=now["days_to_start"], source="corrected" if sow.get("corrected") else now["source"])
     if now["state"] == "finished":
         return out
     n = now["week"]
