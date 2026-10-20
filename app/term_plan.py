@@ -9,37 +9,51 @@ MIN_MINUTES, MAX_MINUTES = 30, 6 * 60
 MIN_QUIZ, MAX_QUIZ, DEFAULT_QUIZ = 3, 15, 8
 
 
-def plan_rows(weeks: list, current_week, made_weeks: set) -> list:
-    """weeks: the scheme's [{"week", "title"}]. -> rows in order, one per week from the first to
-    the last; a number the scheme has no week for (half term, a closure) is {"week", "gap": True}.
-    Other rows: {"week", "title", "made" (a lesson already exists), "now" (this week), "past"}."""
+def plan_rows(weeks: list, current_week, made_weeks: set, week_dates=None, breaks=None, today=None) -> list:
+    """weeks: the scheme's [{"week", "title"}]. -> rows in teaching order. Week rows:
+    {"week", "title", "date", "made" (a lesson exists), "now" (this week), "past", "gap": False}.
+    Gap rows {"week": None, "gap": True, "label", "date"} are weeks with no teaching: with a college
+    template (week_dates + breaks from app/sow_calendar.py) they are its own rows, e.g. "Half Term";
+    without one, a week NUMBER the scheme has no week for."""
     by_no = {w["week"]: w for w in weeks or [] if isinstance(w, dict) and isinstance(w.get("week"), int)}
     if not by_no:
         return []
+    week_dates = week_dates or {}
+    after = {}
+    for b in breaks or []:
+        after.setdefault(b.get("after_week"), []).append(b)
     rows = []
-    for n in range(min(by_no), max(by_no) + 1):
+    numbers = sorted(by_no) if week_dates else range(min(by_no), max(by_no) + 1)
+    for n in numbers:
         w = by_no.get(n)
         if not w:
-            rows.append({"week": n, "gap": True})
+            rows.append({"week": None, "gap": True, "label": f"No week {n} in the scheme", "date": None})
             continue
-        rows.append({"week": n, "title": w.get("title") or f"Week {n}", "made": n in made_weeks,
-                     "now": current_week == n, "past": bool(current_week) and n < current_week, "gap": False})
+        date = week_dates.get(n)
+        if date and today:
+            past = (today - date).days >= 7
+        else:
+            past = bool(current_week) and n < current_week
+        rows.append({"week": n, "title": w.get("title") or f"Week {n}", "date": date, "made": n in made_weeks,
+                     "now": current_week == n, "past": past, "gap": False})
+        for b in after.get(n, []):
+            rows.append({"week": None, "gap": True, "label": b.get("label") or "No teaching", "date": b.get("date")})
     return rows
 
 
 def quick_pick(rows: list, current_week, preset: str) -> list:
     """The week numbers a quick-pick button ticks: never weeks already made, never gaps, never
-    past weeks. "next4" = the next 4 teaching weeks; "half" = up to the next gap in the plan
-    (half term); "rest" = every week left."""
+    past weeks. "next4" = the next 4 teaching weeks; "half" = up to the next break (half term);
+    "rest" = every week left."""
     start = current_week if current_week and current_week > 0 else 1
-    ahead = [r for r in rows if r["week"] >= start]
+    first = next((i for i, r in enumerate(rows) if not r["gap"] and r["week"] >= start), len(rows))
     picked = []
-    for r in ahead:
+    for r in rows[first:]:
         if r["gap"]:
             if preset == "half" and picked:
                 break
             continue
-        if r["made"]:
+        if r.get("made") or r.get("past"):
             continue
         picked.append(r["week"])
         if preset == "next4" and len(picked) == 4:

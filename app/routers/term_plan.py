@@ -24,7 +24,9 @@ from ..database import get_db, SessionLocal
 from ..models import Teacher, Course, LessonDeck, SchemeOfWork, QuizSet, TermPlan
 from ..course_access import get_course_for_teacher
 from ..auth import get_current_teacher
-from ..course_overview import week_number
+from ..course_overview import monday
+from ..sow_calendar import scheme_now
+from ..homework import local_now
 from ..term_plan import plan_rows, quick_pick, estimate_minutes, clamp_minutes, clamp_quiz, item_status, progress, MAX_WEEKS
 from . import presentations as pr
 from . import quizzes as qz
@@ -49,8 +51,9 @@ def _made_weeks(db, sow):
 
 
 def _current_week(sow, course, today=None):
-    n = week_number(sow.start_date or course.start_date, today or datetime.date.today())
-    return n if n and n > 0 else None
+    """This week's number (or the next teaching week in a break), the full answer, and the calendar."""
+    now, cal = scheme_now(sow, course.start_date, today)
+    return (now["week"] if now["state"] in ("teaching", "break", "before") else None), now, cal
 
 
 def _own_plan(db, plan_id, teacher):
@@ -185,8 +188,9 @@ def plan_term_page(course_id: int, sow_id: int, request: Request, db: Session = 
     running = (db.query(TermPlan).filter(TermPlan.sow_id == sow.id, TermPlan.state == "running")
                .order_by(TermPlan.id.desc()).first())
     spec, units = _units(course)
-    current = _current_week(sow, course)
-    rows = plan_rows(sow.weeks_json or [], current, _made_weeks(db, sow)) if sow.status == "ready" else []
+    current, now, cal = _current_week(sow, course)
+    rows = plan_rows(sow.weeks_json or [], current, _made_weeks(db, sow), cal["week_dates"], cal["breaks"],
+                     datetime.date.today()) if sow.status == "ready" else []
     for r in rows:
         if not r["gap"]:
             r["no_unit"] = not _usable(pr.sow_week_selection(units, sow, r["week"]))
@@ -197,7 +201,25 @@ def plan_term_page(course_id: int, sow_id: int, request: Request, db: Session = 
     return templates.TemplateResponse("term_plan_new.html", {
         "request": request, "teacher": teacher, "course": course, "sow": sow, "rows": rows, "current": current,
         "picks": picks, "default_hours": hours, "has_spec": bool(units), "usable": len(usable), "running": running,
-        "error": request.query_params.get("error"), "estimate_each": estimate_minutes(1, True, True)})
+        "error": request.query_params.get("error"), "estimate_each": estimate_minutes(1, True, True),
+        "now": now, "from_template": cal["from_template"]})
+
+
+@router.post("/courses/{course_id}/scheme-of-work/{sow_id}/this-week")
+def set_this_week(course_id: int, sow_id: int, week: str = Form(""), back: str = Form(""), db: Session = Depends(get_db),
+                  teacher: Teacher = Depends(get_current_teacher), clear: str = Form("")):
+    """The lecturer's correction: "we're actually in week N". Saved against this Monday and counted on
+    from there each week. An empty week clears it (back to the college calendar / start date)."""
+    course = get_course_for_teacher(db, course_id, teacher)
+    sow = db.get(SchemeOfWork, sow_id)
+    if course and sow and sow.course_id == course.id:
+        if not clear and week.strip().isdigit() and 1 <= int(week) <= 60:
+            sow.week_anchor_json = {"week": int(week), "monday": monday(local_now().date()).isoformat()}
+        else:
+            sow.week_anchor_json = None
+        db.commit()
+    target = back if back.startswith("/courses/") else f"/courses/{course_id}/scheme-of-work/{sow_id}/plan-term"
+    return RedirectResponse(url=target, status_code=303)
 
 
 @router.post("/courses/{course_id}/scheme-of-work/{sow_id}/plan-term")

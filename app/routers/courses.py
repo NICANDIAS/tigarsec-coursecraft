@@ -183,7 +183,10 @@ def _course_overview(db, course, teacher, decks):
     except Exception:
         pass
     try:
-        schemes = [{"id": s.id, "title": s.title, "status": s.status, "start_date": s.start_date, "weeks": s.weeks_json or []}
+        from ..sow_calendar import scheme_calendar
+        schemes = [{"id": s.id, "title": s.title, "status": s.status, "start_date": s.start_date, "weeks": s.weeks_json or [],
+                    "anchor": s.week_anchor_json,
+                    "week_dates": scheme_calendar(s)["week_dates"] if s.status == "ready" else {}}
                    for s in course.schemes_of_work]
         out["this_week"] = this_week(schemes, course.start_date, [
             {"id": d.id, "status": d.status, "source_sow_id": d.source_sow_id, "source_week": d.source_week} for d in decks],

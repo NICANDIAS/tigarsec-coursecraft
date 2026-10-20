@@ -3,7 +3,7 @@ Tests for Stage 14 - plan the term, and homework mode. No AI, no database.
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_stage14.py
-Expected last line: "ALL 12 TESTS PASSED"
+Expected last line: "ALL 14 TESTS PASSED"
 """
 import datetime
 import sys
@@ -29,8 +29,24 @@ WEEKS = [{"week": 1, "title": "Induction"}, {"week": 2, "title": "Threats"}, {"w
 @test
 def every_week_is_listed_and_half_term_shows_as_a_gap():
     rows = tp.plan_rows(WEEKS, 2, {1})
-    assert [r["week"] for r in rows] == [1, 2, 3, 4, 5, 6, 7]
+    assert [r["week"] for r in rows] == [1, 2, 3, None, 5, 6, 7]
     assert rows[3]["gap"] and rows[0]["made"] and rows[0]["past"] and rows[1]["now"] and not rows[2]["made"]
+
+
+@test
+def with_a_college_template_the_real_dates_and_half_term_are_shown():
+    """The printed scheme's calendar: weeks numbered 1, 2, 3... but half term sits between 3 and 4."""
+    weeks = [{"week": n, "title": f"Topic {n}"} for n in range(1, 7)]
+    d = lambda m, day: datetime.date(2026, m, day)
+    dates = {1: d(9, 22), 2: d(9, 29), 3: d(10, 6), 4: d(10, 13), 5: d(10, 20), 6: d(11, 3)}
+    breaks = [{"after_week": 5, "date": d(10, 27), "label": "Half Term"}]
+    rows = tp.plan_rows(weeks, 5, {1, 2, 3, 4, 6}, dates, breaks, today=d(10, 21))
+    assert [r["week"] for r in rows] == [1, 2, 3, 4, 5, None, 6]
+    assert rows[5] == {"week": None, "gap": True, "label": "Half Term", "date": d(10, 27)}
+    assert rows[4]["now"] and rows[4]["date"] == d(10, 20) and not rows[4]["past"] and rows[3]["past"]
+    rows = tp.plan_rows(weeks, 5, {1, 2, 3, 4}, dates, breaks, today=d(10, 21))
+    assert tp.quick_pick(rows, 5, "half") == [5]            # stops at the real half term
+    assert tp.quick_pick(rows, 5, "rest") == [5, 6]
 
 
 @test
@@ -59,6 +75,25 @@ def each_week_and_the_whole_plan_report_progress():
     p = tp.progress(["ready", "failed", "working", "waiting", "gone"])
     assert p == {"done": 2, "total": 4, "ready": 1, "failed": 1, "pct": 50, "finished": False}
     assert tp.estimate_minutes(4, True, False) == (12, 20)
+
+
+@test
+def the_template_rows_become_the_schemes_dates_and_breaks():
+    from types import SimpleNamespace
+    from app import sow_calendar as sc
+    d = lambda m, day: datetime.date(2026, m, day)
+    rows = [{"date": d(9, 8), "available": False, "label": "Induction"},      # before week 1 - not a break
+            {"date": d(9, 15), "available": False, "label": "Enrichment"},
+            {"date": d(9, 22), "available": True, "label": ""}, {"date": d(9, 29), "available": True, "label": ""},
+            {"date": d(10, 27), "available": False, "label": "Half Term"},
+            {"date": d(11, 3), "available": True, "label": ""}, {"date": d(11, 10), "available": True, "label": ""}]
+    sc._template_rows = lambda path, labels: rows
+    sow = SimpleNamespace(format_sample_file_path="/x/template.docx", append_eligible_labels=None,
+                          weeks_json=[{"week": 1}, {"week": 2}, {"week": 3}])
+    cal = sc.scheme_calendar(sow)
+    assert cal["from_template"] and cal["week_dates"] == {1: d(9, 22), 2: d(9, 29), 3: d(11, 3)}
+    assert cal["breaks"] == [{"date": d(10, 27), "label": "Half Term", "after_week": 2}]
+    assert sc.scheme_calendar(SimpleNamespace(format_sample_file_path=None, weeks_json=[{"week": 1}]))["from_template"] is False
 
 
 # ------------------------------------------------------------------ homework

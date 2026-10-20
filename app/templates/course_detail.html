@@ -178,6 +178,7 @@
     {% if tw %}
       <div class="cd-week">
         {% if tw.state == "teaching" %}<span class="lbl">This week · week {{ tw.week }} of {{ tw.total }}</span>
+        {% elif tw.state == "break" %}<span class="lbl">No teaching this week · back in {{ tw.days_to_start }} day{{ "s" if tw.days_to_start != 1 }} with week {{ tw.week }}</span>
         {% elif tw.state == "before" %}<span class="lbl">Starts in {{ tw.days_to_start }} day{{ "s" if tw.days_to_start != 1 }} · week {{ tw.week }}</span>
         {% elif tw.state == "no_date" %}<span class="lbl">First week of your scheme</span>
         {% else %}<span class="lbl">Scheme of work finished</span>{% endif %}
@@ -191,6 +192,8 @@
           <a class="cd-mini" href="/courses/{{ course.id }}/scheme-of-work/{{ tw.sow_id }}/plan-term">&#9889; Plan the next weeks</a>
           {% if tw.next_title %}<div class="meta" style="color:var(--text-muted);font-size:.8rem;margin-top:6px;">Next: {{ tw.next_title }}</div>{% endif %}
           {% if tw.state == "no_date" %}<div class="meta" style="color:var(--text-muted);font-size:.8rem;margin-top:6px;">Give the scheme a start date to follow the weeks.</div>{% endif %}
+          <div style="font-size:.78rem;margin-top:6px;"><a href="/courses/{{ course.id }}/scheme-of-work/{{ tw.sow_id }}/plan-term" title="Set which week it is">Wrong week?</a>
+            <span class="muted">{{ "from your college calendar" if tw.source == "calendar" else "set by you" if tw.source == "corrected" else "counted from the start date" if tw.source == "start_date" else "" }}</span></div>
         {% else %}
           <div style="font-size:.88rem;margin-top:4px;">All {{ tw.total }} weeks are behind you - <a href="/courses/{{ course.id }}/scheme-of-work/new">plan the next one</a>.</div>
         {% endif %}

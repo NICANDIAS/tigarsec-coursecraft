@@ -133,6 +133,7 @@ POST   /courses/{course_id}/scheme-of-work/{sow_id}/retry  ->  scheme_of_work.py
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/template  ->  scheme_of_work.py:replace_sow_template
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/template/remove  ->  scheme_of_work.py:remove_sow_template
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/template/use-shared  ->  scheme_of_work.py:use_shared_sow_template
+POST   /courses/{course_id}/scheme-of-work/{sow_id}/this-week  ->  term_plan.py:set_this_week
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/weeks/{week_number}  ->  scheme_of_work.py:update_sow_week
 POST   /courses/{course_id}/start-date  ->  courses.py:set_course_start_date
 POST   /courses/{course_id}/students/create  ->  students.py:create_student

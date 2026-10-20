@@ -17,11 +17,18 @@
   .tp-ph h2 { margin:0; font-size:1.1rem; flex:1; }
   .tp-mini { font-size:.78rem; padding:3px 10px; border-radius:7px; border:1px solid var(--border); background:var(--btn-secondary-bg); color:var(--text); cursor:pointer; }
   .tp-mini:hover, .tp-mini.on { border-color:var(--accent); }
-  .tp-wk { display:grid; grid-template-columns:30px 76px minmax(0,1fr) auto; gap:10px; align-items:center; padding:8px 2px;
+  .tp-wk { display:grid; grid-template-columns:30px 86px minmax(0,1fr) auto; gap:10px; align-items:center; padding:8px 2px;
            border-bottom:1px solid var(--border); font-size:.93rem; }
   .tp-wk:last-child { border-bottom:none; }
   .tp-wk input { width:18px; height:18px; margin:0; }
-  .tp-wk .no { font-weight:800; color:var(--text-muted); }
+  .tp-wk .no { font-weight:800; color:var(--text-muted); line-height:1.15; }
+  .tp-wk .no small { display:block; font-weight:500; font-size:.72rem; }
+  .tp-gap { background:color-mix(in srgb, var(--accent) 6%, transparent); }
+  .tp-fix { position:relative; }
+  .tp-fix > summary { list-style:none; cursor:pointer; }
+  .tp-fix > summary::-webkit-details-marker { display:none; }
+  .tp-fix form { position:absolute; right:0; top:34px; z-index:5; width:290px; background:var(--bg-elevated); border:1px solid var(--border);
+                 border-radius:12px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,.3); }
   .tp-wk.off { opacity:.55; }
   .tp-wk .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tp-pill { font-size:.72rem; font-weight:700; padding:2px 9px; border-radius:10px; white-space:nowrap; }
@@ -48,10 +55,30 @@
     <h1>Plan the term</h1>
     <div class="tp-chips">
       <span class="tp-chip">Scheme: <b>{{ sow.title }}</b></span>
-      {% if current %}<span class="tp-chip">Now: <b>week {{ current }}</b></span>{% endif %}
+      {% if now.state == "teaching" %}<span class="tp-chip">Now: <b>week {{ now.week }}</b></span>
+      {% elif now.state == "break" %}<span class="tp-chip">No teaching this week · back in <b>week {{ now.week }}</b></span>
+      {% elif now.state == "before" %}<span class="tp-chip">Starts in <b>{{ now.days_to_start }} day{{ "s" if now.days_to_start != 1 }}</b></span>{% endif %}
       {% if sow.hours_per_week %}<span class="tp-chip"><b>{{ "%g"|format(sow.hours_per_week) }}</b> hours a week</span>{% endif %}
     </div>
   </div>
+  <details class="tp-fix">
+    <summary class="tp-mini">Wrong week?</summary>
+    <form method="post" action="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/this-week">
+      <p class="muted" style="font-size:.85rem;margin:0 0 8px;">
+        {% if now.source == "corrected" %}You set this week by hand - it counts on by one each week.
+        {% elif now.source == "calendar" %}Worked out from the dates in your college template (half terms skipped).
+        {% elif now.source == "start_date" %}Counted in calendar weeks from the start date - it can't see half terms or induction weeks.
+        {% else %}This scheme has no start date.{% endif %}</p>
+      <label for="tp-thisweek" style="margin:0 0 4px;font-size:.88rem;">This week is week</label>
+      <div style="display:flex;gap:8px;">
+        <input type="number" id="tp-thisweek" name="week" min="1" max="60" value="{{ now.week or '' }}" style="width:90px;margin:0;">
+        <button class="btn cd-sm" type="submit" style="padding:6px 14px;">Save</button>
+      </div>
+      {% if now.source == "corrected" %}
+        <button class="tp-mini" type="submit" name="clear" value="1" style="margin-top:8px;" formnovalidate>Use the {{ "college calendar" if from_template else "start date" }} again</button>
+      {% endif %}
+    </form>
+  </details>
 </div>
 
 {% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
@@ -75,17 +102,18 @@
     <div class="tp-list">
     {% for r in rows %}
       {% if r.gap %}
-        <div class="tp-wk off"><span></span><span class="no">Week {{ r.week }}</span><span class="t muted">No teaching planned (e.g. half term)</span><span></span></div>
+        <div class="tp-wk off tp-gap"><span></span><span class="no">{% if r.date %}<small>w/c {{ r.date.strftime("%-d %b") }}</small>{% endif %}</span>
+          <span class="t muted">{{ r.label }}</span><span class="tp-pill m">No teaching</span></div>
       {% else %}
         {% set blocked = r.made or r.no_unit %}
         <label class="tp-wk {% if blocked or r.past %}off{% endif %}" style="margin:0;font-weight:400;">
           <input type="checkbox" name="weeks" value="{{ r.week }}" {% if blocked %}disabled{% endif %}
                  {% if r.week in picks.next4 %}checked{% endif %} aria-label="Week {{ r.week }}: {{ r.title }}">
-          <span class="no">Week {{ r.week }}</span>
+          <span class="no">Week {{ r.week }}{% if r.date %}<small>w/c {{ r.date.strftime("%-d %b") }}</small>{% endif %}</span>
           <span class="t" title="{{ r.title }}">{{ r.title }}</span>
           {% if r.made %}<span class="tp-pill g">Already made</span>
           {% elif r.no_unit %}<span class="tp-pill m" title="This week's outcomes don't match the spec's criteria (e.g. an assessment or review week) - make it by hand from the scheme page">Make by hand</span>
-          {% elif r.now %}<span class="tp-pill a">This week</span>
+          {% elif r.now %}<span class="tp-pill a">{{ "This week" if now.state == "teaching" else "Next" }}</span>
           {% elif r.past %}<span class="tp-pill m">Past</span>
           {% else %}<span></span>{% endif %}
         </label>

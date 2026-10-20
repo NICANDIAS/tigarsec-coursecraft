@@ -172,6 +172,7 @@ class SchemeOfWork(Base):
     design_assignments = Column(Boolean, default=False, nullable=False)
     extra_notes = Column(Text, nullable=True)
     weeks_json = Column(JSON, nullable=True)
+    week_anchor_json = Column(JSON, nullable=True)  # the lecturer's "this is week N" correction: {"week": N, "monday": "YYYY-MM-DD"} - counted on from there
     context_rationale = Column(Text, nullable=True)  # AI-generated answer to the template's own "Context for the unit/project and rationale for the order of topics" question - generated once, alongside the week plan, not re-computed on every download
     intended_impact = Column(Text, nullable=True)  # AI-generated answer to the template's own "Intended impact of the unit/project" question
     unit_outcomes_summary = Column(Text, nullable=True)  # AI-synthesized 2-4 sentence summary of what a student can do by the end of the unit - deliberately a genuine summary, not a per-criterion list (a flat, ungrouped spec can have a dozen+ individual criteria, which read as a bulky dump if shown verbatim). Falls back to the deterministic per-criterion listing at download time if this is None (older schemes generated before this existed, or the AI call failed - see the download route)

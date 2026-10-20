@@ -2,8 +2,11 @@
 Course page redesign: the "This week" card - which week of the scheme of work we are in today,
 what it teaches, and whether its lesson has been made yet. Pure functions, no database.
 
-Week N runs from start_date + (N-1)*7 days - the same counting the coverage dashboard uses
-(app/coverage.py), so the two pages always agree on what week it is.
+Which week is "now" comes from, best first:
+  1. the lecturer's own correction ("we're actually in week 5"), counted on in calendar weeks;
+  2. the real dates of a scheme built from a college template - its weeks are the template's
+     free rows, so induction weeks and half terms are skipped exactly as the college calendar does;
+  3. otherwise week N runs from start_date + (N-1)*7 days (the coverage dashboard's counting).
 """
 import datetime
 
@@ -13,6 +16,58 @@ def week_number(start_date, today):
     if not start_date:
         return None
     return (today - start_date).days // 7 + 1
+
+
+def monday(day):
+    return day - datetime.timedelta(days=day.weekday())
+
+
+def current_week(weeks, start, today, week_dates=None, anchor=None):
+    """weeks: the scheme's week numbers in order. week_dates: {week number: week-commencing date}.
+    anchor: {"week": N, "monday": "YYYY-MM-DD"} - the lecturer said week N was the week of that Monday.
+    -> {"state": "no_date" | "before" | "teaching" | "break" | "finished", "week" (this week, or the next
+        teaching week during a break / before the start), "days_to_start", "source": "corrected" |
+        "calendar" | "start_date" | None}"""
+    weeks = sorted(w for w in weeks if isinstance(w, int))
+    out = {"state": "no_date", "week": weeks[0] if weeks else None, "days_to_start": 0, "source": None}
+    if not weeks:
+        return out
+    if anchor and anchor.get("week"):
+        try:
+            since = (monday(today) - datetime.date.fromisoformat(str(anchor["monday"]))).days // 7
+        except (ValueError, TypeError):
+            since = None
+        if since is not None:
+            n = int(anchor["week"]) + since
+            return _place(out, weeks, n, "corrected")
+    dated = sorted((d, w) for w, d in (week_dates or {}).items() if d and w in weeks)
+    if dated:
+        out["source"] = "calendar"
+        if today < dated[0][0]:
+            return dict(out, state="before", week=dated[0][1], days_to_start=(dated[0][0] - today).days)
+        d, w = [x for x in dated if x[0] <= today][-1]
+        if today < d + datetime.timedelta(days=7):
+            return dict(out, state="teaching", week=w)
+        later = [x for x in dated if x[0] > today]
+        if later:  # between teaching weeks: half term, a closure
+            return dict(out, state="break", week=later[0][1], days_to_start=(later[0][0] - today).days)
+        return dict(out, state="finished", week=None)
+    n = week_number(start, today)
+    if n is None:
+        return out
+    if n < 1:
+        return dict(out, state="before", days_to_start=(start - today).days, source="start_date")
+    return _place(out, weeks, n, "start_date")
+
+
+def _place(out, weeks, n, source):
+    if n > weeks[-1]:
+        return dict(out, state="finished", week=None, source=source)
+    if n < weeks[0]:
+        return dict(out, state="before", source=source)
+    # a week number the plan skips (half term, an induction row) shows the next planned week instead
+    nxt = n if n in weeks else next(w for w in weeks if w > n)
+    return dict(out, state="teaching", week=nxt, source=source)
 
 
 def _pick_scheme(schemes):
@@ -26,8 +81,9 @@ def _pick_scheme(schemes):
 def this_week(schemes, course_start, decks, today=None):
     """schemes: [{"id", "title", "status", "start_date", "weeks": [{"week", "title", "learning_outcomes"}]}] newest first.
     decks: [{"id", "status", "source_sow_id", "source_week"}] newest first.
+    A scheme may also carry "week_dates" and "anchor" (see current_week).
     -> None when there is no ready scheme, else
-       {"state": "no_date" | "before" | "teaching" | "finished", "sow_id", "sow_title", "week", "total",
+       {"state": "no_date" | "before" | "teaching" | "break" | "finished", "source", "sow_id", "sow_title", "week", "total",
         "title", "outcomes", "next_title", "days_to_start", "deck"}"""
     sow = _pick_scheme(schemes)
     if not sow:
@@ -40,20 +96,12 @@ def this_week(schemes, course_start, decks, today=None):
     total = weeks[-1]["week"]
     out = {"sow_id": sow["id"], "sow_title": sow.get("title") or "Scheme of work", "total": total,
            "week": None, "title": "", "outcomes": [], "next_title": "", "days_to_start": 0, "deck": None}
-    start = sow.get("start_date") or course_start
-    n = week_number(start, today)
-    if n is None:
-        out["state"] = "no_date"
-        n = weeks[0]["week"]
-    elif n < 1:
-        out["state"] = "before"
-        out["days_to_start"] = (start - today).days
-        n = weeks[0]["week"]
-    elif n > total:
-        out["state"] = "finished"
+    now = current_week([w["week"] for w in weeks], sow.get("start_date") or course_start, today,
+                       sow.get("week_dates"), sow.get("anchor"))
+    out.update(state=now["state"], days_to_start=now["days_to_start"], source=now["source"])
+    if now["state"] == "finished":
         return out
-    else:
-        out["state"] = "teaching"
+    n = now["week"]
     # a week the plan skips (half term, an induction row) shows the next planned week instead
     week = by_no.get(n) or next((w for w in weeks if w["week"] > n), None)
     if not week:

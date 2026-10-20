@@ -7,7 +7,7 @@ The AI jobs are replaced by quick fakes, so no AI is used.
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/selftest_stage14_db.py
-Expected last line: "ALL STAGE 14 CHECKS PASSED (35)"
+Expected last line: "ALL STAGE 14 CHECKS PASSED (38)"
 """
 import asyncio
 import datetime
@@ -140,12 +140,22 @@ db.commit()
 
 # ------------------------------------------------------------------ the plan page
 page = tpr.plan_term_page(course.id, sow.id, request("/p"), db, lecturer).body.decode()
-check("the plan page lists the weeks, with half term as a gap", "Week 4" in page and "No teaching planned" in page and "IP addressing" in page)
+check("the plan page lists the weeks, with a missing week number as a gap", "No week 4 in the scheme" in page and "IP addressing" in page)
 check("a week that already has a lesson can't be ticked", "Already made" in page and 'value="1" disabled' in page)
 check("a week that matches none of the spec's criteria is shown as 'make by hand'", "Make by hand" in page and 'value="6" disabled' in page)
 check("'This week' is week 2, ticked by 'Next 4 weeks'", "This week" in page and "checked" in page.split('value="2"')[1][:80])
 check("lesson length starts at the scheme's hours a week", 'name="hours" value="3"' in page)
 check("another lecturer can't open it", tpr.plan_term_page(course.id, sow.id, request("/p"), db, other).status_code == 303)
+check("it says how it worked out the week, and offers 'Wrong week?'", "Now: <b>week 2</b>" in page and "Wrong week?" in page
+      and "counted in calendar weeks from the start date" in page.lower())
+tpr.set_this_week(course.id, sow.id, "3", "", db, lecturer, "")
+db.expire_all()
+page3 = tpr.plan_term_page(course.id, sow.id, request("/p"), db, lecturer).body.decode()
+check("'Wrong week?' - setting week 3 moves 'This week' and is remembered", "Now: <b>week 3</b>" in page3
+      and db.get(SchemeOfWork, sow.id).week_anchor_json["week"] == 3 and "You set this week by hand" in page3)
+tpr.set_this_week(course.id, sow.id, "", "", db, lecturer, "1")
+db.expire_all()
+check("...and 'use the start date again' clears it", db.get(SchemeOfWork, sow.id).week_anchor_json is None)
 
 # ------------------------------------------------------------------ start a plan
 tasks = Tasks()
