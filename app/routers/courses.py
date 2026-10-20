@@ -183,14 +183,16 @@ def _course_overview(db, course, teacher, decks):
     except Exception:
         pass
     try:
-        from ..sow_calendar import scheme_calendar
+        from ..sow_calendar import scheme_now
+        from ..pace import resume_slide
         schemes = []
         for s in course.schemes_of_work:
-            cal = scheme_calendar(s) if s.status == "ready" else {"from_template": False, "week_dates": {}}
-            schemes.append({"id": s.id, "title": s.title, "status": s.status, "start_date": s.start_date, "weeks": s.weeks_json or [],
-                            # with a college template the lecturer's correction is already inside the dates
-                            "anchor": None if cal["from_template"] else s.week_anchor_json, "corrected": bool(s.week_anchor_json),
-                            "week_dates": cal["week_dates"]})
+            entry = {"id": s.id, "title": s.title, "status": s.status, "start_date": s.start_date, "weeks": s.weeks_json or []}
+            if s.status == "ready" and s.weeks_json:
+                now, _cal = scheme_now(s, course.start_date)  # college calendar, corrections and carried-on weeks
+                entry.update(now=now, corrected=bool(s.week_anchor_json),
+                             resume={(now["week"], now.get("part", 1)): resume_slide(s.pace_json, now["week"], now.get("part", 1))})
+            schemes.append(entry)
         out["this_week"] = this_week(schemes, course.start_date, [
             {"id": d.id, "status": d.status, "source_sow_id": d.source_sow_id, "source_week": d.source_week} for d in decks],
             datetime.date.today())

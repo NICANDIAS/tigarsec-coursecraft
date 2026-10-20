@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}How did week {{ week }} go? - TIGARSEC Assess{% endblock %}
+{% block content %}
+<style>
+  .hg-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; border:1px solid var(--border); background:var(--bg-elevated);
+            border-radius:14px; padding:16px 18px; margin-bottom:14px; box-shadow:var(--shadow); }
+  .hg-logo { width:54px; height:54px; border-radius:12px; background:var(--accent); color:var(--accent-text); display:flex; align-items:center;
+             justify-content:center; font-weight:800; font-size:1.3rem; flex:none; }
+  .hg-who { flex:1; min-width:240px; }
+  .hg-who h1 { margin:0 0 6px; font-size:1.55rem; }
+  .hg-chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .hg-chip { font-size:.82rem; padding:3px 10px; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+  .hg-chip b { color:var(--text); }
+  .hg-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(300px,1fr); gap:14px; align-items:start; }
+  .hg-panel { border:1px solid var(--border); background:var(--bg-elevated); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); margin-bottom:14px; }
+  .hg-panel h2 { margin:0 0 10px; font-size:1.1rem; }
+  .hg-sig { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  .hg-sig span { font-size:.84rem; padding:4px 10px; border-radius:8px; background:var(--btn-secondary-bg); }
+  .hg-sig .bad { color:var(--danger); } .hg-sig .ok { color:var(--success); }
+  .hg-hint { border-left:4px solid var(--accent); padding:8px 12px; border-radius:6px; background:color-mix(in srgb, var(--accent) 8%, transparent); font-size:.92rem; }
+  .hg-choices { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; }
+  .hg-choice { border:2px solid var(--border); border-radius:12px; padding:14px; background:var(--btn-secondary-bg); }
+  .hg-choice.suggested { border-color:var(--accent); }
+  .hg-choice h3 { margin:0 0 4px; font-size:1rem; }
+  .hg-choice p { font-size:.86rem; color:var(--text-muted); margin:0 0 10px; }
+  .hg-choice label { font-size:.85rem; margin:6px 0 4px; }
+  .hg-choice input[type=number] { width:90px; margin:0; }
+  .hg-choice input[type=text] { margin:0; }
+  .hg-mv { display:grid; grid-template-columns:62px minmax(0,1fr) auto 14px auto; gap:6px; align-items:center; padding:7px 0;
+           border-bottom:1px solid var(--border); font-size:.86rem; }
+  .hg-mv:last-child { border-bottom:none; }
+  .hg-mv .o { color:var(--text-muted); text-decoration:line-through; } .hg-mv .n { color:var(--accent); font-weight:700; }
+  .hg-mv .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hg-warn { border-left:4px solid var(--danger); background:color-mix(in srgb, var(--danger) 10%, transparent); padding:10px 14px; border-radius:8px; margin-top:12px; font-size:.9rem; }
+  .hg-gaps { margin:6px 0 0; padding-left:18px; font-size:.9rem; }
+  @media (max-width: 900px) { .hg-grid, .hg-choices { grid-template-columns:1fr; } }
+</style>
+{% set e = evidence %}
+{% set fmt = "%-d %b" %}
+<p style="margin:0 0 10px;"><a href="/lesson-decks/{{ deck.id }}">&larr; Lesson: {{ deck.title }}</a></p>
+<div class="hg-bar">
+  <div class="hg-logo" aria-hidden="true">{{ week }}</div>
+  <div class="hg-who">
+    <h1>How did week {{ week }} go?</h1>
+    <div class="hg-chips">
+      <span class="hg-chip">{{ deck.title }}</span>
+      {% if e.reached %}<span class="hg-chip">You reached <b>slide {{ e.reached }}{% if e.total %} of {{ e.total }}{% endif %}</b> (from your live lesson)</span>{% endif %}
+      {% if already %}<span class="hg-chip">Already carried on {{ already }} time{{ "s" if already != 1 }}</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="hg-grid">
+  <div>
+    <section class="hg-panel">
+      <h2>What the class showed you</h2>
+      {% if e.signals.answers or e.homework_pct is not none %}
+        <div class="hg-sig">
+          {% if e.signals.not_sure_pct is not none %}<span class="{{ 'bad' if e.signals.not_sure_pct >= 40 else 'ok' }}">Confidence: {{ e.signals.not_sure_pct }}% not sure yet</span>{% endif %}
+          {% if e.signals.quiz_pct is not none %}<span class="{{ 'bad' if e.signals.quiz_pct < 60 else 'ok' }}">Quiz: {{ e.signals.quiz_pct }}% right</span>{% endif %}
+          {% if e.homework_pct is not none %}<span class="{{ 'bad' if e.homework_pct < 60 else 'ok' }}">Homework: {{ e.homework_pct }}% average</span>{% endif %}
+        </div>
+        {% if e.gaps %}<div style="font-size:.9rem;">Found hard:</div><ul class="hg-gaps">{% for g in e.gaps %}<li>{{ g }}</li>{% endfor %}</ul>{% endif %}
+      {% else %}
+        <p class="muted" style="margin:0;">No live results for this lesson yet. Run it live (or its quiz) and the class's confidence and answers appear here - or decide from what you saw in the room.</p>
+      {% endif %}
+      {% if hint.carry_on %}
+        <p class="hg-hint" style="margin:12px 0 0;">CourseCraft suggests another week on this - {{ hint.reasons|join("; ") }}. It's your call.</p>
+      {% elif e.signals.answers %}
+        <p class="hg-hint" style="margin:12px 0 0;border-color:var(--success);">The class looks ready to move on.</p>
+      {% endif %}
+    </section>
+
+    <section class="hg-panel">
+      <h2>What next?</h2>
+      <div class="hg-choices">
+        <div class="hg-choice {% if not hint.carry_on %}suggested{% endif %}">
+          <h3>Move on to week {{ week + 1 }}</h3>
+          <p>The class is ready. Nothing changes.</p>
+          <a class="btn btn-secondary" href="/courses/{{ course.id }}">Back to the course</a>
+        </div>
+        <form class="hg-choice {% if hint.carry_on %}suggested{% endif %}" method="post" action="/lesson-decks/{{ deck.id }}/carry-on">
+          <h3>Carry on next week</h3>
+          <p>Week {{ week }} takes another teaching week{% if preview.part2_date %} (w/c {{ preview.part2_date.strftime(fmt) }}){% endif %}.
+            Next lesson uses <strong>this same PowerPoint</strong> - Present and Run live start from your slide.</p>
+          <label for="hg-from">Pick up from slide</label>
+          <input type="number" id="hg-from" name="from_slide" value="{{ from_slide }}" min="1" {% if e.total %}max="{{ e.total }}"{% endif %}>
+          <label for="hg-why">Why (optional - kept in the scheme's record)</label>
+          <input type="text" id="hg-why" name="reason" maxlength="200" placeholder="e.g. CVSS vectors not secure yet"
+                 value="{{ hint.reasons|join('; ') if hint.carry_on else '' }}">
+          <button class="btn" type="submit" style="margin-top:12px;">Carry on next week</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <section class="hg-panel">
+    <h2>If you carry on, what moves</h2>
+    {% if preview.moves %}
+      <p class="muted" style="margin:0 0 8px;font-size:.88rem;">Everything after week {{ week }} moves one teaching week later{% if preview.moves and sow.format_sample_file_path %}, along your college calendar - half terms stay where they are{% endif %}.</p>
+      {% for m in preview.moves[:8] %}
+        <div class="hg-mv"><b>Week {{ m.week }}</b><span class="t" title="{{ m.title }}">{{ m.title }}</span>
+          <span class="o">{{ "w/c " ~ m.before.strftime(fmt) if m.before else "" }}</span><span>&rarr;</span>
+          <span class="n">{{ "w/c " ~ m.after.strftime(fmt) if m.after else "after the calendar" }}</span></div>
+      {% endfor %}
+      {% if preview.moves|length > 8 %}<p class="muted" style="font-size:.82rem;margin:6px 0 0;">…and {{ preview.moves|length - 8 }} more weeks.</p>{% endif %}
+    {% else %}
+      <p class="muted" style="margin:0;">The weeks after this one have no dates yet - give the scheme a start date (or use a college template) to see them move.</p>
+    {% endif %}
+    {% if preview.overflow > preview.overflow_before %}
+      <div class="hg-warn"><strong>The scheme would run {{ preview.overflow }} week{{ "s" if preview.overflow != 1 }} past the end of {{ "the calendar" if sow.format_sample_file_path else "its end date" }}.</strong>
+        {% if ideas %}You can win it back by teaching two later weeks together - after you carry on, the planning page offers:
+          <ul class="hg-gaps">{% for i in ideas %}<li>Weeks {{ i.a }} + {{ i.b }} - {{ i.reason }}</li>{% endfor %}</ul>
+        {% else %}There are no two neighbouring later weeks that can safely be combined (assessment weeks are never combined).{% endif %}
+      </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

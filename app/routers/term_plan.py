@@ -27,7 +27,7 @@ from ..auth import get_current_teacher
 from ..course_overview import monday
 from ..sow_calendar import scheme_now
 from ..homework import local_now
-from ..term_plan import plan_rows, quick_pick, estimate_minutes, clamp_minutes, clamp_quiz, item_status, progress, MAX_WEEKS
+from ..term_plan import plan_rows, timeline_rows, quick_pick, estimate_minutes, clamp_minutes, clamp_quiz, item_status, progress, MAX_WEEKS
 from . import presentations as pr
 from . import quizzes as qz
 
@@ -54,6 +54,26 @@ def _current_week(sow, course, today=None):
     """This week's number (or the next teaching week in a break), the full answer, and the calendar."""
     now, cal = scheme_now(sow, course.start_date, today)
     return (now["week"] if now["state"] in ("teaching", "break", "before") else None), now, cal
+
+
+def _merge_ideas(sow, now):
+    from ..pace import suggest_merges
+    return suggest_merges(sow.weeks_json or [], now.get("week") or 0, sow.pace_json,
+                          [p.get("week") for p in (sow.planned_assessments or []) if isinstance(p, dict)])
+
+
+def pace_changes(db, sow, course):
+    """The carried-on and combined weeks on this scheme, for the "Changes to the plan" list (each can be undone)."""
+    from ..pace import get_pace
+    pace = get_pace(sow.pace_json)
+    titles = {w["week"]: w.get("title", "") for w in sow.weeks_json or [] if isinstance(w, dict) and isinstance(w.get("week"), int)}
+    out = []
+    for i, e in enumerate(pace["extensions"]):
+        out.append({"kind": "extension", "index": i, "week": e["week"], "title": titles.get(e["week"], ""),
+                    "from_slide": e.get("from_slide"), "reason": e.get("reason"), "at": e.get("at")})
+    for a, b in pace["merges"]:
+        out.append({"kind": "merge", "a": a, "b": b, "title": f"{titles.get(a, '')} + {titles.get(b, '')}"})
+    return out
 
 
 def _own_plan(db, plan_id, teacher):
@@ -189,8 +209,8 @@ def plan_term_page(course_id: int, sow_id: int, request: Request, db: Session = 
                .order_by(TermPlan.id.desc()).first())
     spec, units = _units(course)
     current, now, cal = _current_week(sow, course)
-    rows = plan_rows(sow.weeks_json or [], current, _made_weeks(db, sow), cal["week_dates"], cal["breaks"],
-                     datetime.date.today()) if sow.status == "ready" else []
+    rows = timeline_rows(cal["timeline"], sow.weeks_json or [], now, _made_weeks(db, sow), datetime.date.today(),
+                         sow.pace_json) if sow.status == "ready" else []
     for r in rows:
         if not r["gap"]:
             r["no_unit"] = not _usable(pr.sow_week_selection(units, sow, r["week"]))
@@ -202,7 +222,8 @@ def plan_term_page(course_id: int, sow_id: int, request: Request, db: Session = 
         "request": request, "teacher": teacher, "course": course, "sow": sow, "rows": rows, "current": current,
         "picks": picks, "default_hours": hours, "has_spec": bool(units), "usable": len(usable), "running": running,
         "error": request.query_params.get("error"), "estimate_each": estimate_minutes(1, True, True),
-        "now": now, "from_template": cal["from_template"]})
+        "now": now, "from_template": cal["from_template"], "changes": pace_changes(db, sow, course), "overflow": cal["overflow"],
+        "merge_ideas": _merge_ideas(sow, now) if cal["overflow"] else []})
 
 
 @router.post("/courses/{course_id}/scheme-of-work/{sow_id}/this-week")

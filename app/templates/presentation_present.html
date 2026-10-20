@@ -177,7 +177,10 @@
     if (e.key === "Escape") window.location.href = "/lesson-decks/{{ deck.id }}";
   });
 
-  if (total > 0) goTo(0);
+  if (total > 0) {
+    const from = parseInt(new URLSearchParams(location.search).get("from") || "1", 10);  // "carry on from slide N"
+    goTo(isNaN(from) ? 0 : Math.min(Math.max(from, 1), total) - 1);
+  }
 </script>
 
 </body>

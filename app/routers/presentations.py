@@ -598,8 +598,19 @@ def view_deck(
     return templates.TemplateResponse(
         "presentation_detail.html",
         {"request": request, "teacher": teacher, "deck": deck, "resource_count": resource_count,
-         "shares": shares, "is_owner": is_owner, "can_quiz": can_quiz, "quizzes": quizzes},
+         "shares": shares, "is_owner": is_owner, "can_quiz": can_quiz, "quizzes": quizzes,
+         "resume_slide": _resume_slide(db, deck)},
     )
+
+
+def _resume_slide(db, deck):
+    """If this lesson was carried on into the next week, the slide to pick up from (the latest carry-on)."""
+    if not deck.source_sow_id:
+        return None
+    sow = db.get(SchemeOfWork, deck.source_sow_id)
+    from ..pace import get_pace
+    exts = [e for e in get_pace(sow.pace_json if sow else None)["extensions"] if e.get("deck_id") == deck.id]
+    return exts[-1].get("from_slide") if exts else None
 
 
 @router.get("/lesson-decks/{deck_id}/status")

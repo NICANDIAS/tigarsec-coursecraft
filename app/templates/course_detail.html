@@ -183,9 +183,13 @@
         {% elif tw.state == "no_date" %}<span class="lbl">First week of your scheme</span>
         {% else %}<span class="lbl">Scheme of work finished</span>{% endif %}
         {% if tw.state != "finished" %}
-          <b>{{ tw.title }}</b>
-          {% if tw.deck %}
+          <b>{{ tw.title }}{% if tw.part > 1 %} (continued){% endif %}</b>
+          {% if tw.deck and tw.part > 1 %}
+            <a class="cd-mini" href="/lesson-decks/{{ tw.deck.id }}/present?from={{ tw.resume or 1 }}" target="_blank">Present from slide {{ tw.resume or 1 }}</a>
+            <a class="cd-mini" href="/lesson-decks/{{ tw.deck.id }}">Open the lesson</a>
+          {% elif tw.deck %}
             <a class="cd-mini" href="/lesson-decks/{{ tw.deck.id }}">Open this week's lesson</a>
+            <a class="cd-mini" href="/lesson-decks/{{ tw.deck.id }}/how-did-it-go">How did it go?</a>
           {% else %}
             <a class="cd-mini" href="/courses/{{ course.id }}/presentations/new?sow_id={{ tw.sow_id }}&week={{ tw.week }}">Make this week's lesson</a>
           {% endif %}

@@ -94,10 +94,10 @@ def this_week(schemes, course_start, decks, today=None):
         return None
     by_no = {w["week"]: w for w in weeks}
     total = weeks[-1]["week"]
-    out = {"sow_id": sow["id"], "sow_title": sow.get("title") or "Scheme of work", "total": total,
+    out = {"sow_id": sow["id"], "sow_title": sow.get("title") or "Scheme of work", "total": total, "part": 1, "resume": None,
            "week": None, "title": "", "outcomes": [], "next_title": "", "days_to_start": 0, "deck": None}
-    now = current_week([w["week"] for w in weeks], sow.get("start_date") or course_start, today,
-                       sow.get("week_dates"), sow.get("anchor"))
+    now = sow.get("now") or current_week([w["week"] for w in weeks], sow.get("start_date") or course_start, today,
+                                         sow.get("week_dates"), sow.get("anchor"))  # "now": worked out by app/sow_calendar.scheme_now
     out.update(state=now["state"], days_to_start=now["days_to_start"], source="corrected" if sow.get("corrected") else now["source"])
     if now["state"] == "finished":
         return out
@@ -107,6 +107,8 @@ def this_week(schemes, course_start, decks, today=None):
     if not week:
         out["state"] = "finished"
         return out
+    part = now.get("part", 1) if week["week"] == n else 1
+    out.update(part=part, resume=sow.get("resume", {}).get((week["week"], part)))
     out.update(week=week["week"], title=week.get("title") or f"Week {week['week']}",
                outcomes=[str(o) for o in (week.get("learning_outcomes") or [])][:6])
     later = next((w for w in weeks if w["week"] > week["week"]), None)

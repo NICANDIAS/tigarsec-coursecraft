@@ -41,6 +41,34 @@ def plan_rows(weeks: list, current_week, made_weeks: set, week_dates=None, break
     return rows
 
 
+def timeline_rows(timeline: list, weeks_json: list, now: dict, made_weeks: set, today=None, pace_json=None) -> list:
+    """The planning page's rows from the dated teaching timeline (app/sow_calendar.py): a week carried
+    on into the next shows again as "(continued)" with the slide it picks up from; combined weeks show
+    as one; breaks are rows of their own. Same row shape as plan_rows, plus "part", "continued", "with", "resume"."""
+    import datetime
+    from .pace import resume_slide
+    by_no = {w["week"]: w for w in weeks_json or [] if isinstance(w, dict) and isinstance(w.get("week"), int)}
+    rows = []
+    for t in timeline:
+        if t["kind"] == "gap":
+            rows.append({"week": None, "gap": True, "label": t["label"], "date": t["date"]})
+            continue
+        n, w = t["week"], by_no.get(t["week"], {})
+        title = w.get("title") or f"Week {n}"
+        for b in t.get("with") or []:
+            title += f" + {by_no.get(b, {}).get('title') or f'Week {b}'}"
+        date = t.get("date")
+        past = bool(date and today and (today - date).days >= 7)
+        if not date and now.get("week") and now.get("state") in ("teaching", "break", "before"):
+            past = n < now["week"]
+        continued = t["part"] > 1
+        rows.append({"week": n, "part": t["part"], "parts": t["parts"], "continued": continued, "with": t.get("with") or [],
+                     "title": title + (" (continued)" if continued else ""), "date": date,
+                     "made": n in made_weeks or continued, "resume": resume_slide(pace_json, n, t["part"]) if continued else None,
+                     "now": now.get("week") == n and now.get("part", 1) == t["part"], "past": past, "gap": False})
+    return rows
+
+
 def quick_pick(rows: list, current_week, preset: str) -> list:
     """The week numbers a quick-pick button ticks: never weeks already made, never gaps, never
     past weeks. "next4" = the next 4 teaching weeks; "half" = up to the next break (half term);
@@ -53,7 +81,7 @@ def quick_pick(rows: list, current_week, preset: str) -> list:
             if preset == "half" and picked:
                 break
             continue
-        if r.get("made") or r.get("past"):
+        if r.get("made") or r.get("past") or r.get("continued"):
             continue
         picked.append(r["week"])
         if preset == "next4" and len(picked) == 4:

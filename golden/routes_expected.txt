@@ -38,6 +38,7 @@ GET    /iv/{iv_id}/review  ->  iv.py:iv_review
 GET    /join  ->  live.py:join_page
 GET    /lesson-decks/{deck_id}  ->  presentations.py:view_deck
 GET    /lesson-decks/{deck_id}/download  ->  presentations.py:download_deck
+GET    /lesson-decks/{deck_id}/how-did-it-go  ->  pace.py:how_did_it_go
 GET    /lesson-decks/{deck_id}/pptx-media/{slide_index}/{shape_index}  ->  presentations.py:deck_pptx_media
 GET    /lesson-decks/{deck_id}/present  ->  presentations.py:present_deck
 GET    /lesson-decks/{deck_id}/resources  ->  presentations.py:download_deck_resources
@@ -128,6 +129,8 @@ POST   /courses/{course_id}/quizzes/new  ->  quizzes.py:quiz_new
 POST   /courses/{course_id}/scheme-of-work/generate  ->  scheme_of_work.py:generate_sow
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/delete  ->  scheme_of_work.py:delete_sow
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/edit  ->  scheme_of_work.py:update_sow
+POST   /courses/{course_id}/scheme-of-work/{sow_id}/pace/merge  ->  pace.py:pace_merge
+POST   /courses/{course_id}/scheme-of-work/{sow_id}/pace/undo  ->  pace.py:pace_undo
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/plan-term  ->  term_plan.py:plan_term_start
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/retry  ->  scheme_of_work.py:retry_sow
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/template  ->  scheme_of_work.py:replace_sow_template
@@ -153,6 +156,7 @@ POST   /iv/external/new  ->  iv.py:create_external_iv
 POST   /iv/send/{submission_id}  ->  iv.py:send_for_iv
 POST   /iv/{iv_id}/submit  ->  iv.py:submit_iv_review
 POST   /join  ->  live.py:join_submit
+POST   /lesson-decks/{deck_id}/carry-on  ->  pace.py:carry_on
 POST   /lesson-decks/{deck_id}/delete  ->  presentations.py:delete_deck
 POST   /lesson-decks/{deck_id}/differentiate  ->  presentations.py:differentiate_deck
 POST   /lesson-decks/{deck_id}/live/start  ->  live.py:live_start_from_deck
