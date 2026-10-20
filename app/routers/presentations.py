@@ -55,6 +55,67 @@ def _match_lo_and_criteria(unit: dict, week_lo_codes: set) -> tuple[list, dict]:
     return lo_indices, criteria_selected
 
 
+def sow_week_selection(units: list, target_sow, week: int):
+    """
+    Matches one scheme-of-work week back to a unit + its specific learning outcomes/criteria,
+    and the week before as "what was covered last lesson" context. Shared by "Generate
+    PowerPoint for this week" and Plan the term, so both pick the same content.
+    -> None if the week isn't in the scheme, else {"title", "unit_index" (None if no unit
+    matched), "lo_indices", "criteria_selected", "previous_context", "source_sow_id", "source_week"}
+    """
+    if not target_sow or not target_sow.weeks_json:
+        return None
+    week_entry = next((w for w in target_sow.weeks_json if w.get("week") == week), None)
+    if not week_entry:
+        return None
+    week_lo_codes = set(week_entry.get("learning_outcomes", []))
+    unit_index = None
+    lo_indices = []
+    criteria_selected = {}
+    # Prefer the SOW's own selected_unit_names - an unambiguous record of which
+    # unit(s) the whole scheme was actually generated for. Confirmed as a real,
+    # standing bug: matching by criterion code alone (below) picked the wrong
+    # unit when two different tracks in the same spec (Core Component vs
+    # Occupational Specialism) independently reuse the same numbering - "2.1" in
+    # one track is not the same criterion as "2.1" in another, but the old code
+    # had no way to tell them apart.
+    selected_names = set(target_sow.selected_unit_names or [])
+    if selected_names:
+        for u_idx, unit in enumerate(units):
+            if unit.get("name") in selected_names:
+                unit_index = u_idx
+                lo_indices, criteria_selected = _match_lo_and_criteria(unit, week_lo_codes)
+                break
+    if unit_index is None:
+        # Fallback for a "whole spec" scheme (no specific unit(s) selected at
+        # generation time) - code-based matching is the best available signal
+        # when there's no unit name to go on at all.
+        for u_idx, unit in enumerate(units):
+            matching, matching_criteria = _match_lo_and_criteria(unit, week_lo_codes)
+            if matching or matching_criteria:
+                unit_index = u_idx
+                lo_indices = matching
+                criteria_selected = matching_criteria
+                break
+
+    previous_week_entry = next((w for w in target_sow.weeks_json if w.get("week") == week - 1), None)
+    previous_context = ""
+    if previous_week_entry:
+        previous_context = (
+            f"Week {previous_week_entry.get('week')}: {previous_week_entry.get('title', '')} - covered: "
+            f"{', '.join(previous_week_entry.get('learning_outcomes', []))}"
+        )
+    return {
+        "title": week_entry.get("title", ""),
+        "unit_index": unit_index,
+        "lo_indices": lo_indices,
+        "criteria_selected": criteria_selected,
+        "previous_context": previous_context,
+        "source_sow_id": target_sow.id,
+        "source_week": week,
+    }
+
+
 @router.get("/courses/{course_id}/presentations/new", response_class=HTMLResponse)
 def new_presentation_page(
     course_id: int,
@@ -84,56 +145,7 @@ def new_presentation_page(
         target_sow = db.query(SchemeOfWork).filter(
             SchemeOfWork.id == sow_id, SchemeOfWork.course_id == course_id
         ).first()
-        if target_sow and target_sow.weeks_json:
-            week_entry = next((w for w in target_sow.weeks_json if w.get("week") == week), None)
-            if week_entry:
-                week_lo_codes = set(week_entry.get("learning_outcomes", []))
-                unit_index = None
-                lo_indices = []
-                criteria_selected = {}
-                # Prefer the SOW's own selected_unit_names - an unambiguous record of which
-                # unit(s) the whole scheme was actually generated for. Confirmed as a real,
-                # standing bug: matching by criterion code alone (below) picked the wrong
-                # unit when two different tracks in the same spec (Core Component vs
-                # Occupational Specialism) independently reuse the same numbering - "2.1" in
-                # one track is not the same criterion as "2.1" in another, but the old code
-                # had no way to tell them apart.
-                selected_names = set(target_sow.selected_unit_names or [])
-                if selected_names:
-                    for u_idx, unit in enumerate(units):
-                        if unit.get("name") in selected_names:
-                            unit_index = u_idx
-                            lo_indices, criteria_selected = _match_lo_and_criteria(unit, week_lo_codes)
-                            break
-                if unit_index is None:
-                    # Fallback for a "whole spec" scheme (no specific unit(s) selected at
-                    # generation time) - code-based matching is the best available signal
-                    # when there's no unit name to go on at all.
-                    for u_idx, unit in enumerate(units):
-                        matching, matching_criteria = _match_lo_and_criteria(unit, week_lo_codes)
-                        if matching or matching_criteria:
-                            unit_index = u_idx
-                            lo_indices = matching
-                            criteria_selected = matching_criteria
-                            break
-
-                previous_week_entry = next((w for w in target_sow.weeks_json if w.get("week") == week - 1), None)
-                previous_context = ""
-                if previous_week_entry:
-                    previous_context = (
-                        f"Week {previous_week_entry.get('week')}: {previous_week_entry.get('title', '')} - covered: "
-                        f"{', '.join(previous_week_entry.get('learning_outcomes', []))}"
-                    )
-
-                prefill = {
-                    "title": week_entry.get("title", ""),
-                    "unit_index": unit_index,
-                    "lo_indices": lo_indices,
-                    "criteria_selected": criteria_selected,
-                    "previous_context": previous_context,
-                    "source_sow_id": sow_id,
-                    "source_week": week,
-                }
+        prefill = sow_week_selection(units, target_sow, week) if target_sow else None
 
     # Prefill a FOLLOW-UP lesson from a deck that didn't fit in its requested time - reuses
     # the exact same unit/learning-outcome selection, and folds the original deck's own

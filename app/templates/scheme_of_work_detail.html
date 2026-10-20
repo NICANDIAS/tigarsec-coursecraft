@@ -3,6 +3,7 @@
 {% block content %}
 <p><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a></p>
 <h1>{{ sow.title }}</h1>
+{% if sow.status == "ready" and sow.weeks_json %}<a class="btn" style="margin:8px 6px 12px 0;" href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/plan-term">&#9889; Plan the term - make many weeks' lessons in one go</a>{% endif %}
 <a class="btn btn-secondary" style="margin:8px 0 12px;" href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/edit">Edit parameters &amp; regenerate</a>
 {% if sow.content_area %}<p class="muted">Content area: {{ sow.content_area }}</p>{% endif %}
 {% if sow.tutor_names %}<p class="muted">Tutor(s): {{ sow.tutor_names }}</p>{% endif %}

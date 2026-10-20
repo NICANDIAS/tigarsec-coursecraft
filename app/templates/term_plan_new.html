@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Plan the term - {{ course.name }}{% endblock %}
+{% block content %}
+<style>
+  .tp-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; border:1px solid var(--border); background:var(--bg-elevated);
+            border-radius:14px; padding:16px 18px; margin-bottom:14px; box-shadow:var(--shadow); }
+  .tp-logo { width:54px; height:54px; border-radius:12px; background:var(--accent); color:var(--accent-text); display:flex; align-items:center;
+             justify-content:center; font-size:1.5rem; flex:none; }
+  .tp-who { flex:1; min-width:240px; }
+  .tp-who h1 { margin:0 0 6px; font-size:1.55rem; }
+  .tp-chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .tp-chip { font-size:.82rem; padding:3px 10px; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+  .tp-chip b { color:var(--text); }
+  .tp-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(300px,1fr); gap:14px; align-items:start; }
+  .tp-panel { border:1px solid var(--border); background:var(--bg-elevated); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); }
+  .tp-ph { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  .tp-ph h2 { margin:0; font-size:1.1rem; flex:1; }
+  .tp-mini { font-size:.78rem; padding:3px 10px; border-radius:7px; border:1px solid var(--border); background:var(--btn-secondary-bg); color:var(--text); cursor:pointer; }
+  .tp-mini:hover, .tp-mini.on { border-color:var(--accent); }
+  .tp-wk { display:grid; grid-template-columns:30px 76px minmax(0,1fr) auto; gap:10px; align-items:center; padding:8px 2px;
+           border-bottom:1px solid var(--border); font-size:.93rem; }
+  .tp-wk:last-child { border-bottom:none; }
+  .tp-wk input { width:18px; height:18px; margin:0; }
+  .tp-wk .no { font-weight:800; color:var(--text-muted); }
+  .tp-wk.off { opacity:.55; }
+  .tp-wk .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tp-pill { font-size:.72rem; font-weight:700; padding:2px 9px; border-radius:10px; white-space:nowrap; }
+  .tp-pill.g { background:color-mix(in srgb, var(--success) 20%, transparent); color:var(--success); }
+  .tp-pill.a { background:color-mix(in srgb, var(--accent) 22%, transparent); color:var(--accent); }
+  .tp-pill.m { background:var(--btn-secondary-bg); color:var(--text-muted); }
+  .tp-list { max-height:520px; overflow:auto; }
+  .tp-opt { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--border); margin:0; font-weight:400; }
+  .tp-opt input[type=checkbox] { width:18px; height:18px; margin:3px 0 0; flex:none; }
+  .tp-opt b { display:block; }
+  .tp-opt span { font-size:.84rem; color:var(--text-muted); }
+  .tp-num { display:inline-flex; align-items:center; gap:6px; margin-top:6px; font-size:.85rem; color:var(--text-muted); }
+  .tp-num input { width:76px !important; margin:0 !important; padding:4px 8px !important; }
+  .tp-sum { border:1px solid color-mix(in srgb, var(--accent) 50%, transparent); border-radius:12px; padding:14px; margin-top:12px; }
+  .tp-sum strong { font-size:1.35rem; color:var(--accent); display:block; }
+  .tp-sum .btn { width:100%; text-align:center; margin-top:10px; }
+  @media (max-width: 900px) { .tp-grid { grid-template-columns:1fr; } }
+</style>
+
+<p style="margin:0 0 10px;"><a href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}">&larr; {{ sow.title }} (scheme of work)</a></p>
+<div class="tp-bar">
+  <div class="tp-logo" aria-hidden="true">&#9889;</div>
+  <div class="tp-who">
+    <h1>Plan the term</h1>
+    <div class="tp-chips">
+      <span class="tp-chip">Scheme: <b>{{ sow.title }}</b></span>
+      {% if current %}<span class="tp-chip">Now: <b>week {{ current }}</b></span>{% endif %}
+      {% if sow.hours_per_week %}<span class="tp-chip"><b>{{ "%g"|format(sow.hours_per_week) }}</b> hours a week</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
+{% if running %}
+  <div class="card" role="status" style="border-left:4px solid var(--accent);margin-top:0;">This scheme is already being planned -
+    <a href="/term-plans/{{ running.id }}">see its progress</a>. You can start another plan once it has finished.</div>
+{% endif %}
+
+{% if sow.status != "ready" or not rows %}
+  <div class="card">This scheme of work isn't ready yet - once its weeks are written, you can plan them here.</div>
+{% elif not has_spec %}
+  <div class="card">Attach a parsed course specification first - each lesson is written from the spec's criteria for that week.</div>
+{% else %}
+<form method="post" class="tp-grid" id="tp-form">
+  <section class="tp-panel">
+    <div class="tp-ph"><h2>1. Which weeks?</h2>
+      <button type="button" class="tp-mini" data-pick="next4">Next 4 weeks</button>
+      <button type="button" class="tp-mini" data-pick="half">To half term</button>
+      <button type="button" class="tp-mini" data-pick="rest">Rest of term</button>
+      <button type="button" class="tp-mini" data-pick="none">None</button></div>
+    <div class="tp-list">
+    {% for r in rows %}
+      {% if r.gap %}
+        <div class="tp-wk off"><span></span><span class="no">Week {{ r.week }}</span><span class="t muted">No teaching planned (e.g. half term)</span><span></span></div>
+      {% else %}
+        {% set blocked = r.made or r.no_unit %}
+        <label class="tp-wk {% if blocked or r.past %}off{% endif %}" style="margin:0;font-weight:400;">
+          <input type="checkbox" name="weeks" value="{{ r.week }}" {% if blocked %}disabled{% endif %}
+                 {% if r.week in picks.next4 %}checked{% endif %} aria-label="Week {{ r.week }}: {{ r.title }}">
+          <span class="no">Week {{ r.week }}</span>
+          <span class="t" title="{{ r.title }}">{{ r.title }}</span>
+          {% if r.made %}<span class="tp-pill g">Already made</span>
+          {% elif r.no_unit %}<span class="tp-pill m" title="This week's outcomes don't match the spec's criteria (e.g. an assessment or review week) - make it by hand from the scheme page">Make by hand</span>
+          {% elif r.now %}<span class="tp-pill a">This week</span>
+          {% elif r.past %}<span class="tp-pill m">Past</span>
+          {% else %}<span></span>{% endif %}
+        </label>
+      {% endif %}
+    {% endfor %}
+    </div>
+    <p class="muted" style="font-size:.85rem;margin-bottom:0;">Weeks that already have a lesson are skipped - nothing you've made is replaced.</p>
+  </section>
+
+  <section class="tp-panel">
+    <div class="tp-ph"><h2>2. Each lesson gets</h2></div>
+    <label class="tp-opt"><input type="checkbox" checked disabled><span style="color:var(--text);"><b>A full PowerPoint</b>
+      <span>Starter → objectives → content → activities → plenary, from that week's criteria.</span>
+      <span class="tp-num">Lesson length <input type="number" name="hours" value="{{ '%g'|format(default_hours) }}" min="0.5" max="6" step="0.5" aria-label="Lesson length in hours"> hours</span></span></label>
+    <label class="tp-opt"><input type="checkbox" name="differentiate" value="1" checked><span style="color:var(--text);"><b>Support and stretch</b>
+      <span>Two versions of every activity, plus worksheets</span></span></label>
+    <label class="tp-opt"><input type="checkbox" name="quiz" value="1" checked id="tp-quiz"><span style="color:var(--text);"><b>A quiz</b>
+      <span>Written from the lesson, ready to run live or set as homework</span>
+      <span class="tp-num"><input type="number" name="quiz_count" value="8" min="3" max="15" aria-label="Questions per quiz"> questions</span></span></label>
+    <label class="tp-opt"><input type="checkbox" name="practicals" value="1"><span style="color:var(--text);"><b>Practical tasks</b>
+      <span>Hands-on activities where the topic allows</span></span></label>
+    <label class="tp-opt" style="border:none;"><input type="checkbox" name="join_up" value="1" checked><span style="color:var(--text);"><b>Join the weeks up</b>
+      <span>Each lesson opens by recapping the week before</span></span></label>
+    <div class="tp-sum">
+      <strong id="tp-count">0 lessons</strong>
+      <div class="muted" style="font-size:.88rem;margin-top:4px;" id="tp-time">Made one after another in the background. You can close the page - it carries on.</div>
+      <button class="btn" type="submit" id="tp-go" {% if running %}disabled{% endif %}>Plan these weeks</button>
+    </div>
+  </section>
+</form>
+<script>
+(function () {
+  var picks = {{ picks|tojson }};
+  var boxes = Array.prototype.slice.call(document.querySelectorAll("input[name=weeks]:not([disabled])"));
+  var quiz = document.getElementById("tp-quiz"), each = {{ estimate_each|tojson }};
+  function update() {
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    var q = quiz.checked;
+    document.getElementById("tp-count").textContent = n + " lesson" + (n === 1 ? "" : "s") + (q && n ? " · " + n + " quiz" + (n === 1 ? "" : "zes") : "");
+    var low = n * (q ? 3 : 2), high = n * (q ? 6 : 5);
+    document.getElementById("tp-time").textContent = n ? "Made one after another in the background - about " + low + "-" + high +
+      " minutes. You can close the page; it carries on." : "Tick the weeks to plan.";
+    document.getElementById("tp-go").disabled = !n {% if running %}|| true{% endif %};
+    document.getElementById("tp-go").textContent = n ? "Plan " + (n === 1 ? "this week" : "these " + n + " weeks") : "Plan these weeks";
+  }
+  document.querySelectorAll("[data-pick]").forEach(function (btn) {
+    btn.onclick = function () {
+      var want = picks[btn.dataset.pick] || [];
+      boxes.forEach(function (b) { b.checked = want.indexOf(Number(b.value)) !== -1; });
+      update();
+    };
+  });
+  boxes.forEach(function (b) { b.onchange = update; });
+  quiz.onchange = update;
+  update();
+})();
+</script>
+{% endif %}
+{% endblock %}

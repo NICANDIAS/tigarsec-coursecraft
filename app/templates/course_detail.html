@@ -188,6 +188,7 @@
           {% else %}
             <a class="cd-mini" href="/courses/{{ course.id }}/presentations/new?sow_id={{ tw.sow_id }}&week={{ tw.week }}">Make this week's lesson</a>
           {% endif %}
+          <a class="cd-mini" href="/courses/{{ course.id }}/scheme-of-work/{{ tw.sow_id }}/plan-term">&#9889; Plan the next weeks</a>
           {% if tw.next_title %}<div class="meta" style="color:var(--text-muted);font-size:.8rem;margin-top:6px;">Next: {{ tw.next_title }}</div>{% endif %}
           {% if tw.state == "no_date" %}<div class="meta" style="color:var(--text-muted);font-size:.8rem;margin-top:6px;">Give the scheme a start date to follow the weeks.</div>{% endif %}
         {% else %}
@@ -195,7 +196,9 @@
         {% endif %}
       </div>
     {% endif %}
-    {% set nothing = not ov.get("to_review") and not at_risk and not open_live and not failed_decks %}
+    {% set plan = ov.get("running_plan") %}
+    {% set nothing = not ov.get("to_review") and not at_risk and not open_live and not failed_decks and not plan %}
+    {% if plan %}<div class="cd-row"><span class="cd-pill a">&#9889;</span><a class="grow" href="/term-plans/{{ plan.id }}">Planning the term - {{ ov.plan_ready }} of {{ ov.plan_total }} lessons ready</a></div>{% endif %}
     {% if ov.get("to_review") %}<div class="cd-row"><span class="cd-pill a">{{ ov.to_review }}</span><a class="grow" href="/submissions/{{ ov.review_next }}/review">Work to review</a></div>{% endif %}
     {% if at_risk %}<div class="cd-row"><span class="cd-pill r">{{ at_risk|length }}</span><a class="grow" href="/courses/{{ course.id }}/tracker?risk=1" title="{{ at_risk|join(', ') }}">Student{{ "s" if at_risk|length != 1 }} at risk</a></div>{% endif %}
     {% if open_live %}<div class="cd-row"><span class="cd-pill a">&#9679;</span><a class="grow" href="/live/{{ open_live.id }}/teach">Live lesson still {{ "on a break" if open_live.state == "paused" else "open" }}</a></div>{% endif %}
@@ -242,6 +245,16 @@
     {% else %}
       <p class="cd-empty">Make one from any lesson ("Make a quiz from this lesson"), or start one here.</p>
     {% endfor %}
+    {% if homeworks %}
+      <div class="cd-count" style="margin:10px 0 2px;font-weight:700;">Homework</div>
+      {% for h in homeworks %}
+        <div class="cd-row">
+          <a class="grow" href="/homework/{{ h.hw.id }}" title="{{ h.hw.title }}">{{ h.hw.title }}</a>
+          {% if h.hw.due_at %}<span class="meta">due {{ h.hw.due_at.strftime("%-d %b") }}</span>{% endif %}
+          <span class="cd-pill {{ 'g' if h.class_size and h.done == h.class_size else 'm' }}">{{ h.done }}/{{ h.class_size }} in</span>
+        </div>
+      {% endfor %}
+    {% endif %}
     <form method="post" action="/courses/{{ course.id }}/quizzes/new" class="cd-inline">
       <input type="text" name="title" placeholder="New quiz title" maxlength="255" aria-label="New quiz title">
       <button class="btn btn-secondary cd-sm" type="submit">New quiz</button>
@@ -297,6 +310,7 @@
       <div class="cd-row">
         <a class="grow" href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}" title="{{ sow.title }}">{{ sow.title }}</a>
         {% if sow.status == "ready" %}<span class="meta">{{ (sow.weeks_json or [])|length }} weeks</span>
+          <a class="cd-mini" href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}/plan-term" title="Make many weeks' lessons in one go">&#9889; Plan the term</a>
         {% elif sow.status == "generating" %}<span class="cd-pill a">Generating…</span>
         {% elif sow.status == "failed" %}<span class="cd-pill r">Failed</span>
         {% else %}<span class="meta">{{ sow.status }}</span>{% endif %}

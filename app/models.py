@@ -1144,3 +1144,55 @@ class LiveResponse(Base):
     group_no = Column(Integer, nullable=True)  # the student's group when this was answered during group work
     image_path = Column(String(500), nullable=True)  # a photo with the answer (re-saved, location data removed) - lecturer only
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class TermPlan(Base):
+    """
+    Plan the term: many weeks of a scheme of work turned into lessons (and quizzes) in one go,
+    made one after another in the background. items_json lists the weeks and the lesson/quiz
+    made for each - their progress is read from those rows, so this only records the plan.
+    """
+    __tablename__ = "term_plans"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    sow_id = Column(Integer, ForeignKey("schemes_of_work.id"), nullable=False)
+    options_json = Column(JSON, nullable=True)   # {"minutes", "differentiate", "quiz", "quiz_count", "practicals", "join_up"}
+    items_json = Column(JSON, nullable=True)     # [{"week", "title", "deck_id", "quiz_id"}] in teaching order
+    state = Column(String(20), default="running", nullable=False)  # running | stopped | done
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class Homework(Base):
+    """
+    A quiz set as homework: students open a link on their own phone or laptop, find themselves
+    on the class list and answer in their own time - no timer, no leaderboard. The questions
+    are copied in when it is set, so editing the quiz later never changes marked results.
+    """
+    __tablename__ = "homeworks"
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    quiz_set_id = Column(Integer, ForeignKey("quiz_sets.id"), nullable=True)
+    title = Column(String(255), nullable=False)
+    code = Column(String(12), nullable=False, index=True)
+    questions_json = Column(JSON, nullable=True)  # [{"question", "choices", "answer", "explanation"}]
+    due_at = Column(DateTime, nullable=True)
+    show_answers = Column(Boolean, default=True, nullable=False)  # right answers + explanations shown after handing in
+    is_open = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class HomeworkAttempt(Base):
+    """One student's go at a homework: their answers, score, and a random token kept in their
+    browser so the attempt stays theirs. One per student - the lecturer can reset it."""
+    __tablename__ = "homework_attempts"
+    id = Column(Integer, primary_key=True)
+    homework_id = Column(Integer, ForeignKey("homeworks.id"), nullable=False, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False, index=True)
+    token = Column(String(64), nullable=False, index=True)
+    answers_json = Column(JSON, nullable=True)  # {"0": choice index, ...}
+    score = Column(Integer, nullable=True)
+    total = Column(Integer, nullable=True)
+    started_at = Column(DateTime, default=datetime.datetime.utcnow)
+    submitted_at = Column(DateTime, nullable=True)

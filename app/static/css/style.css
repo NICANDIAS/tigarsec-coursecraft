@@ -86,7 +86,7 @@ h2 { font-size: 1.15rem; }
 .muted { color: var(--text-muted); font-size: 0.9rem; line-height: 1.55; }
 
 input[type="text"], input[type="email"], input[type="password"], input[type="number"],
-input[type="date"], textarea, select {
+input[type="date"], input[type="time"], input[type="search"], textarea, select {
   width: 100%;
   padding: 10px 12px;
   border-radius: 8px;
