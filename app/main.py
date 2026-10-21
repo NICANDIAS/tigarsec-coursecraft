@@ -11,12 +11,14 @@ from .auth import NotAuthenticated, NotAuthorized, get_current_teacher
 from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks, feedback, ai_providers, data_retention, sow_templates, exam_exemplars, timetabling, practice, live, quizzes, marking_report, tracker, term_plan, homework, pace
 from .schema_check import diff_schema, apply_schema_fix
 from . import retention
+from .security import SecurityHeadersMiddleware
 
 # Schema creation/updates are now handled by Alembic (run automatically on container
 # startup via docker-entrypoint.sh) instead of create_all() here - this is what lets
 # schema changes ship as real migrations instead of requiring a database reset.
 
 app = FastAPI(title="TIGARSEC CourseCraft")
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")

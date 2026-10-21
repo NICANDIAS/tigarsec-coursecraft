@@ -9,17 +9,22 @@ from ..auth import hash_password, verify_password, create_access_token, create_p
 from ..system_settings import get_system_settings, parse_allowed_domains, email_domain_allowed
 from .. import otp as otp_module
 from ..email_sender import send_email, is_configured as email_is_configured
+from ..security import registration_open, login_throttle, wait_message, client_ip
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["registration_open"] = registration_open
+
+CLOSED_MESSAGE = "New accounts are created by the admin here. Ask them for a login."
 
 
 @router.get("/register", response_class=HTMLResponse)
 def register_page(request: Request, db: Session = Depends(get_db)):
-    # v1 keeps registration open for simplicity on a single-college internal server.
-    # If deploying somewhere less trusted, gate this behind an invite code or disable
-    # after your initial teacher accounts are created.
+    # Open by default (a college LAN). REGISTRATION=closed in .env (a public demo) means only
+    # the admin creates accounts - except the very first one, so a fresh install gets its admin.
     is_first_account = db.query(Teacher).count() == 0
+    if not is_first_account and not registration_open():
+        return templates.TemplateResponse("login.html", {"request": request, "error": CLOSED_MESSAGE})
     settings = get_system_settings(db)
     allowed_domains = parse_allowed_domains(settings.allowed_email_domains)
     return templates.TemplateResponse(
@@ -37,6 +42,8 @@ def register_submit(
     db: Session = Depends(get_db),
 ):
     is_first_account = db.query(Teacher).count() == 0
+    if not is_first_account and not registration_open():
+        return templates.TemplateResponse("login.html", {"request": request, "error": CLOSED_MESSAGE}, status_code=403)
     settings = get_system_settings(db)
     allowed_domains = parse_allowed_domains(settings.allowed_email_domains)
 
@@ -84,11 +91,17 @@ def login_submit(
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    ip = client_ip(request)
+    wait = login_throttle.blocked_for(email, ip)
+    if wait:
+        return templates.TemplateResponse("login.html", {"request": request, "error": wait_message(wait)}, status_code=429)
     teacher = db.query(Teacher).filter(Teacher.email == email).first()
     if not teacher or not verify_password(password, teacher.hashed_password):
+        login_throttle.failed(email, ip)
         return templates.TemplateResponse(
             "login.html", {"request": request, "error": "Incorrect email or password."}
         )
+    login_throttle.succeeded(email)
     if not teacher.is_active:
         return templates.TemplateResponse(
             "login.html", {"request": request, "error": "This account has been deactivated. Contact your admin."}
@@ -214,12 +227,19 @@ def verify_2fa_submit(
     if teacher_id is None:
         return RedirectResponse(url="/login", status_code=303)
 
+    otp_key = f"2fa-teacher-{teacher_id}"
+    ip = client_ip(request)
+    wait = login_throttle.blocked_for(otp_key, ip)
+    if wait:
+        return templates.TemplateResponse("login_verify_2fa.html", {"request": request, "error": wait_message(wait)}, status_code=429)
     if not otp_module.verify_otp(db, teacher_id, code):
+        login_throttle.failed(otp_key, ip)
         return templates.TemplateResponse(
             "login_verify_2fa.html",
             {"request": request, "error": "That code is incorrect or has expired. Request a new one by logging in again."},
         )
 
+    login_throttle.succeeded(otp_key)
     token = create_access_token(teacher_id)
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie(key="access_token", value=token, httponly=True, max_age=12 * 3600)
