@@ -11,6 +11,8 @@
     <input type="password" name="password" required>
     <button class="btn" type="submit">Log in</button>
   </form>
+  {% if registration_open() %}
   <p class="muted" style="margin-top:14px;">No account yet? <a href="/register">Register</a></p>
+  {% endif %}
 </div>
 {% endblock %}

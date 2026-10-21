@@ -8,15 +8,20 @@ from fastapi.templating import Jinja2Templates
 from .database import engine, Base, SessionLocal
 from .models import Course, CourseTeacher
 from .auth import NotAuthenticated, NotAuthorized, get_current_teacher
-from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks, feedback, ai_providers, data_retention, sow_templates, exam_exemplars, timetabling, practice, live, quizzes, marking_report, tracker, term_plan, homework, pace
+from .routers import auth_router, courses, specs, scheme_of_work, students, submissions, admin, analytics, iv, presentations, tasks, feedback, ai_providers, data_retention, sow_templates, exam_exemplars, timetabling, practice, live, quizzes, marking_report, tracker, term_plan, homework, pace, vendor, data_export
 from .schema_check import diff_schema, apply_schema_fix
 from . import retention
+from .security import SecurityHeadersMiddleware
+from . import licence_service
 
 # Schema creation/updates are now handled by Alembic (run automatically on container
 # startup via docker-entrypoint.sh) instead of create_all() here - this is what lets
 # schema changes ship as real migrations instead of requiring a database reset.
 
 app = FastAPI(title="TIGARSEC CourseCraft")
+# Order matters: the last added runs first, so security headers also go on licence pages.
+app.add_middleware(licence_service.LicenceMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
@@ -125,6 +130,26 @@ async def start_retention_loop():
     asyncio.create_task(_retention_loop())
 
 
+async def _licence_loop():
+    """Hourly: pick up licence files dropped into data/licence/inbox/, note stage changes, send
+    due admin reminders (app/licence_service.run_checks). Never stops the app."""
+    while True:
+        db = SessionLocal()
+        try:
+            state = licence_service.run_checks(db)
+            print(f"[licence] {state['label']} - end date {state['ends']}", flush=True)
+        except Exception as e:
+            print(f"[licence] hourly check failed (non-fatal): {e}", flush=True)
+        finally:
+            db.close()
+        await asyncio.sleep(3600)
+
+
+@app.on_event("startup")
+async def start_licence_loop():
+    asyncio.create_task(_licence_loop())
+
+
 @app.exception_handler(NotAuthenticated)
 async def not_authenticated_handler(request: Request, exc: NotAuthenticated):
     return RedirectResponse(url="/login")
@@ -187,3 +212,14 @@ app.include_router(tracker.router)
 app.include_router(term_plan.router)
 app.include_router(homework.router)
 app.include_router(pace.router)
+app.include_router(vendor.router)
+app.include_router(data_export.router)
+
+
+# The licence notice in base.html: every router has its own template environment, so give each
+# one the same helper (it only ever shows the end date and who to contact - never details).
+import sys as _sys
+for _name, _mod in list(_sys.modules.items()):
+    if _name.startswith(__package__ + ".routers.") and hasattr(_mod, "templates"):
+        _mod.templates.env.globals["licence_banner"] = licence_service.licence_banner
+templates.env.globals["licence_banner"] = licence_service.licence_banner

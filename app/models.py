@@ -1198,3 +1198,35 @@ class HomeworkAttempt(Base):
     total = Column(Integer, nullable=True)
     started_at = Column(DateTime, default=datetime.datetime.utcnow)
     submitted_at = Column(DateTime, nullable=True)
+
+
+class LicenceRecord(Base):
+    """A TIGARSEC licence installed on this copy (app/licence.py). Kept forever as history; the
+    one in force is worked out from the dates each time. Only the TIGARSEC console (/vendor)
+    shows these - never college admins."""
+    __tablename__ = "licence_records"
+    id = Column(Integer, primary_key=True)
+    licence_id = Column(String(64), nullable=False, index=True)
+    raw = Column(Text, nullable=False)  # the signed file exactly as issued - re-checked on every load
+    installed_at = Column(DateTime, default=datetime.datetime.utcnow)
+    installed_by = Column(String(100), nullable=False, default="TIGARSEC")  # "TIGARSEC console" or "file drop"
+
+
+class LicenceMeta(Base):
+    """One row (id=1): this installation's identity and licence bookkeeping."""
+    __tablename__ = "licence_meta"
+    id = Column(Integer, primary_key=True)
+    install_id = Column(String(64), nullable=False)
+    first_started_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    last_stage = Column(String(30), nullable=True)
+    reminders_sent = Column(JSON, nullable=True)  # ["CC-2026-0007:60", ...] so each email goes once
+
+
+class LicenceEvent(Base):
+    """Licensing history (installs, stage changes, console sign-ins). Its own table, NOT the
+    audit log, because college admins can read the audit log and licensing is TIGARSEC-only."""
+    __tablename__ = "licence_events"
+    id = Column(Integer, primary_key=True)
+    action = Column(String(60), nullable=False)
+    detail = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)

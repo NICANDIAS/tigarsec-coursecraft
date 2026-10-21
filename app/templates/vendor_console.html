@@ -1,0 +1,90 @@
+{% extends "base_auth.html" %}
+{% block title %}TIGARSEC console{% endblock %}
+{% block content %}
+<div style="max-width:960px;margin:24px auto;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+    <h1 style="margin:0;">TIGARSEC licence console</h1>
+    <form method="post" action="/vendor/logout"><button class="btn btn-secondary" type="submit">Sign out</button></form>
+  </div>
+  {% if msg %}<div class="card" style="border-left:4px solid var(--success, #2e7d32);margin-top:14px;">{{ msg }}</div>{% endif %}
+  {% if err %}<div class="error-box" style="margin-top:14px;">{{ err }}</div>{% endif %}
+
+  {% set s = state %}
+  <div class="card" style="margin-top:14px;">
+    <h2 style="margin-top:0;">Now: {{ s.label }}</h2>
+    <table class="table">
+      <tr><th>End date</th><td>{{ s.ends.strftime('%-d %b %Y') }} ({{ s.days_left }} day{{ '' if s.days_left in (1, -1) else 's' }} {{ 'left' if s.days_left >= 0 else 'ago' }})</td></tr>
+      <tr><th>Grace until</th><td>{{ s.grace_until.strftime('%-d %b %Y') }}</td></tr>
+      <tr><th>Read-only until</th><td>{{ s.readonly_until.strftime('%-d %b %Y') }}, then export-only</td></tr>
+      <tr><th>Next change</th><td>{% if s.next_change %}{{ s.next_change.strftime('%-d %b %Y') }}: {{ s.next_stage | replace('_', '-') }}{% else %}none (renew to restore){% endif %}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">Licence in force</h2>
+    {% if lic %}
+      <table class="table">
+        <tr><th>Licence</th><td><code>{{ lic.id }}</code> ({{ lic.type }})</td></tr>
+        <tr><th>Licensee</th><td>{{ lic.licensee }}</td></tr>
+        <tr><th>Edition</th><td>{{ lic.edition }}</td></tr>
+        <tr><th>Lecturer seats</th><td>{{ lic.seats }} (active staff accounts now: {{ staff_active }}, of which admins {{ admins_active }}) <span class="muted">- seat limits are enforced from phase 3</span></td></tr>
+        <tr><th>Valid</th><td>{{ lic.valid_from }} to {{ lic.valid_until }} (+{{ lic.grace_days }} grace, +{{ lic.readonly_days }} read-only)</td></tr>
+        {% if lic.updates_until %}<tr><th>Updates until</th><td>{{ lic.updates_until }}</td></tr>{% endif %}
+        {% if lic.install_id %}<tr><th>Bound to install</th><td><code>{{ lic.install_id }}</code> <span class="muted">- checked from phase 3</span></td></tr>{% endif %}
+        <tr><th>Issued</th><td>{{ lic.issued or '' }} with key {{ lic.kid }}</td></tr>
+      </table>
+    {% else %}
+      <p>No licence in force - this copy is running as a {{ 30 }}-day evaluation from {{ s.first_started.strftime('%-d %b %Y') }}.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">Install a licence</h2>
+    <form method="post" action="/vendor/licence" enctype="multipart/form-data">
+      <label>Licence file (.cclicence)</label>
+      <input type="file" name="licence_file" accept=".cclicence,.txt">
+      <p class="muted" style="margin:8px 0;">or paste it:</p>
+      <textarea name="licence_text" rows="6" style="width:100%;font-family:monospace;" spellcheck="false"></textarea>
+      <button class="btn" type="submit" style="margin-top:10px;">Check and install</button>
+    </form>
+    <p class="muted" style="margin-bottom:0;">A licence is checked before anything is stored. Installing a renewal takes effect within a minute - no restart.</p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">This installation</h2>
+    <table class="table">
+      <tr><th>Install ID</th><td><code>{{ s.install_id }}</code></td></tr>
+      <tr><th>First started with licensing</th><td>{{ s.first_started.strftime('%-d %b %Y') }}</td></tr>
+      <tr><th>What admins see</th><td>{{ admin_banner.text if admin_banner else 'nothing' }}</td></tr>
+      <tr><th>What lecturers see</th><td>{{ staff_banner.text if staff_banner else 'nothing' }}</td></tr>
+      <tr><th>Renewal contact shown</th><td>{{ contact }}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">Licence history</h2>
+    {% if rows or problems %}
+    <table class="table">
+      <tr><th>Licence</th><th>Licensee</th><th>Valid</th><th>Installed</th><th>Status</th></tr>
+      {% for r in rows %}
+        <tr><td><code>{{ r.lic.id }}</code></td><td>{{ r.lic.licensee }}</td><td>{{ r.lic.valid_from }} to {{ r.lic.valid_until }}</td>
+            <td>{{ r.rec.installed_at.strftime('%-d %b %Y %H:%M') }} by {{ r.rec.installed_by }}</td><td>{{ r.status }}</td></tr>
+      {% endfor %}
+      {% for rec, reason in problems %}
+        <tr><td><code>{{ rec.licence_id }}</code></td><td colspan="3">{{ reason }}</td><td>Not valid</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p>None installed yet.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">Licensing events</h2>
+    <p class="muted">Only shown here - never in the college's audit log.</p>
+    <table class="table">
+      {% for e in events %}
+        <tr><td style="white-space:nowrap;">{{ e.created_at.strftime('%-d %b %Y %H:%M') }}</td><td>{{ e.action | replace('_', ' ') }}</td><td>{{ e.detail }}</td></tr>
+      {% else %}<tr><td>No events yet.</td></tr>{% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base_auth.html" %}
+{% block title %}TIGARSEC console{% endblock %}
+{% block content %}
+<div class="card" style="max-width:640px;margin:40px auto;">
+  <h1>TIGARSEC licence console</h1>
+  <p class="muted">For TIGARSEC only. Signing in needs TIGARSEC's private signing key; CourseCraft accounts can't open this page.</p>
+  {% if not keys_ready %}
+    <div class="error-box">Licensing isn't set up in this build: <code>app/licence_keys.py</code> has no TIGARSEC public key yet.
+      Run <code>python ccl.py init</code> in the tigarsec-licensing folder and follow its instructions.</div>
+  {% endif %}
+  {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+  <p>Challenge code <span class="muted">(valid {{ minutes }} minutes, one use)</span>:</p>
+  <p style="font-size:1.6rem;font-family:monospace;letter-spacing:2px;margin:6px 0 14px;"><strong>{{ code }}</strong></p>
+  {% if install_id %}<p class="muted">This installation: <code>{{ install_id }}</code></p>{% endif %}
+  <p>On your Mac, in the tigarsec-licensing folder:</p>
+  <pre style="white-space:pre-wrap;">python ccl.py vendor-login {{ code }}</pre>
+  <form method="post" action="/vendor/login">
+    <input type="hidden" name="code" value="{{ code }}">
+    <label for="answer">Paste the answer it prints</label>
+    <textarea id="answer" name="answer" rows="4" required style="width:100%;font-family:monospace;" autocomplete="off" spellcheck="false"></textarea>
+    <button class="btn" type="submit" style="margin-top:10px;">Sign in</button>
+  </form>
+</div>
+{% endblock %}
