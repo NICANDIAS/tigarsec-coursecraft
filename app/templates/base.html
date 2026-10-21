@@ -67,6 +67,7 @@
               {% if teacher.role == "admin" %}
                 <a href="/admin/system-settings" class="{{ 'active' if request.url.path == '/admin/system-settings' }}">System Settings</a>
                 <a href="/admin/data-retention" class="{{ 'active' if request.url.path == '/admin/data-retention' }}">Data Retention</a>
+                <a href="/admin/export" class="{{ 'active' if request.url.path == '/admin/export' }}">Data export</a>
               {% endif %}
             </div>
           </div>
@@ -80,6 +81,9 @@
 
     <div class="main-area">
       <div class="main-content">
+        {% if licence_banner is defined and teacher is defined %}{% set _lb = licence_banner(teacher) %}{% if _lb %}
+          <div class="error-box" style="margin-bottom:16px;border-color:{{ {'info': 'var(--border)', 'warning': 'var(--warning)', 'danger': 'var(--danger)'}[_lb.level] }};color:{{ 'inherit' if _lb.level == 'info' else ({'warning': 'var(--warning)', 'danger': 'var(--danger)'}[_lb.level]) }};">{{ _lb.text }}</div>
+        {% endif %}{% endif %}
         {% if request.query_params.get("two_factor_admin_bypass") %}
           <div class="error-box" style="border-color:var(--danger);color:var(--danger);margin-bottom:16px;">
             ⚠ You logged in on your password alone via the admin emergency bypass - two-factor

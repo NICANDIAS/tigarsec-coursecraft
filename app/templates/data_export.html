@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Data export{% endblock %}
+{% block content %}
+<h1>Data export</h1>
+<div class="card">
+  <p>Download <strong>everything</strong> in this CourseCraft as one zip file: every table as a spreadsheet
+     (CSV, opens in Excel) and every stored file ({{ files }} files, about {{ size_mb }} MB before compression).
+     It opens without CourseCraft.</p>
+  <p class="muted">Not included, on purpose: passwords, the email password, AI keys, one-time login codes and students'
+     private browser tokens. Those are secrets, not data. The zip contains student personal data - keep it as safely
+     as you would the college's other student records.</p>
+  <form method="post" action="/admin/export/build" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Preparing - this can take a minute...';">
+    <button class="btn" type="submit">Download full export</button>
+  </form>
+  <p class="muted" style="margin-bottom:0;">Each download is recorded in the Audit Log. Available to admins at all times.</p>
+</div>
+{% endblock %}
