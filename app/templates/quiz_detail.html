@@ -38,6 +38,25 @@
     {% endif %}
     <a class="btn btn-secondary" href="/quizzes/{{ quiz.id }}?edit=1">Edit questions</a>
   </div>
+  {% if questions %}
+    <div class="card" id="homework">
+      <strong>Set as homework</strong>
+      <span class="muted"> - students answer in their own time on their phone or laptop, no timer. Results go against your class list.</span>
+      {% for h in homeworks %}
+        <div class="list-item" style="margin-top:6px;"><a href="/homework/{{ h.id }}">Homework{% if h.due_at %} due {{ h.due_at.strftime("%a %-d %b") }}{% endif %}</a>
+          <span class="muted">{{ "Open" if h.is_open else "Closed" }} · code {{ h.code }}</span></div>
+      {% endfor %}
+      <form method="post" action="/quizzes/{{ quiz.id }}/homework" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;">
+        <div><label for="hw-due" style="margin:0 0 4px;font-size:.85rem;">Due date (optional)</label>
+          <input type="date" id="hw-due" name="due_date" style="margin:0;width:auto;"></div>
+        <div><label for="hw-time" style="margin:0 0 4px;font-size:.85rem;">Time</label>
+          <input type="time" id="hw-time" name="due_time" value="23:59" style="margin:0;width:auto;"></div>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:400;margin:0 0 8px;"><input type="checkbox" name="show_answers" value="1" checked style="width:auto;margin:0;">
+          Show the right answers after they hand in</label>
+        <button class="btn" type="submit" style="margin-bottom:2px;">{{ "Set it again" if homeworks else "Set as homework" }}</button>
+      </form>
+    </div>
+  {% endif %}
   {% for q in questions %}
     <div class="qz-card">
       <strong>{{ loop.index }}. {{ q.question }}</strong>

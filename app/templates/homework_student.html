@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ hw.title }} - homework</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon.png">
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,sans-serif; background:#f3f5f9; color:#1a1a1e; }
+  header { background:linear-gradient(90deg,#0f2744,#1e3a5f); color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  header .t { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  header .me { font-size:0.85rem; opacity:0.9; white-space:nowrap; }
+  main { padding:16px; max-width:640px; margin:0 auto; }
+  .card { background:#fff; border-radius:12px; padding:16px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.06); }
+  h1 { font-size:1.3rem; margin:0 0 8px; color:#0f2744; }
+  .muted { color:#5b5b63; font-size:.92rem; }
+  .due { display:inline-block; background:#fff4d6; color:#7a5200; border-radius:8px; padding:3px 10px; font-size:.85rem; font-weight:600; margin-bottom:8px; }
+  label.f { display:block; font-weight:600; margin:12px 0 6px; }
+  input[type=text] { width:100%; font-size:1.05rem; padding:12px; border:2px solid #d5d9e2; border-radius:10px; font-family:inherit; }
+  input[type=text]:focus { outline:3px solid #e0a52666; border-color:#e0a526; }
+  .btn { display:block; width:100%; margin-top:14px; padding:14px; font-size:1.05rem; font-weight:700; border:none; border-radius:12px;
+         background:#2f6fe4; color:#fff; cursor:pointer; text-align:center; text-decoration:none; }
+  .err { background:#fdecea; color:#a3261b; border-radius:10px; padding:10px 12px; margin-bottom:12px; }
+  .q { font-weight:600; line-height:1.4; margin-bottom:10px; }
+  .qn { font-size:.8rem; color:#5b5b63; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+  .opt { display:flex; gap:10px; align-items:center; padding:12px; border:2px solid #d5d9e2; border-radius:10px; margin:8px 0; cursor:pointer; font-size:1rem; }
+  .opt input { width:20px; height:20px; margin:0; flex:none; accent-color:#2f6fe4; }
+  .opt:has(input:checked) { border-color:#2f6fe4; background:#eef3ff; }
+  .bar { position:sticky; bottom:0; background:#f3f5f9; padding:10px 0 14px; }
+  .count { text-align:center; font-size:.9rem; color:#5b5b63; }
+  .score { font-size:2.4rem; font-weight:800; color:#0f2744; }
+  .rv { border-left:4px solid #d5d9e2; padding:8px 12px; margin:10px 0; }
+  .rv.ok { border-color:#1b8a4b; } .rv.no { border-color:#a3261b; }
+  .rv .tag { font-size:.78rem; font-weight:800; text-transform:uppercase; }
+  .rv.ok .tag { color:#1b8a4b; } .rv.no .tag { color:#a3261b; } .rv .tag.skip { color:#5b5b63; }
+  .rv .why { background:#f3f5f9; border-radius:8px; padding:8px 10px; margin-top:6px; font-size:.92rem; }
+</style>
+</head>
+<body>
+<header><span class="t">{{ hw.title }}</span><span class="me">{% if name %}{{ name }}{% else %}Homework{% endif %}</span></header>
+<main>
+{% if view == "closed" %}
+  <div class="card"><h1>This homework is closed</h1><p class="muted">Your lecturer has closed it. If you still need to do it, ask them to open it again.</p></div>
+
+{% elif view == "name" %}
+  <div class="card">
+    <h1>{{ hw.title }}</h1>
+    {% if due %}<span class="due">{{ due }}</span>{% endif %}
+    <p class="muted" style="margin-top:0;">{{ (hw.questions_json or [])|length }} questions. Answer in your own time - there's no timer. You hand it in once.</p>
+    {% if error %}<div class="err" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" action="/hw/{{ hw.code }}/start">
+      <label class="f" for="hw-name">Your first and last name</label>
+      <input type="text" id="hw-name" name="name" value="{{ typed }}" autocomplete="name" maxlength="80" required>
+      {% if ask_ref %}
+        <label class="f" for="hw-ref">Your student reference</label>
+        <input type="text" id="hw-ref" name="student_ref" autocomplete="off" maxlength="40" required>
+      {% endif %}
+      <button class="btn" type="submit">Start</button>
+    </form>
+    <p class="muted" style="font-size:.82rem;margin-bottom:0;">Your name is checked against your class list so the result goes to you.</p>
+  </div>
+
+{% elif view == "answer" %}
+  {% if error %}<div class="err" role="alert">{{ error }}</div>{% endif %}
+  <div class="card" style="padding:12px 16px;">
+    {% if due %}<span class="due" style="margin:0;">{{ due }}</span>{% endif %}
+    <span class="muted" style="margin-left:6px;">Your answers save as you go.</span>
+  </div>
+  <form method="post" action="/hw/{{ hw.code }}/submit" id="hw-form">
+    {% for q in questions %}
+      {% set i = loop.index0 %}
+      <fieldset class="card" style="border:none;margin:0 0 14px;" aria-labelledby="hwq{{ i }}">
+        <div class="qn">Question {{ loop.index }} of {{ questions|length }}</div>
+        <div class="q" id="hwq{{ i }}">{{ q.question }}</div>
+        {% for c in q.choices %}
+          <label class="opt"><input type="radio" name="q{{ i }}" value="{{ loop.index0 }}" data-q="{{ i }}"
+                 {% if saved.get(i|string) == loop.index0 %}checked{% endif %}> <span>{{ c }}</span></label>
+        {% endfor %}
+      </fieldset>
+    {% endfor %}
+    <div class="bar">
+      <div class="count" id="hw-count"></div>
+      <button class="btn" type="submit" style="margin-top:6px;">Hand it in</button>
+    </div>
+  </form>
+  <script>
+  (function () {
+    var form = document.getElementById("hw-form"), total = {{ questions|length }};
+    function answered() { var n = 0; for (var i = 0; i < total; i++) { if (form.querySelector("input[name=q" + i + "]:checked")) n++; } return n; }
+    function update() { var n = answered(); document.getElementById("hw-count").textContent = n + " of " + total + " answered"; }
+    form.addEventListener("change", function (e) {
+      var r = e.target; if (r.type !== "radio") return; update();
+      var data = new FormData(); data.append("q", r.dataset.q); data.append("choice", r.value);
+      fetch("/hw/{{ hw.code }}/save", {method: "POST", body: data, credentials: "same-origin"}).catch(function () {});
+    });
+    form.addEventListener("submit", function (e) {
+      var left = total - answered();
+      var msg = left ? left + " question" + (left === 1 ? " is" : "s are") + " not answered. Hand it in anyway? You can't change it afterwards."
+                     : "Hand it in? You can't change your answers afterwards.";
+      if (!confirm(msg)) e.preventDefault();
+    });
+    update();
+  })();
+  </script>
+
+{% elif view == "done" %}
+  <div class="card" style="text-align:center;">
+    <h1>Handed in &#10003;</h1>
+    <div class="score">{{ attempt.score }} / {{ attempt.total }}</div>
+    <p class="muted">{{ attempt.submitted_at.strftime("%a %-d %b, %H:%M") }}{% if late %} · handed in after the due date{% endif %}</p>
+  </div>
+  <div class="card">
+    <h1 style="font-size:1.1rem;">Your answers</h1>
+    {% for r in review %}
+      <div class="rv {{ 'ok' if r.right else 'no' if r.right is sameas false else '' }}">
+        {% if r.right %}<span class="tag">Right</span>{% elif r.right is sameas false %}<span class="tag">Not quite</span>{% else %}<span class="tag skip">Not answered</span>{% endif %}
+        <div class="q" style="margin:2px 0 4px;">{{ loop.index }}. {{ r.question }}</div>
+        {% if r.picked %}<div class="muted">You picked: {{ r.picked }}</div>{% endif %}
+        {% if hw.show_answers and not r.right %}
+          <div class="why"><strong>Answer: {{ r.answer }}</strong>{% if r.explanation %} - {{ r.explanation }}{% endif %}</div>
+        {% elif hw.show_answers and r.explanation %}<div class="why">{{ r.explanation }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    {% if not hw.show_answers %}<p class="muted">Your lecturer will go through the answers in class.</p>{% endif %}
+  </div>
+{% endif %}
+</main>
+</body>
+</html>

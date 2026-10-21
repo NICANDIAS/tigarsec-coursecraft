@@ -119,6 +119,8 @@ def course_detail(
         quizzes = db.query(QuizSet).filter(QuizSet.course_id == course_id).order_by(QuizSet.id.desc()).limit(10).all()
         spec_json = course.spec_version.structured_json if course.spec_version and course.spec_version.structured_json else {}
         overview = _course_overview(db, course, teacher, recent_decks)
+        from .homework import homework_summaries
+        homeworks = homework_summaries(db, course.id, limit=6)
         return templates.TemplateResponse(
             "course_detail.html",
             {
@@ -133,6 +135,7 @@ def course_detail(
                 "live_answer_counts": live_answer_counts,
                 "is_exam_spec": has_exam_objectives(spec_json),
                 "overview": overview,
+                "homeworks": homeworks,
             },
         )
     except Exception:
@@ -150,7 +153,18 @@ def _course_overview(db, course, teacher, decks):
     """The course page's "needs you" numbers and "This week" card. Each part is worked out on its
     own and a problem in one never stops the page loading - it just leaves that part out."""
     from ..course_overview import this_week
-    out = {"to_review": 0, "review_next": None, "at_risk": [], "open_live": None, "this_week": None, "met_pct": None}
+    out = {"to_review": 0, "review_next": None, "at_risk": [], "open_live": None, "this_week": None, "met_pct": None,
+           "running_plan": None, "plan_ready": 0, "plan_total": 0}
+    try:  # Plan the term still making lessons
+        from ..models import TermPlan
+        plan = (db.query(TermPlan).filter(TermPlan.course_id == course.id, TermPlan.state == "running")
+                .order_by(TermPlan.id.desc()).first())
+        if plan:
+            ids = [i["deck_id"] for i in plan.items_json or [] if i.get("deck_id")]
+            out["running_plan"], out["plan_total"] = plan, len(ids)
+            out["plan_ready"] = sum(1 for d in decks if d.id in ids and d.status == "ready")
+    except Exception:
+        pass
     waiting = (db.query(Submission.id).join(Student, Submission.student_id == Student.id)
                .filter(Student.course_id == course.id, Student.is_active.is_(True), Submission.status == "needs_review")
                .order_by(Submission.id).all())
@@ -169,8 +183,16 @@ def _course_overview(db, course, teacher, decks):
     except Exception:
         pass
     try:
-        schemes = [{"id": s.id, "title": s.title, "status": s.status, "start_date": s.start_date, "weeks": s.weeks_json or []}
-                   for s in course.schemes_of_work]
+        from ..sow_calendar import scheme_now
+        from ..pace import resume_slide
+        schemes = []
+        for s in course.schemes_of_work:
+            entry = {"id": s.id, "title": s.title, "status": s.status, "start_date": s.start_date, "weeks": s.weeks_json or []}
+            if s.status == "ready" and s.weeks_json:
+                now, _cal = scheme_now(s, course.start_date)  # college calendar, corrections and carried-on weeks
+                entry.update(now=now, corrected=bool(s.week_anchor_json),
+                             resume={(now["week"], now.get("part", 1)): resume_slide(s.pace_json, now["week"], now.get("part", 1))})
+            schemes.append(entry)
         out["this_week"] = this_week(schemes, course.start_date, [
             {"id": d.id, "status": d.status, "source_sow_id": d.source_sow_id, "source_week": d.source_week} for d in decks],
             datetime.date.today())
@@ -191,7 +213,12 @@ def _delete_live_and_practice(db, course_id: int):
         db.query(LiveParticipant).filter(LiveParticipant.session_id.in_(session_ids)).delete(synchronize_session=False)
         db.query(LiveSession).filter(LiveSession.id.in_(session_ids)).delete(synchronize_session=False)
     db.query(PracticeSet).filter(PracticeSet.course_id == course_id).delete(synchronize_session=False)
-    from ..models import QuizSet, MarkingInsight  # Stage 8, Stage 10
+    from ..models import QuizSet, MarkingInsight, Homework, HomeworkAttempt, TermPlan  # Stage 8, Stage 10, Stage 14
+    hw_ids = [h.id for h in db.query(Homework).filter(Homework.course_id == course_id).all()]
+    if hw_ids:  # homework and every student's answers to it
+        db.query(HomeworkAttempt).filter(HomeworkAttempt.homework_id.in_(hw_ids)).delete(synchronize_session=False)
+        db.query(Homework).filter(Homework.id.in_(hw_ids)).delete(synchronize_session=False)
+    db.query(TermPlan).filter(TermPlan.course_id == course_id).delete(synchronize_session=False)
     db.query(QuizSet).filter(QuizSet.course_id == course_id).delete(synchronize_session=False)
     db.query(MarkingInsight).filter(MarkingInsight.course_id == course_id).delete(synchronize_session=False)
 

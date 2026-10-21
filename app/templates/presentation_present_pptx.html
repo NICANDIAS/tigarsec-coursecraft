@@ -68,7 +68,8 @@
   if (document.fonts && document.fonts.load) {
     Promise.all([document.fonts.load("16px Carlito"), document.fonts.load("bold 16px Carlito")]).then(function () { show(current); }, function () { show(current); });
   }
-  show(0);
+  var from = parseInt(new URLSearchParams(location.search).get("from") || "1", 10);  // "carry on from slide N"
+  show(isNaN(from) ? 0 : from - 1);
 })();
 </script>
 </body>

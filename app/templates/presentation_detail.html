@@ -70,6 +70,24 @@
     <div class="error-box" style="border-color:var(--warning);color:var(--warning);">{{ deck.error_detail }}</div>
   {% endif %}
 
+  {% if deck.source_sow_id and deck.source_week and deck.status == "ready" %}
+    <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <span style="flex:1;min-width:220px;">Week {{ deck.source_week }} of the scheme. After teaching it - did the class get it?</span>
+      <a class="btn btn-secondary" href="/lesson-decks/{{ deck.id }}/how-did-it-go" title="Move on, or carry this lesson on into next week">How did it go?</a>
+    </div>
+  {% endif %}
+  {% if resume_slide %}
+    <div class="card" style="border-left:4px solid var(--success);display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <span style="flex:1;min-width:220px;">This lesson <strong>carries on</strong> into the next teaching week - pick up from <strong>slide {{ resume_slide }}</strong>.</span>
+      <a class="btn btn-secondary" href="/lesson-decks/{{ deck.id }}/present?from={{ resume_slide }}" target="_blank">Present from slide {{ resume_slide }}</a>
+      {% if deck.outline_json %}
+        <form method="post" action="/lesson-decks/{{ deck.id }}/live/start" style="display:inline;margin:0;">
+          <input type="hidden" name="from_slide" value="{{ resume_slide }}">
+          <button class="btn" type="submit">Run live from slide {{ resume_slide }}</button></form>
+      {% endif %}
+    </div>
+  {% endif %}
+
   <div class="card">
     {% if deck.pptx_path %}
       <a class="btn" href="/lesson-decks/{{ deck.id }}/download">Download PowerPoint (.pptx)</a>
@@ -85,6 +103,7 @@
       {% if is_owner %}
         <a class="btn btn-secondary" href="/lesson-decks/{{ deck.id }}/share">Share for cover</a>
       {% endif %}
+
     {% else %}
       <p class="muted">Marked as ready, but no file was recorded - this shouldn't happen. Try generating again.</p>
     {% endif %}

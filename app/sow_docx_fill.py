@@ -43,6 +43,13 @@ from .docx_xml_edit import (
 )
 
 WEEK_HEADER_HINTS = ("week", "date", "commencing")
+
+# A ONE-DAY event in a week's row (a staff conference day, an INSET day, a bank holiday) never stops
+# the rest of that week being taught - so those rows are filled like an append-eligible label, the
+# topic written under the event. Whole-week closures (half term, holidays, induction week) are not matched.
+SINGLE_DAY_EVENT = re.compile(
+    r"\b(conference|inset|insett|staff\s+development|staff\s+training|training|cpd|polling|exam\s+board)\s+days?\b|\bbank\s+holiday\b",
+    re.IGNORECASE)
 DATE_LABEL_PATTERNS = {
     "start_date": re.compile(r'\bstart\s*date\b', re.IGNORECASE),
     "end_date": re.compile(r'\bend\s*date\b', re.IGNORECASE),
@@ -207,6 +214,8 @@ def _row_fill_mode(row, append_eligible_labels: list[str]) -> str:
         return "blank"
     if append_eligible_labels and any(label.lower() in other_text.lower() for label in append_eligible_labels):
         return "append"
+    if SINGLE_DAY_EVENT.search(other_text):
+        return "append"  # a one-day event - the rest of the week is still taught
     return "protected"
 
 
@@ -625,3 +634,42 @@ def fill_sow_template_docx(
     finally:
         import shutil
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+
+def template_calendar(template_path: str, append_eligible_labels: list[str] | None = None) -> list | None:
+    """
+    The college calendar inside a scheme-of-work template, row by row:
+    [{"date": week-commencing date or None, "available": True if the fill writes a scheme week
+    into this row, "label": the row's own text for rows it leaves alone, e.g. "Half Term"}].
+    Uses the exact same row choice as fill_sow_template_docx, so the scheme's 1st week is the
+    1st available row, its 2nd week the 2nd, and so on - induction weeks, half terms and
+    closures are the rows in between. Returns None if the template can't be read.
+    """
+    append_eligible_labels = append_eligible_labels or []
+    try:
+        work_dir, unpacked = unzip_docx(template_path)
+        try:
+            tree, _ = parse_document_xml(unpacked)
+            grid_table = _find_grid_table(tree.getroot())
+            if grid_table is None:
+                return None
+            out = []
+            for row in grid_table.findall(qn("w:tr"))[1:]:
+                cells = row.findall(qn("w:tc"))
+                available = _row_fill_mode(row, append_eligible_labels) in ("blank", "append")
+                label = "" if available else " ".join(" ".join(cell_text(c) for c in cells[1:]).split())[:80]
+                out.append({"date": _parse_grid_date(cell_text(cells[0]).strip()) if cells else None,
+                            "available": available, "label": label})
+            return out
+        finally:
+            import shutil
+            shutil.rmtree(work_dir, ignore_errors=True)
+    except Exception:
+        return None
+
+
+def available_week_dates(template_path: str, append_eligible_labels: list[str] | None = None) -> list | None:
+    """The week-commencing date of each row the fill writes into, in order (None = no readable date)."""
+    rows = template_calendar(template_path, append_eligible_labels)
+    return None if rows is None else [r["date"] for r in rows if r["available"]]

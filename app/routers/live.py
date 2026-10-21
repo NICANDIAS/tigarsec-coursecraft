@@ -30,7 +30,7 @@ from ..auth import get_current_teacher
 from ..course_access import get_course_for_teacher
 import os
 
-from ..live_activities import (screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally,
+from ..live_activities import (start_screen_for_slide, screens_from_deck, screens_from_practice, new_join_code, clean_name, clean_answer, tally,
                                clean_public_url, join_link, is_local_only, attach_pptx_slides, choose_join_base,
                                poll_screen, make_groups, smallest_group, student_notes)
 from ..qr import qr_svg
@@ -73,7 +73,8 @@ def _new_session(db, teacher, course_id, title, screens, deck_id=None, practice_
 
 
 @router.post("/lesson-decks/{deck_id}/live/start")
-def live_start_from_deck(deck_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher)):
+def live_start_from_deck(deck_id: int, db: Session = Depends(get_db), teacher: Teacher = Depends(get_current_teacher),
+                         from_slide: int = Form(0)):
     deck = db.get(LessonDeck, deck_id)
     if not _can_access_deck(deck, teacher, db) or not deck.outline_json:
         return RedirectResponse(url="/", status_code=303)
@@ -82,6 +83,11 @@ def live_start_from_deck(deck_id: int, db: Session = Depends(get_db), teacher: T
     if layout:
         attach_pptx_slides(screens, deck.outline_json, len(layout["slides"]))  # show the REAL slides on the big screen
     session = _new_session(db, teacher, deck.course_id, deck.title, screens, deck_id=deck.id)
+    if isinstance(from_slide, int) and from_slide > 1:  # carrying a lesson on: open on the slide the class reached
+        start = start_screen_for_slide(session.screens_json or [], from_slide)
+        if start:
+            session.current_screen = start
+            db.commit()
     return RedirectResponse(url=f"/live/{session.id}/teach", status_code=303)
 
 

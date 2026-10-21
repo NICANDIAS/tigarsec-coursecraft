@@ -73,7 +73,25 @@ def student_summary(db, student):
         next_by_unit.append({"unit": unit, "grade": sub.achieved_grade, "plan": plan, "submission_id": sub.id})
     return {"subs": subs, "best_grade": best, "next_by_unit": next_by_unit,
             "steps_left": sum(len(n["plan"]["steps"]) for n in next_by_unit),
-            "to_review": sum(1 for s in subs if s.status == "needs_review")}
+            "to_review": sum(1 for s in subs if s.status == "needs_review"),
+            "homework": student_homework(db, student)}
+
+
+def student_homework(db, student, limit=10):
+    """The course's homework, newest first, with this student's result (or that they haven't done it)."""
+    from ..models import Homework, HomeworkAttempt
+    from ..homework import is_late
+    hws = db.query(Homework).filter(Homework.course_id == student.course_id).order_by(Homework.id.desc()).limit(limit).all()
+    attempts = {a.homework_id: a for a in db.query(HomeworkAttempt).filter(
+        HomeworkAttempt.student_id == student.id, HomeworkAttempt.homework_id.in_([h.id for h in hws] or [0])).all()}
+    out = []
+    for hw in hws:
+        a = attempts.get(hw.id)
+        done = bool(a and a.submitted_at)
+        out.append({"hw": hw, "done": done, "started": bool(a) and not done,
+                    "pct": round(100 * a.score / a.total) if done and a.total else None,
+                    "score": f"{a.score}/{a.total}" if done else None, "late": done and is_late(hw.due_at, a.submitted_at)})
+    return out
 
 
 @router.post("/courses/{course_id}/students/{student_id}/edit")
@@ -124,6 +142,8 @@ def delete_student(
     db.commit()
     for sub in submissions:
         delete_submission(sub.id, db, teacher)
+    from ..models import HomeworkAttempt
+    db.query(HomeworkAttempt).filter(HomeworkAttempt.student_id == student_id).delete(synchronize_session=False)  # their homework answers go too
     db.delete(db.get(Student, student_id))
     db.commit()
     return RedirectResponse(url=f"/courses/{course_id}?imported={q('Student deleted.')}#students", status_code=303)

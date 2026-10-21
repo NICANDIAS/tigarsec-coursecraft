@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Homework: {{ hw.title }} - TIGARSEC Assess{% endblock %}
+{% block content %}
+<style>
+  .hw-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; border:1px solid var(--border); background:var(--bg-elevated);
+            border-radius:14px; padding:16px 18px; margin-bottom:14px; box-shadow:var(--shadow); }
+  .hw-logo { width:54px; height:54px; border-radius:12px; background:var(--accent); color:var(--accent-text); display:flex; align-items:center;
+             justify-content:center; font-size:1.4rem; flex:none; }
+  .hw-who { flex:1; min-width:240px; }
+  .hw-who h1 { margin:0 0 6px; font-size:1.5rem; }
+  .hw-chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .hw-chip { font-size:.82rem; padding:3px 10px; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+  .hw-chip b { color:var(--text); }
+  .hw-chip.open { color:var(--success); border-color:color-mix(in srgb, var(--success) 45%, transparent); }
+  .hw-chip.closed { color:var(--danger); border-color:color-mix(in srgb, var(--danger) 45%, transparent); }
+  .hw-tiles { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+  .hw-tile { border:1px solid var(--border); background:var(--bg-elevated); border-radius:12px; padding:12px 16px; }
+  .hw-tile b { display:block; font-size:1.6rem; line-height:1.2; }
+  .hw-tile span { color:var(--text-muted); font-size:.85rem; }
+  .hw-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); gap:14px; align-items:start; }
+  .hw-panel { border:1px solid var(--border); background:var(--bg-elevated); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); margin-bottom:14px; }
+  .hw-panel h2 { margin:0 0 10px; font-size:1.1rem; }
+  .hw-row { display:flex; align-items:center; gap:10px; padding:8px 2px; border-bottom:1px solid var(--border); font-size:.93rem; }
+  .hw-row:last-child { border-bottom:none; }
+  .hw-row .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hw-row form { margin:0; }
+  .hw-pill { font-size:.72rem; font-weight:700; padding:2px 9px; border-radius:10px; white-space:nowrap; }
+  .hw-pill.g { background:color-mix(in srgb, var(--success) 20%, transparent); color:var(--success); }
+  .hw-pill.a { background:color-mix(in srgb, var(--accent) 22%, transparent); color:var(--accent); }
+  .hw-pill.r { background:color-mix(in srgb, var(--danger) 20%, transparent); color:var(--danger); }
+  .hw-pill.m { background:var(--btn-secondary-bg); color:var(--text-muted); }
+  .hw-mini { font-size:.75rem; padding:2px 9px; border-radius:7px; border:1px solid var(--border); background:var(--btn-secondary-bg); color:var(--text); cursor:pointer; }
+  .hw-link { display:flex; gap:8px; align-items:center; }
+  .hw-link input { margin:0 !important; flex:1; font-family:ui-monospace,monospace; font-size:.9rem; }
+  .hw-qr { background:#fff; border-radius:10px; padding:8px; display:inline-block; margin-top:10px; }
+  .hw-q { padding:8px 0; border-bottom:1px solid var(--border); font-size:.92rem; }
+  .hw-q:last-child { border-bottom:none; }
+  .hw-meter { height:8px; border-radius:6px; background:var(--btn-secondary-bg); overflow:hidden; margin-top:6px; }
+  .hw-meter div { height:100%; }
+  .hw-set label { margin-top:8px; font-size:.88rem; }
+  .hw-set input[type=date], .hw-set input[type=time] { margin:0; width:auto; }
+  @media (max-width: 900px) { .hw-grid { grid-template-columns:1fr; } .hw-tiles { grid-template-columns:1fr; } }
+</style>
+
+<p style="margin:0 0 10px;"><a href="/courses/{{ hw.course_id }}#quizzes">&larr; Back to the course</a>
+  {% if quiz %} · <a href="/quizzes/{{ quiz.id }}">the quiz</a>{% endif %}</p>
+<div class="hw-bar">
+  <div class="hw-logo" aria-hidden="true">&#127968;</div>
+  <div class="hw-who">
+    <h1>Homework: {{ hw.title }}</h1>
+    <div class="hw-chips">
+      {% if hw.is_open %}<span class="hw-chip open">Open</span>{% else %}<span class="hw-chip closed">Closed</span>{% endif %}
+      <span class="hw-chip">{{ due or "No due date" }}</span>
+      <span class="hw-chip"><b>{{ (hw.questions_json or [])|length }}</b> questions</span>
+      <span class="hw-chip">Code <b>{{ hw.code }}</b></span>
+    </div>
+  </div>
+</div>
+
+<div class="hw-tiles">
+  <div class="hw-tile"><b>{{ handed }} / {{ rows|length }}</b><span>handed in</span></div>
+  <div class="hw-tile"><b>{{ "%d%%" % avg if avg is not none else "–" }}</b><span>class average</span></div>
+  <div class="hw-tile"><b>{{ rows|selectattr("state", "equalto", "not_started")|list|length }}</b><span>not started yet</span></div>
+</div>
+
+<div class="hw-grid">
+  <div>
+    <section class="hw-panel">
+      <h2>The class</h2>
+      {% for r in rows %}
+        <div class="hw-row">
+          <a class="grow" href="/courses/{{ hw.course_id }}/students/{{ r.student.id }}">{{ r.student.name }}</a>
+          {% if r.state == "handed_in" %}
+            {% if r.late %}<span class="hw-pill a">Late</span>{% endif %}
+            <span class="hw-pill {{ 'g' if r.pct >= 60 else 'a' if r.pct >= 40 else 'r' }}">{{ r.attempt.score }}/{{ r.attempt.total }} · {{ r.pct }}%</span>
+          {% elif r.state == "started" %}<span class="hw-pill m">Started</span>
+          {% else %}<span class="hw-pill m">Not started</span>{% endif %}
+          {% if r.attempt %}
+            <form method="post" action="/homework/{{ hw.id }}/reset/{{ r.student.id }}"
+                  onsubmit="return confirm('Clear this student\'s attempt so they can do it again? Their answers are deleted.');">
+              <button class="hw-mini" type="submit" title="Let them do it again">Reset</button></form>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="muted">No students on this course yet - import the class list first, so students can find their name.</p>
+      {% endfor %}
+    </section>
+
+    <section class="hw-panel">
+      <h2>Question by question</h2>
+      {% if handed %}
+        {% for s in stats %}
+          <div class="hw-q">
+            <strong>{{ loop.index }}.</strong> {{ s.question }}
+            {% if s.pct_right is not none %}
+              <div class="hw-meter" role="img" aria-label="{{ s.pct_right }}% right"><div style="width:{{ s.pct_right }}%;background:{{ 'var(--success)' if s.pct_right >= 60 else 'var(--warning)' if s.pct_right >= 40 else 'var(--danger)' }};"></div></div>
+              <div class="muted" style="font-size:.82rem;margin-top:4px;">{{ s.pct_right }}% right{% if s.common_wrong %} · most common wrong answer: "{{ s.common_wrong }}"{% endif %}</div>
+            {% else %}<div class="muted" style="font-size:.82rem;">Nobody answered this one.</div>{% endif %}
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="muted" style="margin:0;">Appears once students hand in - which questions the class found hard, and the wrong answer most of them picked.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <div>
+    <section class="hw-panel">
+      <h2>Give students this link</h2>
+      <div class="hw-link">
+        <input type="text" value="{{ link }}" readonly id="hw-link" aria-label="Homework link">
+        <button class="btn btn-secondary" type="button" id="hw-copy" style="padding:6px 12px;">Copy</button>
+      </div>
+      <div class="hw-qr" aria-label="QR code for the homework link">{{ qr|safe }}</div>
+      <p class="muted" style="font-size:.85rem;">Post it in Teams or on the board. Students type their name - it's matched to the class list, so they never see who else is in the class.</p>
+      {% if local_only %}
+        <p class="error-box" style="font-size:.85rem;">This address only works on this computer. Set the address students use in Settings so phones can open it.</p>
+      {% else %}
+        <p class="muted" style="font-size:.85rem;">Students can only open it where they can reach CourseCraft - for work at home, the server must be reachable from outside college.</p>
+      {% endif %}
+    </section>
+
+    <section class="hw-panel">
+      <h2>Settings</h2>
+      <form method="post" action="/homework/{{ hw.id }}/settings" class="hw-set">
+        <label for="hw-due">Due date</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="date" id="hw-due" name="due_date" value="{{ hw.due_at.strftime('%Y-%m-%d') if hw.due_at else '' }}">
+          <input type="time" name="due_time" value="{{ hw.due_at.strftime('%H:%M') if hw.due_at else '23:59' }}" aria-label="Due time">
+        </div>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400;"><input type="checkbox" name="show_answers" value="1" {% if hw.show_answers %}checked{% endif %} style="width:auto;margin:0;">
+          Show students the right answers after they hand in</label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:400;"><input type="checkbox" name="is_open" value="1" {% if hw.is_open %}checked{% endif %} style="width:auto;margin:0;">
+          Open - students can still start and hand in</label>
+        <button class="btn btn-secondary" type="submit" style="margin-top:10px;">Save settings</button>
+      </form>
+      <p class="muted" style="font-size:.82rem;">Late work is still accepted while it's open, and marked "Late".</p>
+      <form method="post" action="/homework/{{ hw.id }}/delete" style="margin-top:12px;"
+            onsubmit="return confirm('Delete this homework and every student\'s answers to it? This cannot be undone.');">
+        <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Delete homework</button>
+      </form>
+    </section>
+  </div>
+</div>
+<script>
+document.getElementById("hw-copy").onclick = function () {
+  var box = document.getElementById("hw-link"); box.select();
+  try { navigator.clipboard.writeText(box.value); } catch (e) { document.execCommand("copy"); }
+  this.textContent = "Copied";
+};
+</script>
+{% endblock %}

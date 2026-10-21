@@ -1180,8 +1180,9 @@ def download_sow(
             "intended_impact": sow.intended_impact,
         }
         try:
+            from ..pace import paced_weeks  # the scheme as really taught: carried-on weeks printed again, combined weeks together
             report, warnings = fill_sow_template_docx(
-                sow.format_sample_file_path, sow.weeks_json or [], header_updates, output_path,
+                sow.format_sample_file_path, paced_weeks(sow.weeks_json or [], sow.pace_json), header_updates, output_path,
                 _parse_append_labels(sow.append_eligible_labels),
             )
             # Surfaced on the next page load rather than failing the download - the file

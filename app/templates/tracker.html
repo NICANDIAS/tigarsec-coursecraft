@@ -104,4 +104,31 @@ it updates by itself as you mark. Click a result to open that piece of work.</p>
     </div>
   {% endif %}
 {% endif %}
+
+{% if homework %}
+  <div class="card" style="margin-top:14px;" id="homework">
+    <h2 style="margin-top:0;">Homework</h2>
+    <p class="muted" style="margin-top:0;">% right in each homework set from a quiz. Click a heading for that homework's full results.</p>
+    <div class="tr-wrap" style="max-height:none;">
+      <table class="tr">
+        <thead><tr><th class="name">Student</th>
+          {% for c in homework.columns %}<th style="white-space:normal;min-width:110px;"><a href="/homework/{{ c.id }}">{{ c.title }}</a>
+            {% if c.due %}<div class="muted" style="font-weight:400;font-size:.75rem;">due {{ c.due.strftime("%-d %b") }}</div>{% endif %}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for r in rows %}
+            <tr><td class="name"><a href="/courses/{{ course.id }}/students/{{ r.student.id }}" style="text-decoration:none;color:var(--text);">{{ r.student.name }}</a></td>
+              {% for cell in homework.cells.get(r.student.id, []) %}
+                {% if cell.pct is not none %}
+                  <td class="{{ 'c-met' if cell.pct >= 60 else 'c-partly' if cell.pct >= 40 else 'c-not' }}">{{ cell.pct }}%{% if cell.late %} <span title="handed in late">·L</span>{% endif %}</td>
+                {% elif cell.state == "started" %}<td class="muted">started</td>
+                {% else %}<td class="muted">–</td>{% endif %}
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          <tr class="foot"><td class="name">Class average</td>{% for c in homework.columns %}<td>{{ "%d%%" % c.avg if c.avg is not none else "" }}</td>{% endfor %}</tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
 {% endblock %}

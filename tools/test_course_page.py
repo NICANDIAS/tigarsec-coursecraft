@@ -3,14 +3,14 @@ Tests for the course page redesign's "This week" card (app/course_overview.py). 
 
 Run (from ~/projects/coursecraft):
   docker compose run --rm --no-deps -v "$PWD":/app --entrypoint python app tools/test_course_page.py
-Expected last line: "ALL 6 TESTS PASSED"
+Expected last line: "ALL 8 TESTS PASSED"
 """
 import datetime
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from app.course_overview import this_week, week_number  # noqa: E402
+from app.course_overview import this_week, week_number, current_week  # noqa: E402
 
 TESTS = []
 
@@ -70,6 +70,32 @@ def no_ready_scheme_means_no_card():
     assert this_week([], START, [], START) is None
     assert this_week([sow(status="generating")], START, [], START) is None
     assert this_week([sow(weeks=[])], START, [], START) is None
+
+
+@test
+def the_college_calendar_beats_counting_weeks_from_the_start_date():
+    """Weeks 1-5 of the scheme, but two induction weeks before them and half term after week 5."""
+    d = lambda m, day: datetime.date(2026, m, day)
+    dates = {1: d(9, 22), 2: d(9, 29), 3: d(10, 6), 4: d(10, 13), 5: d(10, 20), 6: d(11, 3)}
+    start = d(9, 8)  # counting from here would say week 7 on 20 Oct
+    assert week_number(start, d(10, 21)) == 7
+    now = current_week(list(dates), start, d(10, 21), dates)
+    assert now["state"] == "teaching" and now["week"] == 5 and now["source"] == "calendar"
+    brk = current_week(list(dates), start, d(10, 28), dates)
+    assert brk["state"] == "break" and brk["week"] == 6 and brk["days_to_start"] == 6
+    assert current_week(list(dates), start, d(9, 15), dates)["state"] == "before"
+    tw = this_week([sow(weeks=[{"week": n, "title": f"T{n}"} for n in range(1, 7)], week_dates=dates, start_date=start)], None, [], d(10, 28))
+    assert tw["state"] == "break" and tw["week"] == 6 and tw["title"] == "T6"
+
+
+@test
+def the_lecturers_correction_wins_and_moves_on_each_week():
+    anchor = {"week": 5, "monday": "2026-10-19"}
+    weeks = list(range(1, 15))
+    assert current_week(weeks, START, datetime.date(2026, 10, 21), None, anchor) == \
+        {"state": "teaching", "week": 5, "days_to_start": 0, "source": "corrected"}
+    assert current_week(weeks, START, datetime.date(2026, 10, 26), None, anchor)["week"] == 6
+    assert current_week(weeks, START, datetime.date(2026, 10, 21), {1: START}, anchor)["week"] == 5  # beats a template too
 
 
 if __name__ == "__main__":

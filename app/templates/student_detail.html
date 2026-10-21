@@ -109,6 +109,20 @@
       {% endfor %}
     </div>
 
+    {% if homework %}
+    <div class="card">
+      <h2 style="margin-top:0;">Homework</h2>
+      {% for h in homework %}
+        <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+          <a href="/homework/{{ h.hw.id }}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ h.hw.title }}</a>
+          {% if h.done %}{% if h.late %}<span class="sp-small">late</span>{% endif %}<strong>{{ h.score }}</strong> <span class="sp-small">{{ h.pct }}%</span>
+          {% elif h.started %}<span class="sp-small">started</span>
+          {% else %}<span class="sp-small" style="color:var(--danger);">not done</span>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="card">
       <h2 style="margin-top:0;">Manage</h2>
       <form method="post" action="/courses/{{ course.id }}/students/{{ student.id }}/toggle-active" style="margin:0;">

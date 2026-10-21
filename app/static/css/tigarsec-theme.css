@@ -95,3 +95,13 @@ html[data-theme="light"] .sidebar {
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.18);
 }
+
+/* Native form controls (date/time pickers, number arrows, select arrows) follow the theme -
+   without this the browser draws them dark-on-dark and the calendar icon disappears. */
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator { opacity: 1; cursor: pointer; }
+/* number arrows always visible, not only on hover */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { opacity: 1; cursor: pointer; }

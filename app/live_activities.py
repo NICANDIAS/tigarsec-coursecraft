@@ -272,3 +272,11 @@ def student_notes(title: str, screens: list, mine: dict, when: str = "") -> str:
             lines.append(f"  My answer: {answer}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def start_screen_for_slide(screens: list, slide_no: int) -> int:
+    """The first live screen showing PowerPoint slide `slide_no` (1 = the first slide). Screens that
+    know their slide (attach_pptx_slides) are matched exactly; otherwise screen N-1."""
+    if any(isinstance(s.get("slide"), int) for s in screens):
+        return next((i for i, s in enumerate(screens) if isinstance(s.get("slide"), int) and s["slide"] >= slide_no - 1), 0)
+    return max(0, min(len(screens) - 1, slide_no - 1)) if screens else 0

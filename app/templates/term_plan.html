@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Planning {{ sow.title if sow else "the term" }} - TIGARSEC Assess{% endblock %}
+{% block content %}
+<style>
+  .tp-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; border:1px solid var(--border); background:var(--bg-elevated);
+            border-radius:14px; padding:16px 18px; margin-bottom:14px; box-shadow:var(--shadow); }
+  .tp-logo { width:54px; height:54px; border-radius:12px; background:var(--accent); color:var(--accent-text); display:flex; align-items:center;
+             justify-content:center; font-size:1.5rem; flex:none; }
+  .tp-who { flex:1; min-width:240px; }
+  .tp-who h1 { margin:0 0 6px; font-size:1.55rem; }
+  .tp-chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .tp-chip { font-size:.82rem; padding:3px 10px; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
+  .tp-chip b { color:var(--text); }
+  .tp-acts { display:flex; gap:8px; flex-wrap:wrap; }
+  .tp-acts form { margin:0; }
+  .tp-panel { border:1px solid var(--border); background:var(--bg-elevated); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); }
+  .tp-ph { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .tp-ph h2 { margin:0; font-size:1.15rem; flex:1; }
+  .tp-prog { height:12px; border-radius:8px; background:var(--btn-secondary-bg); overflow:hidden; margin:12px 0 6px; }
+  .tp-prog div { height:100%; background:var(--accent); transition:width .4s; }
+  .tp-row { display:grid; grid-template-columns:76px minmax(0,1fr) 130px 130px 90px; gap:12px; align-items:center; padding:10px 2px;
+            border-bottom:1px solid var(--border); font-size:.92rem; }
+  .tp-row:last-child { border-bottom:none; }
+  .tp-row.h { font-size:.75rem; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); }
+  .tp-row .no { font-weight:800; color:var(--text-muted); }
+  .tp-row .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tp-row form { margin:0; }
+  .tp-pill { font-size:.72rem; font-weight:700; padding:2px 9px; border-radius:10px; white-space:nowrap; display:inline-block; }
+  .tp-pill.g { background:color-mix(in srgb, var(--success) 20%, transparent); color:var(--success); }
+  .tp-pill.a { background:color-mix(in srgb, var(--accent) 22%, transparent); color:var(--accent); }
+  .tp-pill.r { background:color-mix(in srgb, var(--danger) 20%, transparent); color:var(--danger); }
+  .tp-pill.m { background:var(--btn-secondary-bg); color:var(--text-muted); }
+  .tp-spin { display:inline-block; width:9px; height:9px; border-radius:50%; border:2px solid currentColor; border-right-color:transparent;
+             margin-right:5px; vertical-align:-1px; animation:tp-spin .9s linear infinite; }
+  @keyframes tp-spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .tp-spin { animation:none; } }
+  .tp-mini { font-size:.75rem; padding:2px 9px; border-radius:7px; border:1px solid var(--border); background:var(--btn-secondary-bg); color:var(--text) !important;
+             cursor:pointer; text-decoration:none !important; white-space:nowrap; }
+  @media (max-width: 760px) { .tp-row { grid-template-columns:60px minmax(0,1fr) 100px; } .tp-row .q, .tp-row .h-q { display:none; } }
+</style>
+{% set p = status.progress %}
+{% set weeks = plan.items_json or [] %}
+{% set stuck = status.state == "running" and not status.alive and not p.finished %}
+
+<p style="margin:0 0 10px;"><a href="/courses/{{ course.id }}">&larr; {{ course.name }}</a>
+  {% if sow %} · <a href="/courses/{{ course.id }}/scheme-of-work/{{ sow.id }}">{{ sow.title }}</a>{% endif %}</p>
+<div class="tp-bar">
+  <div class="tp-logo" aria-hidden="true">&#9889;</div>
+  <div class="tp-who">
+    <h1>{% if weeks|length == 1 %}Planning week {{ weeks[0].week }}{% else %}Planning weeks {{ weeks[0].week if weeks else "" }}–{{ weeks[-1].week if weeks else "" }}{% endif %}</h1>
+    <div class="tp-chips">
+      <span class="tp-chip">Started <b>{{ plan.created_at.strftime("%-d %b, %H:%M") if plan.created_at else "" }}</b></span>
+      <span class="tp-chip"><b>{{ "%g"|format((opts.minutes or 60) / 60) }}</b> hour lessons</span>
+      {% if opts.differentiate %}<span class="tp-chip">Support &amp; stretch</span>{% endif %}
+      {% if opts.quiz %}<span class="tp-chip">{{ opts.quiz_count }}-question quizzes</span>{% endif %}
+    </div>
+  </div>
+  <div class="tp-acts">
+    {% if p.ready %}<a class="btn btn-secondary" href="/term-plans/{{ plan.id }}/download">Download all (zip)</a>{% endif %}
+    {% if status.state == "running" and not stuck %}
+      <form method="post" action="/term-plans/{{ plan.id }}/stop" onsubmit="return confirm('Stop after the lesson being made now? Weeks not started yet are left out - you can make them later.');">
+        <button class="btn btn-secondary" type="submit" style="color:var(--danger);border-color:var(--danger);">Stop after this one</button></form>
+    {% endif %}
+  </div>
+</div>
+
+<section class="tp-panel">
+  <div class="tp-ph">
+    <h2 id="tp-head">{% if status.state == "done" or (p.finished and status.state != "stopped") %}All done - {{ p.ready }} of {{ p.total }} lesson{{ "s" if p.total != 1 }} ready
+      {% elif status.state == "stopped" %}Stopped - {{ p.ready }} lesson{{ "s" if p.ready != 1 }} ready
+      {% else %}{{ p.ready }} of {{ p.total }} lesson{{ "s" if p.total != 1 }} ready{% endif %}</h2>
+    {% if status.minutes_left and status.state == "running" and not stuck %}<span class="muted" style="font-size:.88rem;">about {{ status.minutes_left[0] }}–{{ status.minutes_left[1] }} minutes left</span>{% endif %}
+  </div>
+  <div class="tp-prog" role="progressbar" aria-valuenow="{{ p.pct }}" aria-valuemin="0" aria-valuemax="100"><div style="width:{{ p.pct }}%;"></div></div>
+  {% if stuck %}
+    <div class="error-box" role="alert" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <span style="flex:1;">CourseCraft was restarted while this plan was being made. Nothing is lost - carry on from where it stopped.</span>
+      <form method="post" action="/term-plans/{{ plan.id }}/continue" style="margin:0;"><button class="btn" type="submit">Continue</button></form>
+    </div>
+  {% elif status.state == "stopped" and status.rows|selectattr("stopped")|list %}
+    <div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:0;">
+      <span style="flex:1;">{{ status.rows|selectattr("stopped")|list|length }} week{{ "s" if status.rows|selectattr("stopped")|list|length != 1 }} not made.</span>
+      <form method="post" action="/term-plans/{{ plan.id }}/continue" style="margin:0;"><button class="btn btn-secondary" type="submit">Make the rest</button></form>
+    </div>
+  {% elif status.state == "running" %}
+    <p class="muted" style="font-size:.85rem;margin:0 0 6px;">You can close this page - it carries on, and each lesson appears on the course page as soon as it's ready.</p>
+  {% endif %}
+
+  <div class="tp-row h"><span>Week</span><span>Lesson</span><span>PowerPoint</span><span class="h-q">{% if opts.quiz %}Quiz{% endif %}</span><span></span></div>
+  {% for r in status.rows %}
+    <div class="tp-row">
+      <span class="no">Week {{ r.week }}</span>
+      <span class="t" title="{{ r.title }}">{% if r.deck_id and r.deck_status == "ready" %}<a href="/lesson-decks/{{ r.deck_id }}">{{ r.title }}</a>{% else %}{{ r.title }}{% endif %}</span>
+      <span>
+        {% if r.stopped %}<span class="tp-pill m">Not made</span>
+        {% elif r.state == "gone" %}<span class="tp-pill m">Deleted</span>
+        {% elif r.deck_status == "ready" %}<span class="tp-pill g">&#10003; Ready</span>
+        {% elif r.deck_status == "generating" %}<span class="tp-pill a"><span class="tp-spin"></span>Writing…</span>
+        {% elif r.deck_status == "failed" %}<span class="tp-pill r" title="{{ r.deck_error }}">Failed</span>
+        {% else %}<span class="tp-pill m">Waiting</span>{% endif %}
+      </span>
+      <span class="q">
+        {% if opts.quiz and not r.stopped and r.state != "gone" %}
+          {% if r.quiz_status == "ready" %}<a class="tp-pill g" href="/quizzes/{{ r.quiz_id }}" style="text-decoration:none;">&#10003; Ready</a>
+          {% elif r.quiz_status == "generating" %}<span class="tp-pill a"><span class="tp-spin"></span>Writing…</span>
+          {% elif r.quiz_status == "failed" %}<span class="tp-pill r">Failed</span>
+          {% elif r.deck_status != "failed" %}<span class="tp-pill m">Waiting</span>{% endif %}
+        {% endif %}
+      </span>
+      <span>
+        {% if r.state == "failed" %}
+          <form method="post" action="/term-plans/{{ plan.id }}/retry/{{ r.week }}"><button class="tp-mini" type="submit">Retry</button></form>
+        {% elif r.deck_status == "ready" %}<a class="tp-mini" href="/lesson-decks/{{ r.deck_id }}">Open</a>{% endif %}
+      </span>
+    </div>
+  {% endfor %}
+</section>
+
+{% if status.state == "running" and not stuck %}
+<script>
+(function () {
+  // checks every few seconds and refreshes the page when anything has moved on
+  var last = null;
+  function check() {
+    fetch("/term-plans/{{ plan.id }}/status", {credentials: "same-origin"}).then(function (r) { return r.json(); }).then(function (d) {
+      var sig = JSON.stringify([d.state, d.alive, d.rows.map(function (r) { return [r.deck_status, r.quiz_status]; })]);
+      if (last !== null && sig !== last) { window.location.reload(); return; }
+      last = sig;
+    }).catch(function () {});
+  }
+  check(); setInterval(check, 4000);
+})();
+</script>
+{% endif %}
+{% endblock %}

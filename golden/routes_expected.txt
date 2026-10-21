@@ -20,6 +20,7 @@ GET    /courses/{course_id}/scheme-of-work/new  ->  scheme_of_work.py:new_sow_pa
 GET    /courses/{course_id}/scheme-of-work/{sow_id}  ->  scheme_of_work.py:view_sow
 GET    /courses/{course_id}/scheme-of-work/{sow_id}/download  ->  scheme_of_work.py:download_sow
 GET    /courses/{course_id}/scheme-of-work/{sow_id}/edit  ->  scheme_of_work.py:edit_sow_page
+GET    /courses/{course_id}/scheme-of-work/{sow_id}/plan-term  ->  term_plan.py:plan_term_page
 GET    /courses/{course_id}/scheme-of-work/{sow_id}/status  ->  scheme_of_work.py:sow_status
 GET    /courses/{course_id}/similarity-check  ->  submissions.py:similarity_check
 GET    /courses/{course_id}/students/{student_id}  ->  students.py:student_detail
@@ -28,6 +29,8 @@ GET    /courses/{course_id}/tracker  ->  tracker.py:tracker_page
 GET    /courses/{course_id}/tracker.xlsx  ->  tracker.py:tracker_download
 GET    /exam-exemplars/{exemplar_id}/file  ->  exam_exemplars.py:view_exemplar_file
 GET    /feedback  ->  feedback.py:feedback_page
+GET    /homework/{homework_id}  ->  homework.py:homework_page
+GET    /hw/{code}  ->  homework.py:homework_student
 GET    /iv  ->  iv.py:iv_list
 GET    /iv/external/new  ->  iv.py:new_external_iv_page
 GET    /iv/send/{submission_id}  ->  iv.py:send_for_iv_page
@@ -35,6 +38,7 @@ GET    /iv/{iv_id}/review  ->  iv.py:iv_review
 GET    /join  ->  live.py:join_page
 GET    /lesson-decks/{deck_id}  ->  presentations.py:view_deck
 GET    /lesson-decks/{deck_id}/download  ->  presentations.py:download_deck
+GET    /lesson-decks/{deck_id}/how-did-it-go  ->  pace.py:how_did_it_go
 GET    /lesson-decks/{deck_id}/pptx-media/{slide_index}/{shape_index}  ->  presentations.py:deck_pptx_media
 GET    /lesson-decks/{deck_id}/present  ->  presentations.py:present_deck
 GET    /lesson-decks/{deck_id}/resources  ->  presentations.py:download_deck_resources
@@ -74,6 +78,9 @@ GET    /submissions/{submission_id}/review  ->  submissions.py:review_submission
 GET    /submissions/{submission_id}/status  ->  submissions.py:submission_status
 GET    /tasks  ->  tasks.py:tasks_page
 GET    /tasks/summary  ->  tasks.py:tasks_summary
+GET    /term-plans/{plan_id}  ->  term_plan.py:plan_page
+GET    /term-plans/{plan_id}/download  ->  term_plan.py:plan_download
+GET    /term-plans/{plan_id}/status  ->  term_plan.py:plan_status_json
 GET    /timetabling  ->  timetabling.py:timetabling_home
 GET    /timetabling/generate  ->  timetabling.py:generate_timetable_page
 GET    /timetabling/my-availability  ->  timetabling.py:my_availability
@@ -122,10 +129,14 @@ POST   /courses/{course_id}/quizzes/new  ->  quizzes.py:quiz_new
 POST   /courses/{course_id}/scheme-of-work/generate  ->  scheme_of_work.py:generate_sow
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/delete  ->  scheme_of_work.py:delete_sow
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/edit  ->  scheme_of_work.py:update_sow
+POST   /courses/{course_id}/scheme-of-work/{sow_id}/pace/merge  ->  pace.py:pace_merge
+POST   /courses/{course_id}/scheme-of-work/{sow_id}/pace/undo  ->  pace.py:pace_undo
+POST   /courses/{course_id}/scheme-of-work/{sow_id}/plan-term  ->  term_plan.py:plan_term_start
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/retry  ->  scheme_of_work.py:retry_sow
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/template  ->  scheme_of_work.py:replace_sow_template
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/template/remove  ->  scheme_of_work.py:remove_sow_template
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/template/use-shared  ->  scheme_of_work.py:use_shared_sow_template
+POST   /courses/{course_id}/scheme-of-work/{sow_id}/this-week  ->  term_plan.py:set_this_week
 POST   /courses/{course_id}/scheme-of-work/{sow_id}/weeks/{week_number}  ->  scheme_of_work.py:update_sow_week
 POST   /courses/{course_id}/start-date  ->  courses.py:set_course_start_date
 POST   /courses/{course_id}/students/create  ->  students.py:create_student
@@ -135,10 +146,17 @@ POST   /courses/{course_id}/students/{student_id}/submissions/upload  ->  submis
 POST   /courses/{course_id}/students/{student_id}/toggle-active  ->  students.py:toggle_student_active
 POST   /exam-exemplars/{exemplar_id}/delete  ->  exam_exemplars.py:delete_exam_exemplar
 POST   /feedback  ->  feedback.py:submit_feedback
+POST   /homework/{homework_id}/delete  ->  homework.py:homework_delete
+POST   /homework/{homework_id}/reset/{student_id}  ->  homework.py:homework_reset
+POST   /homework/{homework_id}/settings  ->  homework.py:homework_settings
+POST   /hw/{code}/save  ->  homework.py:homework_save
+POST   /hw/{code}/start  ->  homework.py:homework_start
+POST   /hw/{code}/submit  ->  homework.py:homework_submit
 POST   /iv/external/new  ->  iv.py:create_external_iv
 POST   /iv/send/{submission_id}  ->  iv.py:send_for_iv
 POST   /iv/{iv_id}/submit  ->  iv.py:submit_iv_review
 POST   /join  ->  live.py:join_submit
+POST   /lesson-decks/{deck_id}/carry-on  ->  pace.py:carry_on
 POST   /lesson-decks/{deck_id}/delete  ->  presentations.py:delete_deck
 POST   /lesson-decks/{deck_id}/differentiate  ->  presentations.py:differentiate_deck
 POST   /lesson-decks/{deck_id}/live/start  ->  live.py:live_start_from_deck
@@ -166,6 +184,7 @@ POST   /media-library/upload  ->  presentations.py:upload_image
 POST   /practice-questions/{set_id}/delete  ->  practice.py:practice_delete
 POST   /practice-questions/{set_id}/live/start  ->  live.py:live_start_from_practice
 POST   /quizzes/{quiz_id}/delete  ->  quizzes.py:quiz_delete
+POST   /quizzes/{quiz_id}/homework  ->  homework.py:homework_create
 POST   /quizzes/{quiz_id}/live/start  ->  live.py:live_start_from_quiz
 POST   /quizzes/{quiz_id}/save  ->  quizzes.py:quiz_save
 POST   /register  ->  auth_router.py:register_submit
@@ -188,6 +207,9 @@ POST   /submissions/{submission_id}/approve  ->  submissions.py:approve_submissi
 POST   /submissions/{submission_id}/delete  ->  submissions.py:delete_submission
 POST   /submissions/{submission_id}/mark  ->  submissions.py:mark_submission
 POST   /submissions/{submission_id}/unapprove  ->  submissions.py:unapprove_submission
+POST   /term-plans/{plan_id}/continue  ->  term_plan.py:plan_continue
+POST   /term-plans/{plan_id}/retry/{week}  ->  term_plan.py:plan_retry
+POST   /term-plans/{plan_id}/stop  ->  term_plan.py:plan_stop
 POST   /timetabling/dummy-data/clear  ->  timetabling.py:clear_dummy_data
 POST   /timetabling/dummy-data/generate  ->  timetabling.py:generate_dummy_data
 POST   /timetabling/dummy-data/generate-requirements  ->  timetabling.py:generate_dummy_requirements

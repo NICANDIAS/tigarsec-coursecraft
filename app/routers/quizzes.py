@@ -90,11 +90,11 @@ def _own_quiz(db, quiz_id, teacher):
     return quiz
 
 
-def _render(request, teacher, quiz, questions, editing, error=None, status_code=200):
+def _render(request, teacher, quiz, questions, editing, error=None, status_code=200, homeworks=None):
     return templates.TemplateResponse("quiz_detail.html", {
         "request": request, "teacher": teacher, "quiz": quiz, "questions": questions, "editing": editing,
         "error": error, "seconds_choices": SECONDS_CHOICES, "max_questions": MAX_QUESTIONS,
-        "saved": request.query_params.get("saved")}, status_code=status_code)
+        "saved": request.query_params.get("saved"), "homeworks": homeworks or []}, status_code=status_code)
 
 
 @router.get("/quizzes/{quiz_id}", response_class=HTMLResponse)
@@ -103,7 +103,9 @@ def quiz_detail(quiz_id: int, request: Request, db: Session = Depends(get_db), t
     if not quiz:
         return RedirectResponse(url="/", status_code=303)
     editing = request.query_params.get("edit") == "1" or (quiz.status == "ready" and not quiz.questions_json)
-    return _render(request, teacher, quiz, quiz.questions_json or [], editing)
+    from ..models import Homework
+    homeworks = db.query(Homework).filter(Homework.quiz_set_id == quiz.id).order_by(Homework.id.desc()).all()
+    return _render(request, teacher, quiz, quiz.questions_json or [], editing, homeworks=homeworks)
 
 
 @router.post("/quizzes/{quiz_id}/save", response_class=HTMLResponse)
@@ -155,6 +157,9 @@ def quiz_delete(quiz_id: int, db: Session = Depends(get_db), teacher: Teacher = 
     course_id = quiz.course_id
     # live sessions already run from it keep their own copy of the questions and scores
     db.query(LiveSession).filter(LiveSession.quiz_set_id == quiz.id).update({"quiz_set_id": None}, synchronize_session=False)
+    # homework set from it keeps its own copy of the questions and every student's results
+    from ..models import Homework
+    db.query(Homework).filter(Homework.quiz_set_id == quiz.id).update({"quiz_set_id": None}, synchronize_session=False)
     db.delete(quiz)
     db.commit()
     return RedirectResponse(url=f"/courses/{course_id}#quizzes", status_code=303)

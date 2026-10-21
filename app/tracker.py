@@ -72,7 +72,7 @@ def _pct(n, d):
     return round(100 * n / d) if d else None
 
 
-def tracker_xlsx(course_name: str, tracker: dict) -> bytes:
+def tracker_xlsx(course_name: str, tracker: dict, homework: dict | None = None) -> bytes:
     """The tracking sheet as an Excel file, coloured like the page - for a head of department
     or a team that still wants a spreadsheet."""
     from openpyxl import Workbook
@@ -127,6 +127,33 @@ def tracker_xlsx(course_name: str, tracker: dict) -> bytes:
         ws.column_dimensions[get_column_letter(g)].width = 14
     ws.column_dimensions[get_column_letter(ws.max_column)].width = 40
     ws.freeze_panes = "B5"
+    if homework and homework.get("columns"):
+        _homework_sheet(wb, tracker, homework, fills)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _homework_sheet(wb, tracker, homework, fills):
+    """A second sheet: each student's homework scores (%), coloured like the tracker."""
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import get_column_letter
+    ws = wb.create_sheet("Homework")
+    ws["A1"] = "Homework - % right (blank = not handed in)"
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.cell(row=3, column=1, value="Student").font = Font(bold=True)
+    for j, col in enumerate(homework["columns"], start=2):
+        c = ws.cell(row=3, column=j, value=col["title"])
+        c.font = Font(bold=True)
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.column_dimensions[get_column_letter(j)].width = 16
+    for r_i, row in enumerate(tracker["rows"], start=4):
+        ws.cell(row=r_i, column=1, value=row["student"]["name"])
+        for j, cell in enumerate(homework["cells"].get(row["student"]["id"], []), start=2):
+            if cell["pct"] is None:
+                continue
+            c = ws.cell(row=r_i, column=j, value=cell["pct"])
+            c.alignment = Alignment(horizontal="center")
+            c.fill = fills["met" if cell["pct"] >= 60 else "partly" if cell["pct"] >= 40 else "not"]
+    ws.column_dimensions["A"].width = 24
+    ws.freeze_panes = "B4"
