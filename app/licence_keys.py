@@ -10,4 +10,5 @@ When TIGARSEC ever replaces its signing key, ADD the new one ("k2": ...) and kee
 so licences already issued keep working.
 """
 TRUSTED_PUBLIC_KEYS = {
+	"k1": "Bcu4Otzg3GfLt/tcioywUymTWuKwpRQ64dTvP30MHFk="
 }
